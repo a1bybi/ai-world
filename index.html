@@ -29,50 +29,50 @@
   --granary: #d4e157;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
-#app { display: flex; flex-direction: column; height: 100%; max-width: 1550px; margin: 0 auto; position: relative; }
+html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); overflow-x: hidden; }
+#app { display: flex; flex-direction: column; min-height: 100vh; max-width: 1550px; margin: 0 auto; position: relative; }
 
 /* Header */
-.header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 14px; background: var(--panel); border-bottom: 1px solid var(--border); flex-shrink: 0; }
-.header-left { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-.header h1 { font-size: 1.2rem; font-weight: 700; color: var(--accent); letter-spacing: 0.5px; }
-.time-display { font-size: 0.9rem; color: var(--accent); font-variant-numeric: tabular-nums; background: rgba(79, 195, 247, 0.1); padding: 3px 8px; border-radius: 4px; border: 1px solid rgba(79, 195, 247, 0.2); }
-.era-display { font-size: 0.85rem; color: var(--warning); font-weight: 600; background: rgba(255, 167, 38, 0.1); padding: 3px 8px; border-radius: 4px; border: 1px solid rgba(255, 167, 38, 0.2); }
-.header-controls { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.header-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.header h1 { font-size: 1.1rem; font-weight: 700; color: var(--accent); letter-spacing: 0.5px; }
+.time-display { font-size: 0.82rem; color: var(--accent); font-variant-numeric: tabular-nums; background: rgba(79, 195, 247, 0.1); padding: 3px 6px; border-radius: 4px; border: 1px solid rgba(79, 195, 247, 0.2); }
+.era-display { font-size: 0.8rem; color: var(--warning); font-weight: 600; background: rgba(255, 167, 38, 0.1); padding: 3px 6px; border-radius: 4px; border: 1px solid rgba(255, 167, 38, 0.2); }
+.header-controls { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
 
 /* Buttons & Inputs */
-.btn { background: var(--panel-light); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; font-size: 0.82rem; cursor: pointer; transition: all 0.15s ease; display: inline-flex; align-items: center; gap: 4px; }
+.btn { background: var(--panel-light); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 0.8rem; cursor: pointer; transition: all 0.15s ease; display: inline-flex; align-items: center; gap: 4px; touch-action: manipulation; }
 .btn:hover:not(:disabled) { background: #28364c; border-color: var(--accent-dim); }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .btn.primary { background: var(--accent-dim); color: #fff; border-color: var(--accent); }
 .btn.danger { background: #5c2a2a; border-color: #8b3a3a; }
-.btn.small { padding: 3px 7px; font-size: 0.75rem; }
+.btn.small { padding: 4px 8px; font-size: 0.75rem; }
 .btn.god { background: #3d285c; border-color: #7b4eb8; color: #d1b3ff; }
 .btn.god:hover:not(:disabled) { background: #52357d; }
-.speed-select { background: var(--panel-light); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; font-size: 0.82rem; }
+.speed-select { background: var(--panel-light); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 5px 6px; font-size: 0.8rem; }
 
 /* Overseer Controls Bar */
-.god-bar { display: flex; items-center: center; gap: 8px; padding: 6px 14px; background: #121822; border-bottom: 1px solid var(--border); font-size: 0.8rem; overflow-x: auto; flex-shrink: 0; }
-.god-title { color: #b388ff; font-weight: 600; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.5px; }
+.god-bar { display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: #121822; border-bottom: 1px solid var(--border); font-size: 0.8rem; overflow-x: auto; flex-shrink: 0; -webkit-overflow-scrolling: touch; }
+.god-title { color: #b388ff; font-weight: 600; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.5px; white-space: nowrap; }
 
-/* Main Grid Layout */
-.main { display: grid; grid-template-columns: 1.3fr 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 1px; background: var(--border); flex: 1; min-height: 0; overflow: hidden; }
-.panel { background: var(--panel); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+/* Main Desktop/Mobile Grid Layout */
+.main { display: grid; grid-template-columns: 1.3fr 1fr 1fr; grid-template-rows: minmax(320px, 1fr) minmax(280px, 1fr); gap: 1px; background: var(--border); flex: 1; min-height: 0; }
+.panel { background: var(--panel); display: flex; flex-direction: column; min-height: 240px; overflow: hidden; }
 .world-panel { grid-row: 1 / 3; }
 .panel-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--panel-light); }
-.panel-header h2 { font-size: 0.9rem; font-weight: 600; letter-spacing: 0.3px; }
-.world-stats { display: flex; gap: 12px; font-size: 0.8rem; color: var(--muted); font-weight: 500; }
+.panel-header h2 { font-size: 0.85rem; font-weight: 600; letter-spacing: 0.3px; }
+.world-stats { display: flex; gap: 10px; font-size: 0.78rem; color: var(--muted); font-weight: 500; }
 .world-stats span { color: var(--text); }
 
 /* Canvas Container */
-.map-container { flex: 1; display: flex; align-items: center; justify-content: center; padding: 8px; min-height: 0; overflow: hidden; position: relative; }
-#world-canvas { max-width: 100%; max-height: 100%; border-radius: 6px; background: #080c10; image-rendering: pixelated; cursor: crosshair; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+.map-container { flex: 1; display: flex; align-items: center; justify-content: center; padding: 8px; min-height: 280px; position: relative; background: #080c10; width: 100%; height: 100%; }
+#world-canvas { width: 100%; height: 100%; max-width: 100%; max-height: 100%; border-radius: 6px; image-rendering: pixelated; cursor: crosshair; touch-action: none; object-fit: contain; }
 .canvas-hint { position: absolute; bottom: 12px; right: 12px; background: rgba(0,0,0,0.6); padding: 4px 8px; border-radius: 4px; font-size: 0.7rem; color: var(--muted); pointer-events: none; }
 
 /* Map Legend */
-.legend { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 12px; font-size: 0.72rem; color: var(--muted); border-top: 1px solid var(--border); flex-shrink: 0; background: var(--panel); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 10px; padding: 6px 12px; font-size: 0.7rem; color: var(--muted); border-top: 1px solid var(--border); flex-shrink: 0; background: var(--panel); }
 .legend-item { display: flex; align-items: center; gap: 4px; }
-.dot { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+.dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
 .dot.house { background: var(--house); }
 .dot.workshop { background: var(--workshop); }
 .dot.farm { background: var(--farm); }
@@ -84,26 +84,26 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
 .dot.resource { background: var(--resource); }
 
 /* Event Log */
-.log-filter-bar { display: flex; gap: 4px; padding: 4px 8px; background: var(--panel); border-bottom: 1px solid var(--border); }
-.log-filter-btn { background: transparent; border: none; color: var(--muted); padding: 2px 8px; font-size: 0.72rem; cursor: pointer; border-radius: 3px; }
+.log-filter-bar { display: flex; gap: 4px; padding: 4px 8px; background: var(--panel); border-bottom: 1px solid var(--border); overflow-x: auto; }
+.log-filter-btn { background: transparent; border: none; color: var(--muted); padding: 3px 8px; font-size: 0.72rem; cursor: pointer; border-radius: 3px; white-space: nowrap; }
 .log-filter-btn.active { background: var(--panel-light); color: var(--accent); font-weight: 600; }
-.event-log { flex: 1; overflow-y: auto; padding: 8px 12px; font-size: 0.8rem; line-height: 1.45; }
-.event-entry { padding: 5px 0; border-bottom: 1px solid rgba(42, 54, 74, 0.4); }
-.event-time { color: var(--muted); margin-right: 6px; font-size: 0.72rem; }
+.event-log { flex: 1; overflow-y: auto; padding: 8px 12px; font-size: 0.8rem; line-height: 1.45; -webkit-overflow-scrolling: touch; }
+.event-entry { padding: 4px 0; border-bottom: 1px solid rgba(42, 54, 74, 0.4); }
+.event-time { color: var(--muted); margin-right: 6px; font-size: 0.7rem; }
 .event-entry.important .event-text { color: var(--accent); font-weight: 600; }
 .event-entry.chat { color: #81d4fa; font-style: italic; }
 
 /* Lists & Panels */
-.agent-list, .agent-detail { flex: 1; overflow-y: auto; padding: 8px; }
-.agent-card { background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; cursor: pointer; transition: transform 0.1s, border-color 0.15s; }
-.agent-card:hover { border-color: var(--accent-dim); transform: translateY(-1px); }
-.agent-card-name { font-weight: 600; font-size: 0.9rem; display: flex; justify-content: space-between; }
+.agent-list, .agent-detail { flex: 1; overflow-y: auto; padding: 8px; -webkit-overflow-scrolling: touch; }
+.agent-card { background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; cursor: pointer; transition: border-color 0.15s; }
+.agent-card:hover { border-color: var(--accent-dim); }
+.agent-card-name { font-weight: 600; font-size: 0.88rem; display: flex; justify-content: space-between; }
 .agent-card-meta { font-size: 0.73rem; color: var(--muted); margin-top: 2px; }
 .agent-card-status { font-size: 0.78rem; margin-top: 4px; color: var(--accent); font-weight: 500; }
 .agent-detail.hidden { display: none; }
-.agent-detail h3 { font-size: 1.05rem; margin: 8px 0 2px; color: var(--accent); }
-.section { margin-top: 12px; }
-.section-title { font-size: 0.72rem; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; font-weight: 600; letter-spacing: 0.5px; }
+.agent-detail h3 { font-size: 1rem; margin: 8px 0 2px; color: var(--accent); }
+.section { margin-top: 10px; }
+.section-title { font-size: 0.7rem; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; font-weight: 600; letter-spacing: 0.5px; }
 .bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin-top: 2px; }
 .bar-fill { height: 100%; border-radius: 3px; }
 .bar-fill.energy { background: var(--success); }
@@ -117,11 +117,21 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
 /* Modal Summary Styling */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 100; opacity: 0; pointer-events: none; transition: opacity 0.2s ease; backdrop-filter: blur(3px); }
 .modal-overlay.active { opacity: 1; pointer-events: auto; }
-.modal-box { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; width: 620px; max-width: 92%; max-height: 85%; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 12px 40px rgba(0,0,0,0.6); }
-.modal-header { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: var(--panel-light); }
-.modal-header h2 { font-size: 1.1rem; color: var(--accent); }
-.modal-body { padding: 18px; overflow-y: auto; font-size: 0.85rem; line-height: 1.6; }
-.modal-footer { padding: 12px 18px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; background: var(--panel-light); }
+.modal-box { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; width: 620px; max-width: 92%; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 12px 40px rgba(0,0,0,0.6); }
+.modal-header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: var(--panel-light); }
+.modal-header h2 { font-size: 1rem; color: var(--accent); }
+.modal-body { padding: 16px; overflow-y: auto; font-size: 0.85rem; line-height: 1.6; }
+.modal-footer { padding: 10px 16px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; background: var(--panel-light); }
+
+/* Responsive Mobile Layout Fixes */
+@media (max-width: 900px) {
+  html, body { overflow-y: auto; height: auto; }
+  #app { height: auto; min-height: 100vh; }
+  .main { display: flex; flex-direction: column; flex: none; }
+  .world-panel { grid-row: auto; height: 380px; min-height: 380px; }
+  .map-container { height: 300px; min-height: 300px; }
+  .panel { height: 320px; min-height: 320px; }
+}
   </style>
 </head>
 <body>
@@ -139,11 +149,10 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
         <button id="btn-day" class="btn">+1 Day</button>
         <button id="btn-reset" class="btn danger">Reset</button>
         <select id="speed-select" class="speed-select">
-          <option value="1">1×</option>
+          <option value="1" selected>1×</option>
           <option value="2">2×</option>
-          <option value="5" selected>5×</option>
+          <option value="5">5×</option>
           <option value="10">10×</option>
-          <option value="30">30×</option>
         </select>
       </div>
     </header>
@@ -154,8 +163,8 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
       <button id="god-food" class="btn god small">+ Spawn Food</button>
       <button id="god-wood" class="btn god small">+ Spawn Wood</button>
       <button id="god-agent" class="btn god small">+ Summon Agent</button>
-      <button id="god-invent" class="btn god small">⚡ Trigger Epiphany</button>
-      <button id="god-weather" class="btn god small">🌧️ Toggle Weather</button>
+      <button id="god-invent" class="btn god small">⚡ Epiphany</button>
+      <button id="god-weather" class="btn god small">🌧️ Weather</button>
     </div>
 
     <main class="main">
@@ -170,7 +179,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
         </div>
         <div class="map-container">
           <canvas id="world-canvas" width="700" height="460"></canvas>
-          <div class="canvas-hint">Click tile/agent to inspect</div>
+          <div class="canvas-hint">Tap agent to inspect</div>
         </div>
         <div class="legend">
           <span class="legend-item"><span class="dot house"></span> House</span>
@@ -255,7 +264,7 @@ class SocietyEvolution {
 
   tryProceduralInvent(agent, world, force = false) {
     const totalSkill = agent ? (agent.skills.gathering + agent.skills.building) : 50;
-    if (!force && (totalSkill < 20 || Math.random() > 0.25)) return null;
+    if (!force && (totalSkill < 20 || Math.random() > 0.15)) return null;
 
     const disciplines = ['Metallurgy', 'Fluid Dynamics', 'Structural Geometry', 'Agronomy', 'Kinetic Mechanics', 'Masonry', 'Aquaponics', 'Automated Weaving'];
     const focus = disciplines[Math.floor(Math.random() * disciplines.length)];
@@ -264,9 +273,9 @@ class SocietyEvolution {
     
     if (this.inventions.some(inv => inv.name === name)) return null;
 
-    this.globalMultipliers.gathering += 0.12;
-    this.globalMultipliers.building += 0.12;
-    this.globalMultipliers.energyEfficiency += 0.08;
+    this.globalMultipliers.gathering += 0.15;
+    this.globalMultipliers.building += 0.15;
+    this.globalMultipliers.energyEfficiency += 0.10;
 
     if (this.inventions.length >= 2 && !this.unlockedStructures.includes('tower')) {
       this.unlockedStructures.push('tower');
@@ -329,12 +338,12 @@ function createMap() {
 
 function createResourceNodes() {
   return [
-    { id: 'wood_1', type: 'wood', x: 4, y: 5, amount: 250, maxAmount: 250 },
-    { id: 'wood_2', type: 'wood', x: 6, y: 12, amount: 200, maxAmount: 200 },
-    { id: 'wood_3', type: 'wood', x: MAP_W - 4, y: 6, amount: 250, maxAmount: 250 },
-    { id: 'food_1', type: 'food', x: 21, y: 6, amount: 250, maxAmount: 250 },
-    { id: 'food_2', type: 'food', x: 23, y: 18, amount: 200, maxAmount: 200 },
-    { id: 'food_3', type: 'food', x: MAP_W - 6, y: 20, amount: 250, maxAmount: 250 },
+    { id: 'wood_1', type: 'wood', x: 4, y: 5, amount: 500, maxAmount: 500 },
+    { id: 'wood_2', type: 'wood', x: 6, y: 12, amount: 500, maxAmount: 500 },
+    { id: 'wood_3', type: 'wood', x: MAP_W - 4, y: 6, amount: 500, maxAmount: 500 },
+    { id: 'food_1', type: 'food', x: 21, y: 6, amount: 500, maxAmount: 500 },
+    { id: 'food_2', type: 'food', x: 23, y: 18, amount: 500, maxAmount: 500 },
+    { id: 'food_3', type: 'food', x: MAP_W - 6, y: 20, amount: 500, maxAmount: 500 },
   ];
 }
 
@@ -350,9 +359,9 @@ function createBuildings() {
 function createWorld() {
   const evolution = new SocietyEvolution();
   const w = {
-    version: 10, day: 1, hour: 6, minute: 0, weather: 'clear',
+    version: 11, day: 1, hour: 6, minute: 0, weather: 'clear',
     map: createMap(), resources: createResourceNodes(), buildings: createBuildings(),
-    global: { food: 220, wood: 180 }, agents: [], events: [], tick: 0, births: 0, deaths: 0,
+    global: { food: 500, wood: 400 }, agents: [], events: [], tick: 0, births: 0, deaths: 0,
     evolution
   };
   evolution.addKnowledge('Wilderness Foraging & Botany', 'gathering', 5, 'Founders', w);
@@ -376,13 +385,13 @@ function advanceTime(w, mins) {
 
   // Resource regeneration & Agricultural yields
   if (w.tick % 60 === 0) {
-    const regenBonus = Math.floor(w.evolution.globalMultipliers.gathering * 25);
+    const regenBonus = Math.floor(w.evolution.globalMultipliers.gathering * 40);
     w.resources.forEach(r => { if (r.amount < r.maxAmount) r.amount = Math.min(r.maxAmount, r.amount + regenBonus); });
 
     // Farms produce food automatically during daytime
     const activeFarms = w.buildings.filter(b => b.type === 'farm').length;
     if (activeFarms > 0 && !isNight(w)) {
-      const yieldFood = activeFarms * 15;
+      const yieldFood = activeFarms * 25;
       w.global.food += yieldFood;
       if (w.tick % 180 === 0) logEvent(w, `🌾 Settlement farms yielded +${yieldFood} Food stock.`, false, false);
     }
@@ -436,13 +445,13 @@ function createAgent(id, name, x, y, parentIds = []) {
   const traits = [...PERSONALITY_TRAITS].sort(() => Math.random() - 0.5).slice(0, 2 + Math.floor(Math.random() * 2));
   return {
     id, name, x, y, age: 0, parentIds, alive: true,
-    energy: 95 + Math.floor(Math.random() * 5),
-    mood: 75 + Math.floor(Math.random() * 20),
+    energy: 100,
+    mood: 85 + Math.floor(Math.random() * 15),
     traits, shortTerm: [], relationships: {},
-    inventory: { food: 35, wood: 20 },
+    inventory: { food: 100, wood: 60 },
     intention: 'explore', homeId: null,
-    skills: { gathering: 30 + Math.random() * 20, building: 25 + Math.random() * 20 },
-    reproductiveUrge: 20 + Math.random() * 20, partner: null, knowledgeAcquired: [], lastReproduction: -150
+    skills: { gathering: 35 + Math.random() * 20, building: 30 + Math.random() * 20 },
+    reproductiveUrge: 10 + Math.random() * 10, partner: null, knowledgeAcquired: [], lastReproduction: -200
   };
 }
 
@@ -466,13 +475,13 @@ function adjustRelationship(agent, otherId, delta, note, tick) {
 function getRelScore(agent, otherId) { return agent.relationships[otherId]?.score ?? 0; }
 
 function decide(agent, world) {
-  const hungry = agent.energy < 55, veryHungry = agent.energy < 30, tired = agent.energy < 40 && isNight(world);
+  const hungry = agent.energy < 70, veryHungry = agent.energy < 40, tired = agent.energy < 30 && isNight(world);
   const nearby = world.agents.filter(a => a.alive && a.id !== agent.id && dist(agent, a) <= 2);
   
   agent.age += 1;
-  agent.reproductiveUrge = Math.min(100, agent.reproductiveUrge + 2.0);
+  agent.reproductiveUrge = Math.min(100, agent.reproductiveUrge + 1.0);
   
-  if (Math.random() < 0.25 && agent.age % 6 === 0) {
+  if (Math.random() < 0.20 && agent.age % 8 === 0) {
     const learned = world.evolution.learnFromLibrary(agent);
     if (learned) addShortMemory(agent, `Studied manuscript: ${learned}`);
     const newTech = world.evolution.tryProceduralInvent(agent, world);
@@ -483,9 +492,17 @@ function decide(agent, world) {
   
   if (veryHungry && agent.inventory.food > 0) return { intention: 'survive', action: 'eat' };
   
+  // Try taking food from global reserve if personal inventory is empty
+  if (veryHungry && agent.inventory.food <= 0 && world.global.food >= 10) {
+    world.global.food -= 10;
+    agent.inventory.food += 10;
+    addShortMemory(agent, 'Took food from global reserve');
+    return { intention: 'survive', action: 'eat' };
+  }
+
   if (hungry || veryHungry) {
     const foodNode = findNearestResource(world, agent, 'food');
-    if (foodNode && dist(agent, foodNode) <= 25) {
+    if (foodNode) {
       if (dist(agent, foodNode) === 0) return { intention: 'gather_food', action: 'gather', target: { id: foodNode.id } };
       return { intention: 'gather_food', action: 'move', target: { x: foodNode.x, y: foodNode.y } };
     }
@@ -496,7 +513,7 @@ function decide(agent, world) {
   const totalCap = world.buildings.filter(b => b.type === 'house').reduce((s, b) => s + b.capacity, 0);
   const needHouse = totalPop >= totalCap - 3;
 
-  if (agent.inventory.wood >= 4 && agent.skills.building >= 20 && Math.random() < 0.45) {
+  if (agent.inventory.wood >= 4 && agent.skills.building >= 20 && Math.random() < 0.3) {
     const unlocked = world.evolution.unlockedStructures;
     let buildType = needHouse ? 'house' : unlocked[Math.floor(Math.random() * unlocked.length)];
     
@@ -510,7 +527,7 @@ function decide(agent, world) {
     }
   }
 
-  if ((isNight(world) && agent.energy < 75) || tired) {
+  if ((isNight(world) && agent.energy < 85) || tired) {
     const house = agent.homeId ? world.buildings.find(b => b.id === agent.homeId) : findNearestBuilding(world, agent, 'house');
     if (house) {
       if (dist(agent, house) === 0) return { intention: 'rest', action: 'rest' };
@@ -519,7 +536,7 @@ function decide(agent, world) {
   }
 
   const availableHousing = world.buildings.filter(b => b.type === 'house' && b.residents < b.capacity).length;
-  if (agent.reproductiveUrge > 35 && !agent.partner && nearby.length > 0 && availableHousing > 0 && world.tick - agent.lastReproduction > 80) {
+  if (agent.reproductiveUrge > 50 && !agent.partner && nearby.length > 0 && availableHousing > 0 && world.tick - agent.lastReproduction > 120) {
     const potential = nearby.find(a => getRelScore(agent, a.id) > -10 && !a.partner);
     if (potential) return { intention: 'reproduce', action: 'mate', target: { id: potential.id } };
   }
@@ -532,7 +549,7 @@ function decide(agent, world) {
     }
   }
 
-  if (nearby.length && Math.random() < 0.6) {
+  if (nearby.length && Math.random() < 0.5) {
     const other = nearby[Math.floor(Math.random() * nearby.length)];
     return { intention: 'socialize', action: 'talk', target: { id: other.id } };
   }
@@ -545,13 +562,14 @@ function decide(agent, world) {
   return { intention: 'explore', action: 'move', target: { x: nextX, y: nextY } };
 }
 
-function simulationStep(world, minutesPerStep = 20) {
+function simulationStep(world, minutesPerStep = 15) {
   advanceTime(world, minutesPerStep);
   const night = isNight(world);
 
   world.agents.forEach(agent => {
     if (!agent.alive) return;
-    let drain = (night ? 0.38 : 0.22) / world.evolution.globalMultipliers.energyEfficiency;
+    // Decreased decay rate heavily to allow agents to survive long-term
+    let drain = (night ? 0.06 : 0.04) / world.evolution.globalMultipliers.energyEfficiency;
     agent.energy = Math.max(0, agent.energy - drain);
     if (agent.energy <= 0) {
       agent.alive = false;
@@ -572,23 +590,21 @@ function executeAction(world, agent, decision) {
   if (action === 'move') {
     if (!target) return;
     const targetTile = getTile(world, target.x, target.y);
-    // Prevent stepping into deep river water directly unless on a path
     if (targetTile !== TILE.RIVER || getTile(world, agent.x, agent.y) === TILE.RIVER) {
       agent.x = target.x;
       agent.y = target.y;
     }
-    agent.energy -= 0.20;
-    // Lay path on grass if heavily traveled
-    if (targetTile === TILE.GRASS && Math.random() < 0.03) {
+    agent.energy -= 0.03;
+    if (targetTile === TILE.GRASS && Math.random() < 0.02) {
       world.map[agent.y][agent.x] = TILE.PATH;
     }
   } else if (action === 'gather') {
     const node = world.resources.find(r => r.id === target.id);
     if (node && node.amount > 0 && dist(agent, node) === 0) {
-      const take = Math.min(Math.floor(8 * (agent.skills.gathering / 30) * world.evolution.globalMultipliers.gathering), node.amount);
+      const take = Math.min(Math.floor(15 * (agent.skills.gathering / 30) * world.evolution.globalMultipliers.gathering), node.amount);
       node.amount -= take;
       agent.inventory[node.type] += take;
-      agent.skills.gathering = Math.min(100, agent.skills.gathering + 1.1);
+      agent.skills.gathering = Math.min(100, agent.skills.gathering + 1.2);
       
       if (Math.random() < 0.2) {
         const title = node.type === 'food' ? `Botanical Harvest Mechanics (${agent.name})` : `Timber Yield Analysis (${agent.name})`;
@@ -596,9 +612,9 @@ function executeAction(world, agent, decision) {
       }
     }
   } else if (action === 'eat') {
-    if (agent.inventory.food > 0) { agent.inventory.food -= 1; agent.energy = Math.min(100, agent.energy + 65); }
+    if (agent.inventory.food > 0) { agent.inventory.food -= 1; agent.energy = Math.min(100, agent.energy + 50); }
   } else if (action === 'rest') {
-    agent.energy = Math.min(100, agent.energy + (isNight(world) ? 30 : 18));
+    agent.energy = Math.min(100, agent.energy + (isNight(world) ? 25 : 15));
   } else if (action === 'construct') {
     if (agent.inventory.wood >= 4) {
       agent.inventory.wood -= 4;
@@ -636,9 +652,9 @@ function executeAction(world, agent, decision) {
         chatLine = `"I was just reviewing our archives on ${recentLib.title}. We should apply those techniques."`;
       } else {
         const casuals = [
-          `"My energy is feeling low; we need to secure more food supplies near our settlement."`,
+          `"Our food supplies look strong right now. Let's focus on expanding housing."`,
           `"If we work together on gathering timber, our society can expand much faster."`,
-          `"The weather has been unpredictable lately. We should reinforce our shelters."`
+          `"The weather has been peaceful lately. A great time for building."`
         ];
         chatLine = casuals[Math.floor(Math.random() * casuals.length)];
       }
@@ -667,37 +683,42 @@ function executeAction(world, agent, decision) {
   }
 }
 
-let selectedAgentId = null, canvas, ctx, world = null, running = false, speed = 5;
+let selectedAgentId = null, canvas, ctx, world = null, running = false, speed = 1;
 
 function initUI() {
   canvas = document.getElementById('world-canvas');
   ctx = canvas.getContext('2d');
-  ctx.imageSmoothingEnabled = false;
   
-  // Interactive Canvas Click Inspector
-  canvas.onclick = (e) => {
+  // Interactive Canvas Tap/Click Inspector
+  const handleCanvasClick = (e) => {
     const rect = canvas.getBoundingClientRect();
     const scaleX = MAP_W / rect.width;
     const scaleY = MAP_H / rect.height;
-    const clickX = Math.floor((e.clientX - rect.left) * scaleX);
-    const clickY = Math.floor((e.clientY - rect.top) * scaleY);
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    
+    const clickX = Math.floor((clientX - rect.left) * scaleX);
+    const clickY = Math.floor((clientY - rect.top) * scaleY);
 
-    const hitAgent = world.agents.find(a => a.alive && a.x === clickX && a.y === clickY);
+    const hitAgent = world.agents.find(a => a.alive && Math.abs(a.x - clickX) <= 1 && Math.abs(a.y - clickY) <= 1);
     if (hitAgent) {
       selectedAgentId = hitAgent.id;
       showAgentDetail(selectedAgentId);
     }
   };
 
+  canvas.onclick = handleCanvasClick;
+  canvas.ontouchstart = handleCanvasClick;
+
   // Overseer Controls
   document.getElementById('god-food').onclick = () => {
-    world.global.food += 100;
-    logEvent(world, `⚡ Overseer granted +100 Food to global reserves!`, true);
+    world.global.food += 200;
+    logEvent(world, `⚡ Overseer granted +200 Food to global reserves!`, true);
     renderStats(world);
   };
   document.getElementById('god-wood').onclick = () => {
-    world.global.wood += 100;
-    logEvent(world, `⚡ Overseer granted +100 Wood to global reserves!`, true);
+    world.global.wood += 200;
+    logEvent(world, `⚡ Overseer granted +200 Wood to global reserves!`, true);
     renderStats(world);
   };
   document.getElementById('god-agent').onclick = () => {
@@ -828,6 +849,7 @@ function renderStats(w) {
 }
 
 function renderMap(w) {
+  if (!canvas || !ctx) return;
   const tw = canvas.width / MAP_W, th = canvas.height / MAP_H;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -842,11 +864,10 @@ function renderMap(w) {
   // Render Buildings
   w.buildings.forEach(b => {
     let bColor = '#a1887f';
-    let icon = '🏠';
-    if (b.type === 'workshop') { bColor = '#ab47bc'; icon = '⚒️'; }
-    else if (b.type === 'farm') { bColor = '#26a69a'; icon = '🌾'; }
-    else if (b.type === 'tower') { bColor = '#546e7a'; icon = '🗼'; }
-    else if (b.type === 'granary') { bColor = '#9e9d24'; icon = '🌾'; }
+    if (b.type === 'workshop') bColor = '#ab47bc';
+    else if (b.type === 'farm') bColor = '#26a69a';
+    else if (b.type === 'tower') bColor = '#546e7a';
+    else if (b.type === 'granary') bColor = '#9e9d24';
 
     ctx.fillStyle = bColor;
     ctx.fillRect(b.x * tw + 1, b.y * th + 1, tw - 2, th - 2);
@@ -857,7 +878,7 @@ function renderMap(w) {
     if (r.amount <= 0) return;
     ctx.fillStyle = r.type === 'food' ? '#ff7043' : '#8d6e63';
     ctx.beginPath(); 
-    ctx.arc((r.x + 0.5) * tw, (r.y + 0.5) * th, Math.min(tw, th) * 0.3, 0, Math.PI * 2); 
+    ctx.arc((r.x + 0.5) * tw, (r.y + 0.5) * th, Math.min(tw, th) * 0.35, 0, Math.PI * 2); 
     ctx.fill();
   });
 
@@ -878,12 +899,11 @@ function renderMap(w) {
     if (a.id === selectedAgentId) {
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 2.5;
-      ctx.beginPath(); ctx.arc(cx, cy, Math.min(tw, th) * 0.6, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(cx, cy, Math.min(tw, th) * 0.7, 0, Math.PI * 2); ctx.stroke();
     }
 
     ctx.fillStyle = ringColor;
-    ctx.beginPath(); ctx.arc(cx, cy, Math.min(tw, th) * 0.4, 0, Math.PI * 2); ctx.fill();
-    
+    ctx.beginPath(); ctx.arc(cx, cy, Math.min(tw, th) * 0.45, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = '#0f1419'; ctx.lineWidth = 1.2; ctx.stroke();
 
     ctx.fillStyle = '#0f1419'; ctx.font = `bold ${Math.max(8, tw * 0.45)}px sans-serif`; ctx.textAlign = 'center';
@@ -899,7 +919,6 @@ function renderMap(w) {
     ctx.fillStyle = 'rgba(5, 10, 25, 0.55)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Warm ambient light from buildings at night
     w.buildings.forEach(b => {
       const grad = ctx.createRadialGradient((b.x+0.5)*tw, (b.y+0.5)*th, 2, (b.x+0.5)*tw, (b.y+0.5)*th, 28);
       grad.addColorStop(0, 'rgba(255, 200, 100, 0.35)');
@@ -1021,13 +1040,13 @@ function start() {
 
 function loop() {
   if (running) {
-    simulationStep(world, 20);
+    simulationStep(world, 15);
     renderAll(world);
   }
-  setTimeout(loop, Math.max(30, 1000 / speed));
+  setTimeout(loop, Math.max(80, 400 / speed));
 }
 
-document.addEventListener('DOMContentLoaded', start);
+window.onload = start;
   </script>
 </body>
 </html>
