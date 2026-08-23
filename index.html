@@ -149,7 +149,6 @@ const TILE = { GRASS: 0, FOREST: 1, RIVER: 2, HOUSE: 3, PATH: 4 };
 const TILE_COLORS = { [TILE.GRASS]: '#1b3a1b', [TILE.FOREST]: '#0d4a1f', [TILE.RIVER]: '#0a3a5c', [TILE.HOUSE]: '#4a3728', [TILE.PATH]: '#2a2a20' };
 const MAP_W = 30, MAP_H = 20;
 
-// Library system - shared knowledge base
 class Library {
   constructor() {
     this.entries = [];
@@ -397,12 +396,10 @@ function decide(agent, world) {
   
   agent.age += 1;
   
-  // Reproduction logic - more frequent and forgiving
   if (agent.age > 50) {
     agent.reproductiveUrge = Math.min(100, agent.reproductiveUrge + 0.8);
   }
   
-  // Learn from library more often
   if (Math.random() < 0.08 && agent.age % 30 === 0) {
     const learned = world.library.learnFromLibrary(agent);
     if (learned.length > 0) {
@@ -433,7 +430,6 @@ function decide(agent, world) {
     }
   }
 
-  // Reproduction - more likely now
   if (agent.reproductiveUrge > 40 && !agent.partner && nearby.length > 0 && world.tick - agent.lastReproduction > 200) {
     const potential = nearby.find(a => getRelScore(agent, a.id) > 10 && !a.partner && a.reproductiveUrge > 35 && world.tick - a.lastReproduction > 200);
     if (potential) return { intention: 'reproduce', action: 'mate', target: { type: 'agent', id: potential.id }, reason: 'Seeking partner.' };
@@ -566,9 +562,8 @@ function executeAction(world, agent, decision) {
       
       const childName = NAMES.find(n => !world.agents.some(a => a.name === n));
       if (childName && world.agents.length < 50) {
-        const child = createAgent(`agent_${Math.max(...world.agents.map(a => parseInt(a.id.split('_')[1]) || 0))) + 1}`, childName, agent.x, agent.y, [agent.id, other.id]);
+        const child = createAgent(`agent_${Math.max(...world.agents.map(a => parseInt(a.id.split('_')[1]) || 0)) + 1}`, childName, agent.x, agent.y, [agent.id, other.id]);
         
-        // Children inherit parent skills (with boost from parent knowledge)
         Object.keys(child.skills).forEach(skill => {
           child.skills[skill] = (agent.skills[skill] + other.skills[skill]) / 2 + 10;
         });
@@ -596,12 +591,7 @@ function initUI() {
   canvas = document.getElementById('world-canvas');
   ctx = canvas.getContext('2d');
   
-  // Disable canvas image smoothing for crisp pixel rendering
   ctx.imageSmoothingEnabled = false;
-  ctx.mozImageSmoothingEnabled = false;
-  ctx.oImageSmoothingEnabled = false;
-  ctx.webkitImageSmoothingEnabled = false;
-  ctx.msImageSmoothingEnabled = false;
   
   document.getElementById('speed-select').addEventListener('change', (e) => {
     speed = parseInt(e.target.value);
@@ -621,12 +611,10 @@ function initUI() {
   document.getElementById('btn-hour').onclick = () => { simulationStep(world, 60); renderAll(world); };
   document.getElementById('btn-day').onclick = () => { simulationStep(world, 1440); renderAll(world); };
   
-  // Bind run/pause/reset buttons
   document.getElementById('btn-run').onclick = () => {
     running = true;
     document.getElementById('btn-run').disabled = true;
     document.getElementById('btn-pause').disabled = false;
-    loop();
   };
   document.getElementById('btn-pause').onclick = () => {
     running = false;
