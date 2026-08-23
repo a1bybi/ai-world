@@ -160,7 +160,7 @@ class Library {
     const entry = {
       id: `lib_${this.entries.length}`,
       title,
-      category, // 'gathering', 'hunting', 'building', 'farming', 'survival'
+      category,
       value,
       discoveredBy,
       discovered: world.tick,
@@ -173,12 +173,11 @@ class Library {
   }
   
   learnFromLibrary(agent) {
-    // Agents learn from trending knowledge
     const entries = this.entries.filter(e => e.category && agent.skills[e.category] !== undefined);
     if (entries.length > 0) {
       const trending = entries.sort((a, b) => b.citations - a.citations).slice(0, 3);
       trending.forEach(e => {
-        agent.skills[e.category] = Math.min(100, agent.skills[e.category] + e.value * 0.3);
+        agent.skills[e.category] = Math.min(100, agent.skills[e.category] + e.value * 0.5);
         e.citations++;
       });
       return trending.map(e => e.title);
@@ -219,25 +218,25 @@ function createMap() {
 
 function createResourceNodes() {
   return [
-    { id: 'wood_1', type: 'wood', x: 2, y: 4, amount: 40 },
-    { id: 'wood_2', type: 'wood', x: 4, y: 8, amount: 35 },
-    { id: 'wood_3', type: 'wood', x: 1, y: 14, amount: 30 },
-    { id: 'wood_4', type: 'wood', x: 5, y: 2, amount: 25 },
-    { id: 'food_1', type: 'food', x: 16, y: 5, amount: 20 },
-    { id: 'food_2', type: 'food', x: 18, y: 12, amount: 18 },
-    { id: 'food_3', type: 'food', x: 15, y: 15, amount: 15 },
-    { id: 'food_4', type: 'food', x: 8, y: 3, amount: 12 },
-    { id: 'food_5', type: 'food', x: 22, y: 8, amount: 10 },
+    { id: 'wood_1', type: 'wood', x: 2, y: 4, amount: 60 },
+    { id: 'wood_2', type: 'wood', x: 4, y: 8, amount: 50 },
+    { id: 'wood_3', type: 'wood', x: 1, y: 14, amount: 45 },
+    { id: 'wood_4', type: 'wood', x: 5, y: 2, amount: 40 },
+    { id: 'food_1', type: 'food', x: 16, y: 5, amount: 50 },
+    { id: 'food_2', type: 'food', x: 18, y: 12, amount: 45 },
+    { id: 'food_3', type: 'food', x: 15, y: 15, amount: 40 },
+    { id: 'food_4', type: 'food', x: 8, y: 3, amount: 35 },
+    { id: 'food_5', type: 'food', x: 22, y: 8, amount: 30 },
   ];
 }
 
 function createBuildings() {
   return [
-    { id: 'house_1', type: 'house', x: 10, y: 8, ownerId: null, capacity: 2 },
-    { id: 'house_2', type: 'house', x: 12, y: 7, ownerId: null, capacity: 2 },
-    { id: 'house_3', type: 'house', x: 11, y: 10, ownerId: null, capacity: 2 },
-    { id: 'house_4', type: 'house', x: 14, y: 9, ownerId: null, capacity: 2 },
-    { id: 'house_5', type: 'house', x: 13, y: 11, ownerId: null, capacity: 2 },
+    { id: 'house_1', type: 'house', x: 10, y: 8, ownerId: null, capacity: 2, residents: 0 },
+    { id: 'house_2', type: 'house', x: 12, y: 7, ownerId: null, capacity: 2, residents: 0 },
+    { id: 'house_3', type: 'house', x: 11, y: 10, ownerId: null, capacity: 2, residents: 0 },
+    { id: 'house_4', type: 'house', x: 14, y: 9, ownerId: null, capacity: 2, residents: 0 },
+    { id: 'house_5', type: 'house', x: 13, y: 11, ownerId: null, capacity: 2, residents: 0 },
   ];
 }
 
@@ -245,7 +244,7 @@ function createWorld() {
   return {
     version: 1, day: 1, hour: 6, minute: 0, weather: 'clear',
     map: createMap(), resources: createResourceNodes(), buildings: createBuildings(),
-    global: { food: 25, wood: 15, money: 50 }, agents: [], events: [], tick: 0, births: 0,
+    global: { food: 50, wood: 30, money: 100 }, agents: [], events: [], tick: 0, births: 0,
     library: new Library()
   };
 }
@@ -302,21 +301,21 @@ function totalResourceLeft(w, type) {
   return w.resources.filter(r => r.type === type).reduce((s, r) => s + r.amount, 0);
 }
 
-const NAMES = ['Mira', 'Arin', 'Liora', 'Kael', 'Soren', 'Nova', 'Zen', 'Iris', 'Rowan', 'Sage', 'River', 'Sky', 'Stone', 'Echo', 'Ember'];
+const NAMES = ['Mira', 'Arin', 'Liora', 'Kael', 'Soren', 'Nova', 'Zen', 'Iris', 'Rowan', 'Sage', 'River', 'Sky', 'Stone', 'Echo', 'Ember', 'Ash', 'Fern', 'Dawn', 'Grove', 'Vale'];
 const PERSONALITY_TRAITS = ['curious', 'cautious', 'generous', 'ambitious', 'solitary', 'sociable', 'practical', 'dreamy', 'stubborn', 'empathetic'];
 
 function createAgent(id, name, x, y, parentIds = []) {
   const traits = [...PERSONALITY_TRAITS].sort(() => Math.random() - 0.5).slice(0, 2 + Math.floor(Math.random() * 2));
   return {
     id, name, x, y, age: 0, parentIds,
-    energy: 70 + Math.floor(Math.random() * 20),
+    energy: 80 + Math.floor(Math.random() * 20),
     mood: 50 + Math.floor(Math.random() * 30),
     traits, shortTerm: [], longTerm: [], relationships: {},
-    inventory: { food: Math.floor(Math.random() * 3), wood: Math.floor(Math.random() * 2) },
-    money: 5 + Math.floor(Math.random() * 10),
+    inventory: { food: 8 + Math.floor(Math.random() * 4), wood: 3 + Math.floor(Math.random() * 2) },
+    money: 10 + Math.floor(Math.random() * 15),
     intention: 'explore', currentAction: null, homeId: null, history: [],
-    skills: { gathering: 0, hunting: 0, building: 0, farming: 0 },
-    foodCached: 0, reproductiveUrge: 0, partner: null, knowledgeAcquired: []
+    skills: { gathering: 15 + Math.random() * 20, hunting: 10 + Math.random() * 15, building: 5 + Math.random() * 10, farming: 5 + Math.random() * 10 },
+    foodCached: 0, reproductiveUrge: 20 + Math.random() * 10, partner: null, knowledgeAcquired: [], lastReproduction: -500
   };
 }
 
@@ -345,6 +344,10 @@ function improveSkill(agent, skill, amount = 0.1) {
   if (agent.skills[skill] !== undefined) agent.skills[skill] = Math.min(100, agent.skills[skill] + amount);
 }
 
+function getGatherBonus(agent) {
+  return 0.8 + (agent.skills.gathering / 100) * 1.5;
+}
+
 function observe(agent, world) {
   const nearby = world.agents.filter(a => a.id !== agent.id && dist(agent, a) <= 3);
   const tile = getTile(world, agent.x, agent.y);
@@ -359,7 +362,7 @@ function observe(agent, world) {
 }
 
 function generateConversation(agent, other, world) {
-  const topics = ['weather', 'resources', 'relationships', 'survival', 'learning'];
+  const topics = ['weather', 'resources', 'relationships', 'survival', 'learning', 'future'];
   const topic = topics[Math.floor(Math.random() * topics.length)];
   const relScore = getRelScore(agent, other.id);
   
@@ -368,32 +371,39 @@ function generateConversation(agent, other, world) {
     response = `${agent.name}: "${world.weather === 'clear' ? 'Beautiful day!' : world.weather === 'rain' ? 'Good weather for gathering.' : 'Could be clearer...'}"\n`;
     response += `${other.name}: "${world.weather === 'rain' ? 'Keeps bugs away!' : 'Wish it would rain...'}`;
   } else if (topic === 'resources') {
-    response = `${agent.name}: "Found good ${agent.inventory.food > 2 ? 'food' : 'wood'} today."\n`;
+    response = `${agent.name}: "Found good ${agent.inventory.food > 5 ? 'food' : 'wood'} today."\n`;
     response += `${other.name}: "We should explore together sometime."`;
   } else if (topic === 'learning') {
     const learned = world.library.learnFromLibrary(agent);
-    response = `${agent.name}: "Just read from library: ${learned[0] || 'better techniques'}"\n`;
-    response += `${other.name}: "The knowledge of our people grows!"`;
+    response = `${agent.name}: "Just learned: ${learned[0] || 'better techniques'}"\n`;
+    response += `${other.name}: "Our collective knowledge grows!"`;
   } else if (topic === 'survival') {
-    response = `${agent.name}: "Winter's coming. Better stock up."\n`;
-    response += `${other.name}: "Agreed. Share your knowledge?"`;
+    response = `${agent.name}: "We need more resources."\n`;
+    response += `${other.name}: "Let's work together on it."`;
   } else if (topic === 'relationships' && relScore > 20) {
     response = `${agent.name}: "You've been a good friend."\n`;
     response += `${other.name}: "Same here, ${agent.name}."`;
+  } else if (topic === 'future') {
+    response = `${agent.name}: "What do you think we should build next?"\n`;
+    response += `${other.name}: "A grain storage? We need stability."`;
   }
   
   return response;
 }
 
 function decide(agent, world) {
-  const hungry = agent.energy < 35, veryHungry = agent.energy < 18, tired = agent.energy < 25 && isNight(world);
+  const hungry = agent.energy < 45, veryHungry = agent.energy < 25, tired = agent.energy < 35 && isNight(world);
   const nearby = world.agents.filter(a => a.id !== agent.id && dist(agent, a) <= 2);
   
   agent.age += 1;
-  agent.reproductiveUrge = Math.min(100, agent.reproductiveUrge + (agent.age > 100 ? 0.5 : 0.1));
   
-  // Learn from library periodically
-  if (Math.random() < 0.02 && agent.age % 50 === 0) {
+  // Reproduction logic - more frequent and forgiving
+  if (agent.age > 50) {
+    agent.reproductiveUrge = Math.min(100, agent.reproductiveUrge + 0.8);
+  }
+  
+  // Learn from library more often
+  if (Math.random() < 0.08 && agent.age % 30 === 0) {
     const learned = world.library.learnFromLibrary(agent);
     if (learned.length > 0) {
       agent.knowledgeAcquired.push(...learned);
@@ -406,7 +416,7 @@ function decide(agent, world) {
   
   if (hungry || veryHungry) {
     const foodNode = findNearestResource(world, agent, 'food');
-    if (foodNode && dist(agent, foodNode) <= 8) {
+    if (foodNode && dist(agent, foodNode) <= 10) {
       if (dist(agent, foodNode) === 0) return { intention: 'gather_food', action: 'gather', target: { type: 'resource', id: foodNode.id }, reason: 'Gathering food.' };
       return { intention: 'gather_food', action: 'move', target: { x: foodNode.x, y: foodNode.y }, reason: 'Moving to food.' };
     }
@@ -415,7 +425,7 @@ function decide(agent, world) {
     }
   }
 
-  if ((isNight(world) && agent.energy < 60) || tired) {
+  if ((isNight(world) && agent.energy < 70) || tired) {
     const house = agent.homeId ? world.buildings.find(b => b.id === agent.homeId) : findNearestHouse(world, agent);
     if (house) {
       if (dist(agent, house) === 0) return { intention: 'rest', action: 'rest', target: null, reason: 'Resting.' };
@@ -423,25 +433,26 @@ function decide(agent, world) {
     }
   }
 
-  if (agent.reproductiveUrge > 60 && !agent.partner && nearby.length > 0) {
-    const potential = nearby.find(a => getRelScore(agent, a.id) > 30 && !a.partner && a.reproductiveUrge > 40);
+  // Reproduction - more likely now
+  if (agent.reproductiveUrge > 40 && !agent.partner && nearby.length > 0 && world.tick - agent.lastReproduction > 200) {
+    const potential = nearby.find(a => getRelScore(agent, a.id) > 10 && !a.partner && a.reproductiveUrge > 35 && world.tick - a.lastReproduction > 200);
     if (potential) return { intention: 'reproduce', action: 'mate', target: { type: 'agent', id: potential.id }, reason: 'Seeking partner.' };
   }
 
-  if (nearby.length && (agent.mood < 40 || hasTrait(agent, 'sociable') || Math.random() < 0.25)) {
+  if (nearby.length && (agent.mood < 35 || hasTrait(agent, 'sociable') || Math.random() < 0.3)) {
     const other = nearby[Math.floor(Math.random() * nearby.length)];
     return { intention: 'socialize', action: 'talk', target: { type: 'agent', id: other.id, topic: 'chat' }, reason: 'Talking.' };
   }
 
   if (!agent.homeId) {
-    const freeHouse = world.buildings.find(b => b.type === 'house' && !b.ownerId);
-    if (freeHouse && dist(agent, freeHouse) <= 6) {
+    const freeHouse = world.buildings.find(b => b.type === 'house' && b.residents < b.capacity);
+    if (freeHouse && dist(agent, freeHouse) <= 8) {
       if (dist(agent, freeHouse) === 0) return { intention: 'claim_home', action: 'claim_house', target: { type: 'building', id: freeHouse.id }, reason: 'Claiming home.' };
       return { intention: 'claim_home', action: 'move', target: { x: freeHouse.x, y: freeHouse.y }, reason: 'Moving to house.' };
     }
   }
 
-  if (!isNight(world) && agent.inventory.food > 3 && agent.energy > 50) {
+  if (!isNight(world) && agent.inventory.food > 5 && agent.energy > 60) {
     return { intention: 'cache_food', action: 'cache', target: null, reason: 'Storing food for later.' };
   }
 
@@ -450,16 +461,16 @@ function decide(agent, world) {
   return { intention: 'explore', action: 'move', target: { x: Math.max(0, Math.min(MAP_W - 1, agent.x + d.x)), y: Math.max(0, Math.min(MAP_H - 1, agent.y + d.y)) }, reason: 'Exploring.' };
 }
 
-const ACTION_COSTS = { move: 1, gather: 3, eat: 0, rest: -8, talk: 1, claim_house: 2, mate: 2, cache: 1 };
+const ACTION_COSTS = { move: 0.8, gather: 2, eat: 0, rest: -10, talk: 0.5, claim_house: 1, mate: 2, cache: 0.5 };
 
 function simulationStep(world, minutesPerStep = 20) {
   advanceTime(world, minutesPerStep);
   const night = isNight(world);
   for (const agent of world.agents) {
-    let drain = night ? 1.2 : 0.7;
-    if (world.weather === 'rain') drain += 0.3;
+    let drain = night ? 0.9 : 0.5;
+    if (world.weather === 'rain') drain += 0.2;
     agent.energy = Math.max(0, agent.energy - drain);
-    if (agent.mood > 55) agent.mood -= 0.3; else if (agent.mood < 45) agent.mood += 0.2;
+    if (agent.mood > 55) agent.mood -= 0.2; else if (agent.mood < 45) agent.mood += 0.15;
   }
 
   const proposals = world.agents.filter(a => a.energy > 0).map(agent => {
@@ -483,23 +494,23 @@ function executeAction(world, agent, decision) {
   } else if (action === 'gather') {
     const node = world.resources.find(r => r.id === target.id);
     if (node && node.amount > 0 && dist(agent, node) === 0 && agent.energy >= ACTION_COSTS.gather) {
-      const take = Math.min(2, node.amount);
+      const bonus = getGatherBonus(agent);
+      const take = Math.min(Math.floor(2 * bonus), node.amount);
       node.amount -= take;
       agent.inventory[node.type] = (agent.inventory[node.type] || 0) + take;
       agent.energy -= ACTION_COSTS.gather;
-      improveSkill(agent, 'gathering', 0.3);
+      improveSkill(agent, 'gathering', 0.5);
       
-      // Discover and document techniques in library
-      if (Math.random() < 0.15) {
+      if (Math.random() < 0.25) {
         const techniques = [
-          `${agent.name}'s efficient foraging method`,
+          `${agent.name}'s efficient ${node.type} method`,
           `Best ${node.type} gathering locations`,
-          `Sustainable harvesting techniques`,
-          `Quick${node.type} identification`,
-          `Peak harvest season for ${node.type}`
+          `Sustainable harvesting for ${node.type}`,
+          `${node.type} abundance patterns`,
+          `Peak ${node.type} season techniques`
         ];
         const discovery = techniques[Math.floor(Math.random() * techniques.length)];
-        world.library.addKnowledge(discovery, 'gathering', 2, agent.name, world);
+        world.library.addKnowledge(discovery, 'gathering', 3, agent.name, world);
         logEvent(world, `📖 ${agent.name} documented: "${discovery}"`, true, [agent.id]);
       }
       
@@ -508,17 +519,17 @@ function executeAction(world, agent, decision) {
   } else if (action === 'eat') {
     if (agent.inventory.food > 0) {
       agent.inventory.food -= 1;
-      agent.energy = Math.min(100, agent.energy + 28);
+      agent.energy = Math.min(100, agent.energy + 35);
       logEvent(world, `${agent.name} ate some food.`, false, [agent.id]);
     }
   } else if (action === 'eat_cached') {
     if (agent.foodCached > 0) {
       agent.foodCached -= 1;
-      agent.energy = Math.min(100, agent.energy + 20);
+      agent.energy = Math.min(100, agent.energy + 25);
       logEvent(world, `${agent.name} ate stored food.`, false, [agent.id]);
     }
   } else if (action === 'rest') {
-    agent.energy = Math.min(100, agent.energy + (isNight(world) ? 12 : 6));
+    agent.energy = Math.min(100, agent.energy + (isNight(world) ? 15 : 8));
   } else if (action === 'cache') {
     if (agent.inventory.food > 0) {
       agent.inventory.food -= 1;
@@ -531,14 +542,14 @@ function executeAction(world, agent, decision) {
       agent.energy -= ACTION_COSTS.talk;
       const conversation = generateConversation(agent, other, world);
       
-      if (target.topic === 'ask_food' && other.inventory.food > 0) {
+      if (target.topic === 'ask_food' && other.inventory.food > 1) {
         other.inventory.food -= 1; agent.inventory.food = (agent.inventory.food || 0) + 1;
-        adjustRelationship(agent, other.id, 5, 'Shared food', world.tick);
-        adjustRelationship(other, agent.id, 5, 'Shared food', world.tick);
+        adjustRelationship(agent, other.id, 8, 'Shared food', world.tick);
+        adjustRelationship(other, agent.id, 8, 'Shared food', world.tick);
         logEvent(world, `${agent.name} asked ${other.name} for food. ${other.name} shared some.`, true, [agent.id, other.id]);
       } else {
-        adjustRelationship(agent, other.id, 3, target.topic || 'chat', world.tick);
-        adjustRelationship(other, agent.id, 3, target.topic || 'chat', world.tick);
+        adjustRelationship(agent, other.id, 4, target.topic || 'chat', world.tick);
+        adjustRelationship(other, agent.id, 4, target.topic || 'chat', world.tick);
         logEvent(world, `💬 ${conversation}`, false, [agent.id, other.id]);
       }
     }
@@ -550,28 +561,31 @@ function executeAction(world, agent, decision) {
       other.partner = agent.id;
       agent.reproductiveUrge = 0;
       other.reproductiveUrge = 0;
+      agent.lastReproduction = world.tick;
+      other.lastReproduction = world.tick;
       
       const childName = NAMES.find(n => !world.agents.some(a => a.name === n));
-      if (childName && world.agents.length < 40) {
-        const child = createAgent(`agent_${Math.max(...world.agents.map(a => parseInt(a.id.split('_')[1]))) + 1}`, childName, agent.x, agent.y, [agent.id, other.id]);
+      if (childName && world.agents.length < 50) {
+        const child = createAgent(`agent_${Math.max(...world.agents.map(a => parseInt(a.id.split('_')[1]) || 0))) + 1}`, childName, agent.x, agent.y, [agent.id, other.id]);
         
-        // Children inherit parent skills
+        // Children inherit parent skills (with boost from parent knowledge)
         Object.keys(child.skills).forEach(skill => {
-          child.skills[skill] = (agent.skills[skill] + other.skills[skill]) / 2 + 5;
+          child.skills[skill] = (agent.skills[skill] + other.skills[skill]) / 2 + 10;
         });
         
         world.agents.push(child);
         world.births++;
-        adjustRelationship(agent, other.id, 20, 'Mated together', world.tick);
-        adjustRelationship(other, agent.id, 20, 'Mated together', world.tick);
+        adjustRelationship(agent, other.id, 25, 'Mated together', world.tick);
+        adjustRelationship(other, agent.id, 25, 'Mated together', world.tick);
         logEvent(world, `🎉 ${agent.name} and ${other.name} had a child: ${childName}!`, true, [agent.id, other.id, child.id]);
       }
     }
   } else if (action === 'claim_house') {
     const building = world.buildings.find(b => b.id === target.id);
-    if (building && !building.ownerId && dist(agent, building) === 0) {
-      building.ownerId = agent.id; agent.homeId = building.id;
-      logEvent(world, `${agent.name} claimed a house as home.`, true, [agent.id]);
+    if (building && dist(agent, building) === 0) {
+      building.residents = (building.residents || 0) + 1;
+      agent.homeId = building.id;
+      logEvent(world, `${agent.name} moved into a house.`, true, [agent.id]);
     }
   }
 }
