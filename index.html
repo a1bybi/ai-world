@@ -2,381 +2,1032 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI World — Unified Map Engine</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>AI World — Autonomous Artificial Society & Evolution</title>
   <style>
-    :root {
-      --bg: #0b0e14; --panel: #151b26; --border: #232d3f; 
-      --text: #c9d1d9; --muted: #7a8a9e; --accent: #00e676; 
-      --warning: #ffb74d; --info: #29b6f6;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
-    body { background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
-    
-    header { background: var(--panel); border-bottom: 1px solid var(--border); padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; }
-    .title { font-weight: bold; color: var(--accent); font-size: 1.1rem; letter-spacing: 1px; }
-    .stats { display: flex; gap: 20px; font-size: 0.85rem; }
-    .stat-val { font-weight: bold; color: #fff; }
+:root {
+  --bg: #0b0f14;
+  --panel: #161d28;
+  --panel-light: #1e2838;
+  --border: #2a364a;
+  --text: #e1e7f0;
+  --muted: #8393a8;
+  --accent: #4fc3f7;
+  --accent-dim: #2183b0;
+  --success: #66bb6a;
+  --warning: #ffa726;
+  --danger: #ef5350;
+  --house: #a1887f;
+  --forest: #2e7d32;
+  --river: #0288d1;
+  --agent: #ffee58;
+  --resource: #ff7043;
+  --workshop: #ab47bc;
+  --farm: #26a69a;
+  --tower: #78909c;
+  --granary: #d4e157;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
+#app { display: flex; flex-direction: column; height: 100%; max-width: 1550px; margin: 0 auto; position: relative; }
 
-    .main-container { display: grid; grid-template-columns: 1fr 320px; flex: 1; min-height: 0; }
-    
-    .map-container { position: relative; background: #000; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 10px; }
-    canvas { background: #132413; border-radius: 6px; box-shadow: 0 0 20px rgba(0,0,0,0.8); image-rendering: pixelated; }
+/* Header */
+.header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 14px; background: var(--panel); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.header-left { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.header h1 { font-size: 1.2rem; font-weight: 700; color: var(--accent); letter-spacing: 0.5px; }
+.time-display { font-size: 0.9rem; color: var(--accent); font-variant-numeric: tabular-nums; background: rgba(79, 195, 247, 0.1); padding: 3px 8px; border-radius: 4px; border: 1px solid rgba(79, 195, 247, 0.2); }
+.era-display { font-size: 0.85rem; color: var(--warning); font-weight: 600; background: rgba(255, 167, 38, 0.1); padding: 3px 8px; border-radius: 4px; border: 1px solid rgba(255, 167, 38, 0.2); }
+.header-controls { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 
-    .sidebar { background: var(--panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; }
-    .section-title { padding: 10px; background: rgba(0,0,0,0.2); font-size: 0.75rem; font-weight: bold; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border); }
-    
-    .scroll-area { flex: 1; overflow-y: auto; padding: 10px; font-size: 0.85rem; }
-    .log-item { margin-bottom: 8px; line-height: 1.3; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 6px; }
-    .log-time { color: var(--muted); font-size: 0.75rem; }
-    .log-name { color: var(--info); font-weight: bold; }
+/* Buttons & Inputs */
+.btn { background: var(--panel-light); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; font-size: 0.82rem; cursor: pointer; transition: all 0.15s ease; display: inline-flex; align-items: center; gap: 4px; }
+.btn:hover:not(:disabled) { background: #28364c; border-color: var(--accent-dim); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn.primary { background: var(--accent-dim); color: #fff; border-color: var(--accent); }
+.btn.danger { background: #5c2a2a; border-color: #8b3a3a; }
+.btn.small { padding: 3px 7px; font-size: 0.75rem; }
+.btn.god { background: #3d285c; border-color: #7b4eb8; color: #d1b3ff; }
+.btn.god:hover:not(:disabled) { background: #52357d; }
+.speed-select { background: var(--panel-light); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; font-size: 0.82rem; }
 
-    .progress-bar-bg { background: var(--border); height: 8px; border-radius: 4px; overflow: hidden; margin-top: 4px; }
-    .progress-bar-fill { background: var(--accent); height: 100%; width: 0%; transition: width 0.2s; }
-    
-    .controls { display: flex; gap: 8px; }
-    button, select { background: var(--border); color: #fff; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
-    button:hover { background: #2f3c53; }
+/* Overseer Controls Bar */
+.god-bar { display: flex; items-center: center; gap: 8px; padding: 6px 14px; background: #121822; border-bottom: 1px solid var(--border); font-size: 0.8rem; overflow-x: auto; flex-shrink: 0; }
+.god-title { color: #b388ff; font-weight: 600; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.5px; }
+
+/* Main Grid Layout */
+.main { display: grid; grid-template-columns: 1.3fr 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 1px; background: var(--border); flex: 1; min-height: 0; overflow: hidden; }
+.panel { background: var(--panel); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.world-panel { grid-row: 1 / 3; }
+.panel-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--panel-light); }
+.panel-header h2 { font-size: 0.9rem; font-weight: 600; letter-spacing: 0.3px; }
+.world-stats { display: flex; gap: 12px; font-size: 0.8rem; color: var(--muted); font-weight: 500; }
+.world-stats span { color: var(--text); }
+
+/* Canvas Container */
+.map-container { flex: 1; display: flex; align-items: center; justify-content: center; padding: 8px; min-height: 0; overflow: hidden; position: relative; }
+#world-canvas { max-width: 100%; max-height: 100%; border-radius: 6px; background: #080c10; image-rendering: pixelated; cursor: crosshair; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+.canvas-hint { position: absolute; bottom: 12px; right: 12px; background: rgba(0,0,0,0.6); padding: 4px 8px; border-radius: 4px; font-size: 0.7rem; color: var(--muted); pointer-events: none; }
+
+/* Map Legend */
+.legend { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 12px; font-size: 0.72rem; color: var(--muted); border-top: 1px solid var(--border); flex-shrink: 0; background: var(--panel); }
+.legend-item { display: flex; align-items: center; gap: 4px; }
+.dot { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+.dot.house { background: var(--house); }
+.dot.workshop { background: var(--workshop); }
+.dot.farm { background: var(--farm); }
+.dot.tower { background: var(--tower); }
+.dot.granary { background: var(--granary); }
+.dot.forest { background: var(--forest); }
+.dot.river { background: var(--river); }
+.dot.agent { background: var(--agent); border-radius: 50%; }
+.dot.resource { background: var(--resource); }
+
+/* Event Log */
+.log-filter-bar { display: flex; gap: 4px; padding: 4px 8px; background: var(--panel); border-bottom: 1px solid var(--border); }
+.log-filter-btn { background: transparent; border: none; color: var(--muted); padding: 2px 8px; font-size: 0.72rem; cursor: pointer; border-radius: 3px; }
+.log-filter-btn.active { background: var(--panel-light); color: var(--accent); font-weight: 600; }
+.event-log { flex: 1; overflow-y: auto; padding: 8px 12px; font-size: 0.8rem; line-height: 1.45; }
+.event-entry { padding: 5px 0; border-bottom: 1px solid rgba(42, 54, 74, 0.4); }
+.event-time { color: var(--muted); margin-right: 6px; font-size: 0.72rem; }
+.event-entry.important .event-text { color: var(--accent); font-weight: 600; }
+.event-entry.chat { color: #81d4fa; font-style: italic; }
+
+/* Lists & Panels */
+.agent-list, .agent-detail { flex: 1; overflow-y: auto; padding: 8px; }
+.agent-card { background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; cursor: pointer; transition: transform 0.1s, border-color 0.15s; }
+.agent-card:hover { border-color: var(--accent-dim); transform: translateY(-1px); }
+.agent-card-name { font-weight: 600; font-size: 0.9rem; display: flex; justify-content: space-between; }
+.agent-card-meta { font-size: 0.73rem; color: var(--muted); margin-top: 2px; }
+.agent-card-status { font-size: 0.78rem; margin-top: 4px; color: var(--accent); font-weight: 500; }
+.agent-detail.hidden { display: none; }
+.agent-detail h3 { font-size: 1.05rem; margin: 8px 0 2px; color: var(--accent); }
+.section { margin-top: 12px; }
+.section-title { font-size: 0.72rem; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; font-weight: 600; letter-spacing: 0.5px; }
+.bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin-top: 2px; }
+.bar-fill { height: 100%; border-radius: 3px; }
+.bar-fill.energy { background: var(--success); }
+.bar-fill.mood { background: var(--warning); }
+.library-entry, .tech-entry { background: rgba(79, 195, 247, 0.05); border-left: 3px solid var(--accent); padding: 6px 8px; margin-bottom: 6px; border-radius: 3px; font-size: 0.75rem; }
+.tech-entry { background: rgba(171, 71, 188, 0.08); border-left-color: var(--workshop); }
+.entry-title { color: var(--accent); font-weight: 600; }
+.tech-entry .entry-title { color: #ce93d8; }
+.entry-meta { color: var(--muted); font-size: 0.7rem; margin-top: 2px; }
+
+/* Modal Summary Styling */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 100; opacity: 0; pointer-events: none; transition: opacity 0.2s ease; backdrop-filter: blur(3px); }
+.modal-overlay.active { opacity: 1; pointer-events: auto; }
+.modal-box { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; width: 620px; max-width: 92%; max-height: 85%; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 12px 40px rgba(0,0,0,0.6); }
+.modal-header { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: var(--panel-light); }
+.modal-header h2 { font-size: 1.1rem; color: var(--accent); }
+.modal-body { padding: 18px; overflow-y: auto; font-size: 0.85rem; line-height: 1.6; }
+.modal-footer { padding: 12px 18px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; background: var(--panel-light); }
   </style>
 </head>
 <body>
-
-  <header>
-    <div class="title">AI WORLD: UNIFIED MAP SIMULATOR</div>
-    <div class="stats">
-      <div>Day: <span id="ui-day" class="stat-val">1</span></div>
-      <div>Pop: <span id="ui-pop" class="stat-val">0</span></div>
-      <div>Food: <span id="ui-food" class="stat-val">0</span></div>
-      <div>Wood: <span id="ui-wood" class="stat-val">0</span></div>
-      <div>Era: <span id="ui-era" class="stat-val" style="color:var(--warning)">Primitive</span></div>
-    </div>
-    <div class="controls">
-      <select id="speed-select">
-        <option value="1">1x Speed</option>
-        <option value="2" selected>2x Speed (Paced)</option>
-        <option value="5">5x Speed</option>
-      </select>
-      <button id="pause-btn">Pause</button>
-    </div>
-  </header>
-
-  <div class="main-container">
-    <div class="map-container">
-      <canvas id="world" width="900" height="675"></canvas>
-    </div>
-
-    <div class="sidebar">
-      <div class="section-title">Era & Research Pacing</div>
-      <div style="padding: 10px; border-bottom: 1px solid var(--border)">
-        <div style="display:flex; justify-content:space-between; font-size:0.8rem">
-          <span>Target Discovery</span>
-          <span id="ui-insight-num">0 / 250</span>
-        </div>
-        <div class="progress-bar-bg"><div id="ui-insight-bar" class="progress-bar-fill"></div></div>
+  <div id="app">
+    <header class="header">
+      <div class="header-left">
+        <h1>AI World</h1>
+        <span id="time-display" class="time-display">Day 1 — 06:00</span>
+        <span id="era-display" class="era-display">Era: Primitive Age</span>
       </div>
+      <div class="header-controls">
+        <button id="btn-run" class="btn primary">▶ Run</button>
+        <button id="btn-pause" class="btn" disabled>■ Pause</button>
+        <button id="btn-hour" class="btn">+1 Hour</button>
+        <button id="btn-day" class="btn">+1 Day</button>
+        <button id="btn-reset" class="btn danger">Reset</button>
+        <select id="speed-select" class="speed-select">
+          <option value="1">1×</option>
+          <option value="2">2×</option>
+          <option value="5" selected>5×</option>
+          <option value="10">10×</option>
+          <option value="30">30×</option>
+        </select>
+      </div>
+    </header>
 
-      <div class="section-title">Spatial Log & Dialogues</div>
-      <div id="log-list" class="scroll-area"></div>
+    <!-- Overseer Controls Bar -->
+    <div class="god-bar">
+      <span class="god-title">⚡ Overseer Powers:</span>
+      <button id="god-food" class="btn god small">+ Spawn Food</button>
+      <button id="god-wood" class="btn god small">+ Spawn Wood</button>
+      <button id="god-agent" class="btn god small">+ Summon Agent</button>
+      <button id="god-invent" class="btn god small">⚡ Trigger Epiphany</button>
+      <button id="god-weather" class="btn god small">🌧️ Toggle Weather</button>
+    </div>
+
+    <main class="main">
+      <section class="panel world-panel">
+        <div class="panel-header">
+          <h2>World Map & Settlement</h2>
+          <div class="world-stats">
+            <div>Pop: <span id="pop-stat">6</span></div>
+            <div>Food: <span id="food-stat">0</span></div>
+            <div>Wood: <span id="wood-stat">0</span></div>
+          </div>
+        </div>
+        <div class="map-container">
+          <canvas id="world-canvas" width="700" height="460"></canvas>
+          <div class="canvas-hint">Click tile/agent to inspect</div>
+        </div>
+        <div class="legend">
+          <span class="legend-item"><span class="dot house"></span> House</span>
+          <span class="legend-item"><span class="dot workshop"></span> Workshop</span>
+          <span class="legend-item"><span class="dot farm"></span> Farm</span>
+          <span class="legend-item"><span class="dot tower"></span> Tower</span>
+          <span class="legend-item"><span class="dot granary"></span> Granary</span>
+          <span class="legend-item"><span class="dot forest"></span> Forest</span>
+          <span class="legend-item"><span class="dot river"></span> River</span>
+          <span class="legend-item"><span class="dot agent"></span> Agent</span>
+          <span class="legend-item"><span class="dot resource"></span> Resource</span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Live Log & Dialogues</h2>
+          <button id="btn-clear-log" class="btn small">Clear</button>
+        </div>
+        <div class="log-filter-bar">
+          <button class="log-filter-btn active" data-filter="all">All Events</button>
+          <button class="log-filter-btn" data-filter="chat">Dialogues</button>
+          <button class="log-filter-btn" data-filter="important">Milestones</button>
+        </div>
+        <div id="event-log" class="event-log"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header"><h2>💡 Tech Archives & Library</h2></div>
+        <div id="library-panel" class="agent-list"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header"><h2>Inhabitant Inspection</h2></div>
+        <div id="agent-list" class="agent-list"></div>
+        <div id="agent-detail" class="agent-detail hidden">
+          <button id="btn-close-detail" class="btn small">← Back to List</button>
+          <div id="agent-info"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Summary Modal -->
+  <div id="summary-modal" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2>📜 Comprehensive Society Chronicle</h2>
+        <button id="btn-close-modal" class="btn small">Close</button>
+      </div>
+      <div id="summary-content" class="modal-body"></div>
+      <div class="modal-footer">
+        <button id="modal-resume-btn" class="btn primary">Resume Simulation</button>
+      </div>
     </div>
   </div>
 
   <script>
-    const MAP_W = 60, MAP_H = 45;
-    const TILE = { GRASS: 0, FOREST: 1, WATER: 2, PATH: 3, ROAD: 4 };
+const TILE = { GRASS: 0, FOREST: 1, RIVER: 2, HOUSE: 3, PATH: 4, WORKSHOP: 5, FARM: 6, TOWER: 7, GRANARY: 8 };
+const TILE_COLORS = {
+  [TILE.GRASS]: '#162b16', [TILE.FOREST]: '#0b3d18', [TILE.RIVER]: '#08334f',
+  [TILE.HOUSE]: '#4a3728', [TILE.PATH]: '#2a2a20', [TILE.WORKSHOP]: '#5b2c6f', 
+  [TILE.FARM]: '#117a65', [TILE.TOWER]: '#546e7a', [TILE.GRANARY]: '#9e9d24'
+};
+const MAP_W = 42, MAP_H = 28;
 
-    const ERAS = [
-      { name: "Primitive", color: "#8d6e63", reqInsight: 250 },
-      { name: "Bronze Age", color: "#ffb300", reqInsight: 750 },
-      { name: "Iron Age", color: "#9e9e9e", reqInsight: 2000 },
-      { name: "Medieval", color: "#5c6bc0", reqInsight: 5000 },
-      { name: "Industrial", color: "#bf360c", reqInsight: 12000 },
-      { name: "Modern", color: "#29b6f6", reqInsight: 30000 },
-      { name: "Information", color: "#ab47bc", reqInsight: 75000 },
-      { name: "Space Age", color: "#00e676", reqInsight: 180000 }
-    ];
+class SocietyEvolution {
+  constructor() {
+    this.entries = [];
+    this.inventions = [];
+    this.unlockedStructures = ['house', 'workshop', 'farm'];
+    this.era = 'Primitive Age';
+    this.globalMultipliers = { gathering: 1.0, building: 1.0, energyEfficiency: 1.0 };
+  }
+  
+  addKnowledge(title, category, value, discoveredBy, world) {
+    const entry = { id: `lib_${this.entries.length}`, title, category, value, discoveredBy, discoveredTick: world.tick, citations: 1 };
+    this.entries.push(entry);
+    if (this.entries.length > 200) this.entries.shift();
+    return entry;
+  }
 
-    let state = {
-      tick: 0, day: 1, running: true, speed: 2,
-      map: [], paths: [],
-      agents: [], buildings: [], resources: [],
-      global: { food: 40, wood: 40, insight: 0 },
-      currentEra: 0,
-      speechBubbles: [] // { x, y, text, time }
+  tryProceduralInvent(agent, world, force = false) {
+    const totalSkill = agent ? (agent.skills.gathering + agent.skills.building) : 50;
+    if (!force && (totalSkill < 20 || Math.random() > 0.25)) return null;
+
+    const disciplines = ['Metallurgy', 'Fluid Dynamics', 'Structural Geometry', 'Agronomy', 'Kinetic Mechanics', 'Masonry', 'Aquaponics', 'Automated Weaving'];
+    const focus = disciplines[Math.floor(Math.random() * disciplines.length)];
+    const authorName = agent ? agent.name : 'Overseer';
+    const name = `${focus} System v${this.inventions.length + 1}`;
+    
+    if (this.inventions.some(inv => inv.name === name)) return null;
+
+    this.globalMultipliers.gathering += 0.12;
+    this.globalMultipliers.building += 0.12;
+    this.globalMultipliers.energyEfficiency += 0.08;
+
+    if (this.inventions.length >= 2 && !this.unlockedStructures.includes('tower')) {
+      this.unlockedStructures.push('tower');
+    }
+    if (this.inventions.length >= 4 && !this.unlockedStructures.includes('granary')) {
+      this.unlockedStructures.push('granary');
+    }
+
+    this.inventions.push({ name, discoveredBy: authorName, day: world.day, tick: world.tick });
+    this.updateEra(world);
+    return name;
+  }
+
+  updateEra(world) {
+    const invCount = this.inventions.length;
+    const libCount = this.entries.length;
+    const alivePop = world.agents.filter(a => a.alive).length;
+
+    if ((invCount >= 6 && libCount >= 12 && alivePop >= 10) || world.day >= 20) {
+      this.era = 'Industrial Age';
+    } else if ((invCount >= 3 && libCount >= 6 && alivePop >= 7) || world.day >= 10) {
+      this.era = 'Expansion Era';
+    } else if ((invCount >= 1 && libCount >= 3) || world.day >= 4) {
+      this.era = 'Discovery Age';
+    } else {
+      this.era = 'Primitive Age';
+    }
+  }
+
+  learnFromLibrary(agent) {
+    const entries = this.entries;
+    if (entries.length > 0) {
+      const target = entries[Math.floor(Math.random() * entries.length)];
+      target.citations++;
+      if (agent.skills[target.category] !== undefined) {
+        agent.skills[target.category] = Math.min(100, agent.skills[target.category] + target.value * 2.0);
+      }
+      if (!agent.knowledgeAcquired.includes(target.title)) {
+        agent.knowledgeAcquired.push(target.title);
+      }
+      return target.title;
+    }
+    return null;
+  }
+}
+
+function createMap() {
+  const map = Array.from({ length: MAP_H }, () => Array.from({ length: MAP_W }, () => TILE.GRASS));
+  for (let y = 0; y < MAP_H; y++) {
+    map[y][27] = TILE.RIVER; map[y][28] = TILE.RIVER;
+    if (y % 4 === 0) { map[y][26] = TILE.RIVER; map[y][29] = TILE.RIVER; }
+  }
+  for (let y = 0; y < MAP_H; y++) {
+    for (let x = 0; x < 9; x++) { if (Math.random() > 0.25) map[y][x] = TILE.FOREST; }
+    for (let x = MAP_W - 9; x < MAP_W; x++) { if (Math.random() > 0.25) map[y][x] = TILE.FOREST; }
+  }
+  [[14, 12], [16, 11], [15, 14], [18, 13]].forEach(([x, y]) => { map[y][x] = TILE.HOUSE; });
+  return map;
+}
+
+function createResourceNodes() {
+  return [
+    { id: 'wood_1', type: 'wood', x: 4, y: 5, amount: 250, maxAmount: 250 },
+    { id: 'wood_2', type: 'wood', x: 6, y: 12, amount: 200, maxAmount: 200 },
+    { id: 'wood_3', type: 'wood', x: MAP_W - 4, y: 6, amount: 250, maxAmount: 250 },
+    { id: 'food_1', type: 'food', x: 21, y: 6, amount: 250, maxAmount: 250 },
+    { id: 'food_2', type: 'food', x: 23, y: 18, amount: 200, maxAmount: 200 },
+    { id: 'food_3', type: 'food', x: MAP_W - 6, y: 20, amount: 250, maxAmount: 250 },
+  ];
+}
+
+function createBuildings() {
+  return [
+    { id: 'house_1', type: 'house', x: 14, y: 12, capacity: 6, residents: 0 },
+    { id: 'house_2', type: 'house', x: 16, y: 11, capacity: 6, residents: 0 },
+    { id: 'house_3', type: 'house', x: 15, y: 14, capacity: 6, residents: 0 },
+    { id: 'house_4', type: 'house', x: 18, y: 13, capacity: 6, residents: 0 },
+  ];
+}
+
+function createWorld() {
+  const evolution = new SocietyEvolution();
+  const w = {
+    version: 10, day: 1, hour: 6, minute: 0, weather: 'clear',
+    map: createMap(), resources: createResourceNodes(), buildings: createBuildings(),
+    global: { food: 220, wood: 180 }, agents: [], events: [], tick: 0, births: 0, deaths: 0,
+    evolution
+  };
+  evolution.addKnowledge('Wilderness Foraging & Botany', 'gathering', 5, 'Founders', w);
+  evolution.addKnowledge('Primitive Carpentry', 'building', 5, 'Founders', w);
+  return w;
+}
+
+function formatTime(w) {
+  return `Day ${w.day} — ${String(w.hour).padStart(2, '0')}:${String(w.minute).padStart(2, '0')}`;
+}
+
+function advanceTime(w, mins) {
+  w.minute += mins;
+  while (w.minute >= 60) { w.minute -= 60; w.hour += 1; }
+  while (w.hour >= 24) {
+    w.hour -= 24; w.day += 1;
+    const roll = Math.random();
+    w.weather = roll < 0.50 ? 'clear' : roll < 0.80 ? 'cloudy' : 'rain';
+  }
+  w.tick += mins;
+
+  // Resource regeneration & Agricultural yields
+  if (w.tick % 60 === 0) {
+    const regenBonus = Math.floor(w.evolution.globalMultipliers.gathering * 25);
+    w.resources.forEach(r => { if (r.amount < r.maxAmount) r.amount = Math.min(r.maxAmount, r.amount + regenBonus); });
+
+    // Farms produce food automatically during daytime
+    const activeFarms = w.buildings.filter(b => b.type === 'farm').length;
+    if (activeFarms > 0 && !isNight(w)) {
+      const yieldFood = activeFarms * 15;
+      w.global.food += yieldFood;
+      if (w.tick % 180 === 0) logEvent(w, `🌾 Settlement farms yielded +${yieldFood} Food stock.`, false, false);
+    }
+  }
+}
+
+function isNight(w) { return w.hour < 6 || w.hour >= 20; }
+function dist(a, b) { return Math.abs(a.x - b.x) + Math.abs(a.y - b.y); }
+function getTile(w, x, y) { return (y < 0 || y >= MAP_H || x < 0 || x >= MAP_W) ? null : w.map[y][x]; }
+
+function findNearestResource(w, agent, type) {
+  let best = null, bestD = Infinity;
+  for (const r of w.resources) {
+    if (r.type === type && r.amount > 0) {
+      const d = dist(agent, r);
+      if (d < bestD) { bestD = d; best = r; }
+    }
+  }
+  return best;
+}
+
+function findNearestBuilding(w, agent, type) {
+  let best = null, bestD = Infinity;
+  for (const b of w.buildings) {
+    if (b.type === type) {
+      const d = dist(agent, b);
+      if (d < bestD) { bestD = d; best = b; }
+    }
+  }
+  return best;
+}
+
+let activeLogFilter = 'all';
+
+function logEvent(w, text, important = false, isChat = false, agentIds = []) {
+  const entry = { id: `e_${w.tick}_${w.events.length}`, day: w.day, hour: w.hour, minute: w.minute, text, important, isChat, agentIds, tick: w.tick };
+  w.events.push(entry);
+  if (w.events.length > 1200) w.events = w.events.slice(-900);
+  renderEventLog(w);
+  return entry;
+}
+
+function totalResourceLeft(w, type) {
+  return w.resources.filter(r => r.type === type).reduce((s, r) => s + r.amount, 0);
+}
+
+const NAMES = ['Mira', 'Arin', 'Liora', 'Kael', 'Soren', 'Nova', 'Zen', 'Iris', 'Rowan', 'Sage', 'River', 'Sky', 'Stone', 'Echo', 'Ember', 'Ash', 'Fern', 'Dawn', 'Grove', 'Vale', 'Orion', 'Lyra', 'Atlas', 'Vesper', 'Flint', 'Thorne', 'Bram', 'Wren', 'Talon', 'Cyrus'];
+const PERSONALITY_TRAITS = ['curious', 'cautious', 'generous', 'ambitious', 'solitary', 'sociable', 'practical', 'dreamy', 'stubborn', 'empathetic'];
+
+function createAgent(id, name, x, y, parentIds = []) {
+  const traits = [...PERSONALITY_TRAITS].sort(() => Math.random() - 0.5).slice(0, 2 + Math.floor(Math.random() * 2));
+  return {
+    id, name, x, y, age: 0, parentIds, alive: true,
+    energy: 95 + Math.floor(Math.random() * 5),
+    mood: 75 + Math.floor(Math.random() * 20),
+    traits, shortTerm: [], relationships: {},
+    inventory: { food: 35, wood: 20 },
+    intention: 'explore', homeId: null,
+    skills: { gathering: 30 + Math.random() * 20, building: 25 + Math.random() * 20 },
+    reproductiveUrge: 20 + Math.random() * 20, partner: null, knowledgeAcquired: [], lastReproduction: -150
+  };
+}
+
+function createInitialAgents() {
+  const starts = [[14, 12], [16, 11], [15, 14], [18, 13], [17, 15], [19, 12]];
+  return NAMES.slice(0, 6).map((name, i) => createAgent(`agent_${i + 1}`, name, starts[i][0], starts[i][1]));
+}
+
+function addShortMemory(agent, text) {
+  agent.shortTerm.unshift(text);
+  if (agent.shortTerm.length > 8) agent.shortTerm.pop();
+}
+
+function adjustRelationship(agent, otherId, delta, note, tick) {
+  if (!agent.relationships[otherId]) agent.relationships[otherId] = { score: 0, notes: [] };
+  const rel = agent.relationships[otherId];
+  rel.score = Math.max(-100, Math.min(100, rel.score + delta));
+  if (note) rel.notes.unshift({ text: note, tick });
+}
+
+function getRelScore(agent, otherId) { return agent.relationships[otherId]?.score ?? 0; }
+
+function decide(agent, world) {
+  const hungry = agent.energy < 55, veryHungry = agent.energy < 30, tired = agent.energy < 40 && isNight(world);
+  const nearby = world.agents.filter(a => a.alive && a.id !== agent.id && dist(agent, a) <= 2);
+  
+  agent.age += 1;
+  agent.reproductiveUrge = Math.min(100, agent.reproductiveUrge + 2.0);
+  
+  if (Math.random() < 0.25 && agent.age % 6 === 0) {
+    const learned = world.evolution.learnFromLibrary(agent);
+    if (learned) addShortMemory(agent, `Studied manuscript: ${learned}`);
+    const newTech = world.evolution.tryProceduralInvent(agent, world);
+    if (newTech) {
+      logEvent(world, `⚡ BREAKTHROUGH! ${agent.name} invented "${newTech}", pushing society into the ${world.evolution.era}!`, true, false, [agent.id]);
+    }
+  }
+  
+  if (veryHungry && agent.inventory.food > 0) return { intention: 'survive', action: 'eat' };
+  
+  if (hungry || veryHungry) {
+    const foodNode = findNearestResource(world, agent, 'food');
+    if (foodNode && dist(agent, foodNode) <= 25) {
+      if (dist(agent, foodNode) === 0) return { intention: 'gather_food', action: 'gather', target: { id: foodNode.id } };
+      return { intention: 'gather_food', action: 'move', target: { x: foodNode.x, y: foodNode.y } };
+    }
+  }
+
+  // Construction logic using unlocked structures
+  const totalPop = world.agents.filter(a => a.alive).length;
+  const totalCap = world.buildings.filter(b => b.type === 'house').reduce((s, b) => s + b.capacity, 0);
+  const needHouse = totalPop >= totalCap - 3;
+
+  if (agent.inventory.wood >= 4 && agent.skills.building >= 20 && Math.random() < 0.45) {
+    const unlocked = world.evolution.unlockedStructures;
+    let buildType = needHouse ? 'house' : unlocked[Math.floor(Math.random() * unlocked.length)];
+    
+    const offsetX = (Math.random() > 0.5 ? 1 : -1) * (1 + Math.floor(Math.random() * 4));
+    const offsetY = (Math.random() > 0.5 ? 1 : -1) * (1 + Math.floor(Math.random() * 4));
+    const targetX = Math.max(2, Math.min(MAP_W - 3, agent.x + offsetX));
+    const targetY = Math.max(2, Math.min(MAP_H - 3, agent.y + offsetY));
+    
+    if (getTile(world, targetX, targetY) === TILE.GRASS) {
+      return { intention: 'build_structure', action: 'construct', target: { type: buildType, x: targetX, y: targetY } };
+    }
+  }
+
+  if ((isNight(world) && agent.energy < 75) || tired) {
+    const house = agent.homeId ? world.buildings.find(b => b.id === agent.homeId) : findNearestBuilding(world, agent, 'house');
+    if (house) {
+      if (dist(agent, house) === 0) return { intention: 'rest', action: 'rest' };
+      return { intention: 'rest', action: 'move', target: { x: house.x, y: house.y } };
+    }
+  }
+
+  const availableHousing = world.buildings.filter(b => b.type === 'house' && b.residents < b.capacity).length;
+  if (agent.reproductiveUrge > 35 && !agent.partner && nearby.length > 0 && availableHousing > 0 && world.tick - agent.lastReproduction > 80) {
+    const potential = nearby.find(a => getRelScore(agent, a.id) > -10 && !a.partner);
+    if (potential) return { intention: 'reproduce', action: 'mate', target: { id: potential.id } };
+  }
+
+  if (!agent.homeId) {
+    const freeHouse = world.buildings.find(b => b.type === 'house' && b.residents < b.capacity);
+    if (freeHouse) {
+      if (dist(agent, freeHouse) === 0) return { intention: 'claim_home', action: 'claim_house', target: { id: freeHouse.id } };
+      return { intention: 'claim_home', action: 'move', target: { x: freeHouse.x, y: freeHouse.y } };
+    }
+  }
+
+  if (nearby.length && Math.random() < 0.6) {
+    const other = nearby[Math.floor(Math.random() * nearby.length)];
+    return { intention: 'socialize', action: 'talk', target: { id: other.id } };
+  }
+
+  const dirs = [{x:0,y:-1},{x:0,y:1},{x:-1,y:0},{x:1,y:0}];
+  const d = dirs[Math.floor(Math.random() * dirs.length)];
+  const nextX = Math.max(0, Math.min(MAP_W - 1, agent.x + d.x));
+  const nextY = Math.max(0, Math.min(MAP_H - 1, agent.y + d.y));
+
+  return { intention: 'explore', action: 'move', target: { x: nextX, y: nextY } };
+}
+
+function simulationStep(world, minutesPerStep = 20) {
+  advanceTime(world, minutesPerStep);
+  const night = isNight(world);
+
+  world.agents.forEach(agent => {
+    if (!agent.alive) return;
+    let drain = (night ? 0.38 : 0.22) / world.evolution.globalMultipliers.energyEfficiency;
+    agent.energy = Math.max(0, agent.energy - drain);
+    if (agent.energy <= 0) {
+      agent.alive = false;
+      world.deaths++;
+      logEvent(world, `💀 ${agent.name} has passed away from exhaustion.`, true, false, [agent.id]);
+    }
+  });
+
+  const activeAgents = world.agents.filter(a => a.alive);
+  activeAgents.sort(() => Math.random() - 0.5).forEach(agent => {
+    addShortMemory(agent, `At (${agent.x},${agent.y}) - Intention: ${agent.intention}`);
+    executeAction(world, agent, decide(agent, world));
+  });
+}
+
+function executeAction(world, agent, decision) {
+  const { action, target } = decision;
+  if (action === 'move') {
+    if (!target) return;
+    const targetTile = getTile(world, target.x, target.y);
+    // Prevent stepping into deep river water directly unless on a path
+    if (targetTile !== TILE.RIVER || getTile(world, agent.x, agent.y) === TILE.RIVER) {
+      agent.x = target.x;
+      agent.y = target.y;
+    }
+    agent.energy -= 0.20;
+    // Lay path on grass if heavily traveled
+    if (targetTile === TILE.GRASS && Math.random() < 0.03) {
+      world.map[agent.y][agent.x] = TILE.PATH;
+    }
+  } else if (action === 'gather') {
+    const node = world.resources.find(r => r.id === target.id);
+    if (node && node.amount > 0 && dist(agent, node) === 0) {
+      const take = Math.min(Math.floor(8 * (agent.skills.gathering / 30) * world.evolution.globalMultipliers.gathering), node.amount);
+      node.amount -= take;
+      agent.inventory[node.type] += take;
+      agent.skills.gathering = Math.min(100, agent.skills.gathering + 1.1);
+      
+      if (Math.random() < 0.2) {
+        const title = node.type === 'food' ? `Botanical Harvest Mechanics (${agent.name})` : `Timber Yield Analysis (${agent.name})`;
+        world.evolution.addKnowledge(title, node.type === 'food' ? 'gathering' : 'building', 3.5, agent.name, world);
+      }
+    }
+  } else if (action === 'eat') {
+    if (agent.inventory.food > 0) { agent.inventory.food -= 1; agent.energy = Math.min(100, agent.energy + 65); }
+  } else if (action === 'rest') {
+    agent.energy = Math.min(100, agent.energy + (isNight(world) ? 30 : 18));
+  } else if (action === 'construct') {
+    if (agent.inventory.wood >= 4) {
+      agent.inventory.wood -= 4;
+      const type = target.type;
+      let tileType = TILE.HOUSE;
+      if (type === 'workshop') tileType = TILE.WORKSHOP;
+      else if (type === 'farm') tileType = TILE.FARM;
+      else if (type === 'tower') tileType = TILE.TOWER;
+      else if (type === 'granary') tileType = TILE.GRANARY;
+
+      world.map[target.y][target.x] = tileType;
+      
+      const cap = type === 'house' ? 6 : (type === 'granary' ? 12 : 4);
+      world.buildings.push({ id: `${type}_${world.buildings.length}`, type, x: target.x, y: target.y, capacity: cap, residents: 0 });
+      logEvent(world, `🏗️ ${agent.name} constructed a ${type} at (${target.x}, ${target.y})!`, true, false, [agent.id]);
+      world.evolution.addKnowledge(`Structural Blueprint: ${type}`, 'building', 4.5, agent.name, world);
+    }
+  } else if (action === 'talk') {
+    const other = world.agents.find(a => a.alive && a.id === target.id);
+    if (other && dist(agent, other) <= 2) {
+      adjustRelationship(agent, other.id, 10, 'Meaningful conversation', world.tick);
+      adjustRelationship(other, agent.id, 10, 'Meaningful conversation', world.tick);
+      
+      if (agent.skills.gathering > other.skills.gathering + 4) other.skills.gathering += 2.5;
+      if (agent.skills.building > other.skills.building + 4) other.skills.building += 2.5;
+
+      const recentTech = world.evolution.inventions[world.evolution.inventions.length - 1];
+      const recentLib = world.evolution.entries[world.evolution.entries.length - 1];
+      
+      let chatLine = '';
+      const roll = Math.random();
+      if (roll < 0.35 && recentTech) {
+        chatLine = `"Have you tested the principles behind ${recentTech.name}? It completely changes our productivity."`;
+      } else if (roll < 0.70 && recentLib) {
+        chatLine = `"I was just reviewing our archives on ${recentLib.title}. We should apply those techniques."`;
+      } else {
+        const casuals = [
+          `"My energy is feeling low; we need to secure more food supplies near our settlement."`,
+          `"If we work together on gathering timber, our society can expand much faster."`,
+          `"The weather has been unpredictable lately. We should reinforce our shelters."`
+        ];
+        chatLine = casuals[Math.floor(Math.random() * casuals.length)];
+      }
+
+      logEvent(world, `💬 <strong>${agent.name}</strong> to <strong>${other.name}</strong>: ${chatLine}`, false, true, [agent.id, other.id]);
+    }
+  } else if (action === 'mate') {
+    const other = world.agents.find(a => a.alive && a.id === target.id);
+    if (other && dist(agent, other) <= 2) {
+      agent.partner = other.id; other.partner = agent.id;
+      agent.reproductiveUrge = 0; other.reproductiveUrge = 0;
+      agent.lastReproduction = world.tick; other.lastReproduction = world.tick;
+      const childName = NAMES.find(n => !world.agents.some(a => a.name === n));
+      if (childName && world.agents.filter(a => a.alive).length < 120) {
+        const child = createAgent(`agent_${world.agents.length + 1}`, childName, agent.x, agent.y, [agent.id, other.id]);
+        world.agents.push(child);
+        world.births++;
+        logEvent(world, `👶 Population milestone! ${agent.name} and ${other.name} welcomed newborn ${childName}.`, true, false, [agent.id, other.id]);
+      }
+    }
+  } else if (action === 'claim_house') {
+    const building = world.buildings.find(b => b.id === target.id);
+    if (building && building.residents < building.capacity) {
+      building.residents += 1; agent.homeId = building.id;
+    }
+  }
+}
+
+let selectedAgentId = null, canvas, ctx, world = null, running = false, speed = 5;
+
+function initUI() {
+  canvas = document.getElementById('world-canvas');
+  ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  
+  // Interactive Canvas Click Inspector
+  canvas.onclick = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = MAP_W / rect.width;
+    const scaleY = MAP_H / rect.height;
+    const clickX = Math.floor((e.clientX - rect.left) * scaleX);
+    const clickY = Math.floor((e.clientY - rect.top) * scaleY);
+
+    const hitAgent = world.agents.find(a => a.alive && a.x === clickX && a.y === clickY);
+    if (hitAgent) {
+      selectedAgentId = hitAgent.id;
+      showAgentDetail(selectedAgentId);
+    }
+  };
+
+  // Overseer Controls
+  document.getElementById('god-food').onclick = () => {
+    world.global.food += 100;
+    logEvent(world, `⚡ Overseer granted +100 Food to global reserves!`, true);
+    renderStats(world);
+  };
+  document.getElementById('god-wood').onclick = () => {
+    world.global.wood += 100;
+    logEvent(world, `⚡ Overseer granted +100 Wood to global reserves!`, true);
+    renderStats(world);
+  };
+  document.getElementById('god-agent').onclick = () => {
+    const nextName = NAMES.find(n => !world.agents.some(a => a.name === n)) || `Agent_${world.agents.length + 1}`;
+    const newA = createAgent(`agent_${world.agents.length + 1}`, nextName, 20, 14);
+    world.agents.push(newA);
+    logEvent(world, `⚡ Overseer summoned new inhabitant: ${nextName}!`, true);
+    renderAll(world);
+  };
+  document.getElementById('god-invent').onclick = () => {
+    const tech = world.evolution.tryProceduralInvent(null, world, true);
+    if (tech) logEvent(world, `⚡ Overseer sparked technological Epiphany: "${tech}"!`, true);
+    renderAll(world);
+  };
+  document.getElementById('god-weather').onclick = () => {
+    world.weather = world.weather === 'clear' ? 'rain' : world.weather === 'rain' ? 'cloudy' : 'clear';
+    logEvent(world, `⚡ Overseer shifted local weather to ${world.weather.toUpperCase()}.`, true);
+    renderAll(world);
+  };
+
+  // Log filter buttons
+  document.querySelectorAll('.log-filter-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      document.querySelectorAll('.log-filter-btn').forEach(b => b.classList.remove('active'));
+      e.target.classList.add('active');
+      activeLogFilter = e.target.dataset.filter;
+      renderEventLog(world);
     };
+  });
 
-    const canvas = document.getElementById("world");
-    const ctx = canvas.getContext("2d");
+  document.getElementById('speed-select').addEventListener('change', (e) => { speed = parseInt(e.target.value); });
+  document.getElementById('agent-list').onclick = (e) => {
+    const card = e.target.closest('.agent-card');
+    if (card) { selectedAgentId = card.dataset.id; showAgentDetail(selectedAgentId); }
+  };
+  document.getElementById('btn-close-detail').onclick = () => {
+    selectedAgentId = null;
+    document.getElementById('agent-detail').classList.add('hidden');
+    document.getElementById('agent-list').style.display = '';
+    renderAgentList(world);
+  };
+  document.getElementById('btn-clear-log').onclick = () => { world.events = []; renderEventLog(world); };
+  document.getElementById('btn-hour').onclick = () => { simulationStep(world, 60); renderAll(world); };
+  document.getElementById('btn-day').onclick = () => { simulationStep(world, 1440); renderAll(world); };
+  
+  document.getElementById('btn-run').onclick = () => { 
+    running = true; 
+    document.getElementById('btn-run').disabled = true; 
+    document.getElementById('btn-pause').disabled = false; 
+    document.getElementById('summary-modal').classList.remove('active');
+  };
+  
+  document.getElementById('btn-pause').onclick = () => { 
+    running = false; 
+    document.getElementById('btn-run').disabled = false; 
+    document.getElementById('btn-pause').disabled = true; 
+    showSummaryModal();
+  };
 
-    function init() {
-      // Build terrain map
-      for (let y = 0; y < MAP_H; y++) {
-        state.map[y] = []; state.paths[y] = [];
-        for (let x = 0; x < MAP_W; x++) {
-          let type = TILE.GRASS;
-          if (Math.random() < 0.18) type = TILE.FOREST;
-          if (x > MAP_W - 6 || (x > MAP_W - 10 && Math.random() < 0.4)) type = TILE.WATER;
-          state.map[y][x] = type;
-          state.paths[y][x] = 0;
-        }
-      }
+  document.getElementById('btn-close-modal').onclick = () => {
+    document.getElementById('summary-modal').classList.remove('active');
+  };
+  document.getElementById('modal-resume-btn').onclick = () => {
+    document.getElementById('summary-modal').classList.remove('active');
+    running = true;
+    document.getElementById('btn-run').disabled = true;
+    document.getElementById('btn-pause').disabled = false;
+  };
 
-      // Initial settlement structure on map
-      let hX = Math.floor(MAP_W / 3), hY = Math.floor(MAP_H / 2);
-      state.map[hY][hX] = TILE.GRASS;
-      state.buildings.push({ x: hX, y: hY, level: 1, cap: 6 });
+  document.getElementById('btn-reset').onclick = () => { 
+    running = false; 
+    world = createWorld(); 
+    world.agents = createInitialAgents(); 
+    document.getElementById('btn-run').disabled = false; 
+    document.getElementById('btn-pause').disabled = true; 
+    document.getElementById('summary-modal').classList.remove('active');
+    renderAll(world); 
+  };
+}
 
-      // Spawn initial villagers
-      for(let i = 0; i < 4; i++) spawnAgent(hX, hY);
+function showSummaryModal() {
+  const alivePop = world.agents.filter(a => a.alive).length;
+  const housesCount = world.buildings.filter(b => b.type === 'house').length;
+  const workshopsCount = world.buildings.filter(b => b.type === 'workshop').length;
+  const farmsCount = world.buildings.filter(b => b.type === 'farm').length;
+  const towersCount = world.buildings.filter(b => b.type === 'tower').length;
+  const granaryCount = world.buildings.filter(b => b.type === 'granary').length;
 
-      // Populate resource nodes on physical tiles
-      spawnResources();
-      requestAnimationFrame(loop);
+  const content = `
+    <p><strong>Current Era:</strong> ${world.evolution.era}</p>
+    <p><strong>Elapsed Time:</strong> Day ${world.day} (${String(world.hour).padStart(2,'0')}:00) — Weather: ${world.weather}</p>
+    <p><strong>Population Demographics:</strong> ${alivePop} living inhabitants (${world.births} births, ${world.deaths} deaths)</p>
+    
+    <div style="margin: 12px 0; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 6px; border: 1px solid var(--border);">
+      <p style="color:var(--accent); font-weight:600; margin-bottom:4px;">🏗️ Settlement Infrastructure:</p>
+      <ul>
+        <li>Houses: ${housesCount}</li>
+        <li>Workshops: ${workshopsCount}</li>
+        <li>Farms: ${farmsCount}</li>
+        <li>Observation Towers: ${towersCount}</li>
+        <li>Granaries: ${granaryCount}</li>
+      </ul>
+    </div>
+
+    <p><strong>Total Inventions Discovered (${world.evolution.inventions.length}):</strong></p>
+    <ul>
+      ${world.evolution.inventions.map(i => `<li>${i.name} — Discovered by ${i.discoveredBy} on Day ${i.day}</li>`).join('') || '<li>No major inventions yet.</li>'}
+    </ul>
+    
+    <p style="margin-top:10px;"><strong>Library Archive Manuscripts:</strong> ${world.evolution.entries.length} stored documents.</p>
+  `;
+  document.getElementById('summary-content').innerHTML = content;
+  document.getElementById('summary-modal').classList.add('active');
+}
+
+function renderAll(w) {
+  renderMap(w); renderStats(w); renderEventLog(w); renderAgentList(w); renderLibrary(w);
+  if (selectedAgentId) showAgentDetail(selectedAgentId);
+  document.getElementById('time-display').textContent = formatTime(w);
+  document.getElementById('era-display').textContent = `Era: ${w.evolution.era}`;
+}
+
+function renderStats(w) {
+  const aliveCount = w.agents.filter(a => a.alive).length;
+  document.getElementById('pop-stat').textContent = `${aliveCount} (Births: ${w.births} | Deaths: ${w.deaths})`;
+  document.getElementById('food-stat').textContent = `${totalResourceLeft(w, 'food') + w.global.food}`;
+  document.getElementById('wood-stat').textContent = `${totalResourceLeft(w, 'wood') + w.global.wood}`;
+}
+
+function renderMap(w) {
+  const tw = canvas.width / MAP_W, th = canvas.height / MAP_H;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Render Base Map
+  for (let y = 0; y < MAP_H; y++) {
+    for (let x = 0; x < MAP_W; x++) {
+      ctx.fillStyle = TILE_COLORS[w.map[y][x]] || '#111';
+      ctx.fillRect(x * tw, y * th, tw + 0.5, th + 0.5);
+    }
+  }
+
+  // Render Buildings
+  w.buildings.forEach(b => {
+    let bColor = '#a1887f';
+    let icon = '🏠';
+    if (b.type === 'workshop') { bColor = '#ab47bc'; icon = '⚒️'; }
+    else if (b.type === 'farm') { bColor = '#26a69a'; icon = '🌾'; }
+    else if (b.type === 'tower') { bColor = '#546e7a'; icon = '🗼'; }
+    else if (b.type === 'granary') { bColor = '#9e9d24'; icon = '🌾'; }
+
+    ctx.fillStyle = bColor;
+    ctx.fillRect(b.x * tw + 1, b.y * th + 1, tw - 2, th - 2);
+  });
+
+  // Render Resources
+  w.resources.forEach(r => {
+    if (r.amount <= 0) return;
+    ctx.fillStyle = r.type === 'food' ? '#ff7043' : '#8d6e63';
+    ctx.beginPath(); 
+    ctx.arc((r.x + 0.5) * tw, (r.y + 0.5) * th, Math.min(tw, th) * 0.3, 0, Math.PI * 2); 
+    ctx.fill();
+  });
+
+  // Render Agents
+  w.agents.forEach(a => {
+    if (!a.alive) return;
+    const cx = (a.x + 0.5) * tw, cy = (a.y + 0.5) * th;
+    
+    let ringColor = '#ffee58';
+    let glyph = '•';
+    if (a.intention.includes('gather')) { ringColor = '#ff7043'; glyph = '⛏'; }
+    else if (a.intention.includes('build')) { ringColor = '#ab47bc'; glyph = '🔨'; }
+    else if (a.intention.includes('social')) { ringColor = '#4fc3f7'; glyph = '💬'; }
+    else if (a.intention.includes('rest')) { ringColor = '#66bb6a'; glyph = '💤'; }
+    else if (a.intention.includes('reproduce')) { ringColor = '#ec407a'; glyph = '♥'; }
+
+    // Highlight selected agent
+    if (a.id === selectedAgentId) {
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(cx, cy, Math.min(tw, th) * 0.6, 0, Math.PI * 2); ctx.stroke();
     }
 
-    function spawnAgent(x, y) {
-      const names = ["Ael", "Bryn", "Cael", "Dara", "Eon", "Fay", "Gael", "Hale", "Ira", "Jace", "Kira", "Lorn"];
-      state.agents.push({
-        id: Math.random().toString(36).substr(2, 4),
-        name: names[Math.floor(Math.random() * names.length)],
-        x: x, y: y,
-        targetX: x, targetY: y,
-        energy: 100,
-        task: "idle"
-      });
-    }
+    ctx.fillStyle = ringColor;
+    ctx.beginPath(); ctx.arc(cx, cy, Math.min(tw, th) * 0.4, 0, Math.PI * 2); ctx.fill();
+    
+    ctx.strokeStyle = '#0f1419'; ctx.lineWidth = 1.2; ctx.stroke();
 
-    function spawnResources() {
-      for(let i = 0; i < 8; i++) {
-        let rx = Math.floor(Math.random() * (MAP_W - 12));
-        let ry = Math.floor(Math.random() * MAP_H);
-        if (state.map[ry][rx] === TILE.GRASS) {
-          state.resources.push({ x: rx, y: ry, type: Math.random() > 0.5 ? 'food' : 'wood', amount: 100 });
-        }
-      }
-    }
+    ctx.fillStyle = '#0f1419'; ctx.font = `bold ${Math.max(8, tw * 0.45)}px sans-serif`; ctx.textAlign = 'center';
+    ctx.fillText(glyph, cx, cy + th * 0.15);
 
-    function update() {
-      state.tick++;
-      if (state.tick % 100 === 0) {
-        state.day++;
-        if (state.resources.length < 12) spawnResources();
-      }
+    ctx.fillStyle = '#e7ecf3'; ctx.font = `${Math.max(7, tw * 0.38)}px sans-serif`;
+    ctx.fillText(a.name.slice(0, 4), cx, cy - th * 0.5);
+  });
 
-      let reqInsight = ERAS[state.currentEra].reqInsight;
+  // Environmental Night / Weather Shader Effects
+  const night = isNight(w);
+  if (night) {
+    ctx.fillStyle = 'rgba(5, 10, 25, 0.55)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // Agent Logic & Movement
-      state.agents.forEach(a => {
-        a.energy -= 0.03; // Real movement cost slows progression naturally
+    // Warm ambient light from buildings at night
+    w.buildings.forEach(b => {
+      const grad = ctx.createRadialGradient((b.x+0.5)*tw, (b.y+0.5)*th, 2, (b.x+0.5)*tw, (b.y+0.5)*th, 28);
+      grad.addColorStop(0, 'rgba(255, 200, 100, 0.35)');
+      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc((b.x+0.5)*tw, (b.y+0.5)*th, 28, 0, Math.PI*2); ctx.fill();
+    });
+  }
 
-        // Slower Insight Generation tied to well-being & era depth
-        if (a.energy > 60) {
-          state.global.insight += 0.02 / (state.currentEra + 1);
-        }
+  if (w.weather === 'rain') {
+    ctx.fillStyle = 'rgba(40, 70, 100, 0.18)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  } else if (w.weather === 'cloudy') {
+    ctx.fillStyle = 'rgba(100, 100, 120, 0.12)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+}
 
-        if (a.task === "idle" || (a.x === a.targetX && a.y === a.targetY)) {
-          assignTask(a);
-        } else {
-          // Physical walking on grid
-          if (a.x !== a.targetX) a.x += Math.sign(a.targetX - a.x);
-          else if (a.y !== a.targetY) a.y += Math.sign(a.targetY - a.y);
+function renderEventLog(w) {
+  let filtered = w.events;
+  if (activeLogFilter === 'chat') filtered = w.events.filter(e => e.isChat);
+  else if (activeLogFilter === 'important') filtered = w.events.filter(e => e.important);
 
-          // Foot traffic dynamically carves dirt trails
-          if (state.map[a.y][a.x] === TILE.GRASS) {
-            state.paths[a.y][a.x]++;
-            if (state.paths[a.y][a.x] > 40) state.map[a.y][a.x] = TILE.PATH;
-          } else if (state.map[a.y][a.x] === TILE.PATH && state.currentEra >= 3 && state.paths[a.y][a.x] > 120) {
-            state.map[a.y][a.x] = TILE.ROAD; // Auto-pave stone roads in higher eras
-          }
-        }
+  document.getElementById('event-log').innerHTML = filtered.slice(-120).reverse().map(e => `
+    <div class="event-entry${e.important ? ' important' : ''}${e.isChat ? ' chat' : ''}">
+      <span class="event-time">Day ${e.day} — ${String(e.hour).padStart(2,'0')}:${String(e.minute).padStart(2,'0')}</span>
+      <span class="event-text">${e.text}</span>
+    </div>
+  `).join('');
+}
 
-        // On-Map Contextual Conversations
-        if (Math.random() < 0.003) triggerContextualChat(a);
-      });
+function renderLibrary(w) {
+  let html = '';
+  w.evolution.inventions.forEach(inv => {
+    html += `<div class="tech-entry"><div class="entry-title">💡 Invention: ${inv.name}</div><div class="entry-meta">Discovered by ${inv.discoveredBy} on Day ${inv.day}</div></div>`;
+  });
+  const topEntries = w.evolution.entries.slice(-8).reverse();
+  topEntries.forEach(e => {
+    html += `<div class="library-entry"><div class="entry-title">📖 ${e.title}</div><div class="entry-meta">Category: <strong style="color:var(--text);">${e.category}</strong> | Author: ${e.discoveredBy} | Citations: ${e.citations}</div></div>`;
+  });
+  document.getElementById('library-panel').innerHTML = html || '<div style="color: var(--muted); padding: 8px; font-size: 0.8rem;">Waiting for societal documentation...</div>';
+}
 
-      // Spatial Construction: Expand buildings when population nears capacity
-      let capacity = state.buildings.reduce((sum, b) => sum + b.cap, 0);
-      if (state.agents.length >= capacity && state.global.wood >= 30) {
-        let builder = state.agents[Math.floor(Math.random() * state.agents.length)];
-        let bx = Math.min(MAP_W - 12, Math.max(2, builder.x + Math.floor(Math.random() * 5 - 2)));
-        let by = Math.min(MAP_H - 2, Math.max(2, builder.y + Math.floor(Math.random() * 5 - 2)));
+function renderAgentList(w) {
+  if (selectedAgentId) return;
+  const aliveAgents = w.agents.filter(a => a.alive);
+  document.getElementById('agent-list').innerHTML = aliveAgents.map(a => `
+    <div class="agent-card" data-id="${a.id}">
+      <div class="agent-card-name">
+        <span>${a.name}</span>
+        <span style="font-size:0.7rem; color:var(--muted)">(${a.x}, ${a.y})</span>
+      </div>
+      <div class="agent-card-meta">${a.traits.join(', ')} · ⚡${Math.round(a.energy)}% · 😊${Math.round(a.mood)}</div>
+      <div class="agent-card-status">Intention: ${a.intention}</div>
+    </div>
+  `).join('');
+}
 
-        if (state.map[by][bx] === TILE.GRASS && !state.buildings.find(b => b.x === bx && b.y === by)) {
-          state.global.wood -= 30;
-          state.buildings.push({ x: bx, y: by, level: 1, cap: 6 * (state.currentEra + 1) });
-          addLog(`🏗️ Built new structure at (${bx}, ${by})`);
-          addBubble(bx, by, "New home built!");
-        }
-      }
+function showAgentDetail(agentId) {
+  const a = world.agents.find(x => x.id === agentId);
+  if (!a) return;
+  document.getElementById('agent-list').style.display = 'none';
+  const detail = document.getElementById('agent-detail');
+  detail.classList.remove('hidden');
+  
+  const parentInfo = a.parentIds && a.parentIds.length > 0 
+    ? a.parentIds.map(pid => world.agents.find(ag => ag.id === pid)?.name || 'Ancestor').join(' & ')
+    : 'Founder Generation';
 
-      // Births require both food AND spatial housing capacity
-      if (state.global.food > state.agents.length * 5 && state.agents.length < capacity && Math.random() < 0.01) {
-        state.global.food -= 10;
-        let b = state.buildings[Math.floor(Math.random() * state.buildings.length)];
-        spawnAgent(b.x, b.y);
-        addLog(`👶 A new citizen was born.`);
-      }
+  document.getElementById('agent-info').innerHTML = `
+    <h3>${a.name}</h3>
+    <div class="agent-card-meta">${a.traits.join(' · ')}</div>
+    <div style="margin-top:6px;font-size:0.85rem">Position: (${a.x}, ${a.y})</div>
+    <div style="font-size:0.85rem">Current Intention: <strong style="color:var(--accent);">${a.intention}</strong></div>
+    <div style="font-size:0.85rem">Age Ticks: ${a.age} · Lineage: ${parentInfo}</div>
+    <div style="font-size:0.85rem">Inventory: Food: ${a.inventory.food}, Wood: ${a.inventory.wood}</div>
+    
+    <div class="section">
+      <div class="section-title">Skill Proficiencies</div>
+      <div style="font-size:0.8rem">
+        <div>Gathering Skill: ${Math.round(a.skills.gathering)}%</div>
+        <div>Building Skill: ${Math.round(a.skills.building)}%</div>
+      </div>
+    </div>
 
-      // Era Upgrade check
-      if (state.global.insight >= reqInsight && state.currentEra < ERAS.length - 1) {
-        state.currentEra++;
-        addLog(`🌍 ADVANCEMENT: Society reached the ${ERAS[state.currentEra].name}!`);
-        // Upgrade housing capacity on map buildings
-        state.buildings.forEach(b => { b.cap *= 2; b.level++; });
-      }
+    <div class="section">
+      <div class="section-title">Mastered Knowledge (${a.knowledgeAcquired.length})</div>
+      <div style="font-size:0.75rem; color: var(--accent); max-height: 80px; overflow-y: auto;">
+        ${a.knowledgeAcquired.length > 0 ? a.knowledgeAcquired.map(k => `• ${k}`).join('<br>') : 'No specialized texts read yet.'}
+      </div>
+    </div>
 
-      // Expire old map speech bubbles
-      state.speechBubbles = state.speechBubbles.filter(b => state.tick - b.time < 80);
+    <div class="section">
+      <div class="section-title">Recent Memory Log</div>
+      <div style="font-size:0.72rem; color: var(--muted); max-height: 90px; overflow-y: auto; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px;">
+        ${a.shortTerm.length > 0 ? a.shortTerm.map(m => `• ${m}`).join('<br>') : 'No recorded memories.'}
+      </div>
+    </div>
 
-      updateUI();
-    }
+    <div class="section">
+      <div class="section-title">Energy Level</div>
+      <div class="bar"><div class="bar-fill energy" style="width:${Math.max(0, a.energy)}%"></div></div>
+    </div>
+    <div class="section">
+      <div class="section-title">Mood Status</div>
+      <div class="bar"><div class="bar-fill mood" style="width:${Math.max(0, a.mood)}%"></div></div>
+    </div>
+  `;
+}
 
-    function assignTask(a) {
-      if (a.energy < 30 && state.global.food > 0) {
-        state.global.food--; a.energy = 100;
-        return;
-      }
+function start() {
+  world = createWorld();
+  world.agents = createInitialAgents();
+  window.world = world;
+  initUI();
+  renderAll(world);
+  loop();
+}
 
-      // Look for physical resources nearby
-      let res = state.resources[Math.floor(Math.random() * state.resources.length)];
-      if (res) {
-        a.targetX = res.x; a.targetY = res.y;
-        if (a.x === res.x && a.y === res.y) {
-          res.amount -= 10;
-          state.global[res.type] += 10;
-          if (res.amount <= 0) state.resources = state.resources.filter(r => r !== res);
-        }
-        return;
-      }
+function loop() {
+  if (running) {
+    simulationStep(world, 20);
+    renderAll(world);
+  }
+  setTimeout(loop, Math.max(30, 1000 / speed));
+}
 
-      // Wander nearby
-      a.targetX = Math.min(MAP_W - 12, Math.max(1, a.x + Math.floor(Math.random() * 9 - 4)));
-      a.targetY = Math.min(MAP_H - 1, Math.max(1, a.y + Math.floor(Math.random() * 9 - 4)));
-    }
-
-    function triggerContextualChat(agent) {
-      let other = state.agents.find(o => o !== agent && Math.abs(o.x - agent.x) < 3 && Math.abs(o.y - agent.y) < 3);
-      if (!other) return;
-
-      let msg = "Nice weather.";
-      if (agent.energy < 40) msg = "I need food soon...";
-      else if (state.global.wood < 20) msg = "We are low on timber.";
-      else if (state.currentEra > 0) msg = `The ${ERAS[state.currentEra].name} brings new hope.`;
-
-      addBubble(agent.x, agent.y, msg);
-      addLog(`<span class="log-name">${agent.name}</span>: "${msg}"`);
-    }
-
-    function addBubble(x, y, text) {
-      state.speechBubbles.push({ x, y, text, time: state.tick });
-    }
-
-    function addLog(html) {
-      let container = document.getElementById("log-list");
-      container.insertAdjacentHTML('afterbegin', `<div class="log-item"><span class="log-time">Day ${state.day}</span> ${html}</div>`);
-      if (container.children.length > 40) container.removeChild(container.lastChild);
-    }
-
-    function updateUI() {
-      document.getElementById("ui-day").innerText = state.day;
-      document.getElementById("ui-pop").innerText = state.agents.length;
-      document.getElementById("ui-food").innerText = state.global.food;
-      document.getElementById("ui-wood").innerText = state.global.wood;
-
-      let era = ERAS[state.currentEra];
-      document.getElementById("ui-era").innerText = era.name;
-      document.getElementById("ui-era").style.color = era.color;
-
-      document.getElementById("ui-insight-num").innerText = `${Math.floor(state.global.insight)} / ${era.reqInsight}`;
-      document.getElementById("ui-insight-bar").style.width = `${Math.min(100, (state.global.insight / era.reqInsight) * 100)}%`;
-    }
-
-    function draw() {
-      let tw = canvas.width / MAP_W;
-      let th = canvas.height / MAP_H;
-
-      // Render Map Grid
-      for (let y = 0; y < MAP_H; y++) {
-        for (let x = 0; x < MAP_W; x++) {
-          let t = state.map[y][x];
-          if (t === TILE.GRASS) ctx.fillStyle = "#1b3320";
-          else if (t === TILE.FOREST) ctx.fillStyle = "#0d2412";
-          else if (t === TILE.WATER) ctx.fillStyle = "#154360";
-          else if (t === TILE.PATH) ctx.fillStyle = "#3e2723";
-          else if (t === TILE.ROAD) ctx.fillStyle = "#546e7a";
-
-          ctx.fillRect(x * tw, y * th, tw + 0.5, th + 0.5);
-
-          if (t === TILE.FOREST) {
-            ctx.fillStyle = "#2e7d32";
-            ctx.beginPath();
-            ctx.arc(x * tw + tw / 2, y * th + th / 2, tw * 0.35, 0, Math.PI * 2);
-            ctx.fill();
-          }
-        }
-      }
-
-      // Draw Physical Resources
-      state.resources.forEach(r => {
-        ctx.fillStyle = r.type === 'food' ? "#e53935" : "#8d6e63";
-        ctx.fillRect(r.x * tw + tw * 0.2, r.y * th + th * 0.2, tw * 0.6, th * 0.6);
-      });
-
-      // Draw Spatial Buildings (Art shifts per era)
-      state.buildings.forEach(b => {
-        ctx.fillStyle = ERAS[state.currentEra].color;
-        let sz = tw * (0.7 + b.level * 0.05);
-        ctx.fillRect(b.x * tw, b.y * th, sz, sz);
-        ctx.strokeStyle = "#000"; ctx.strokeRect(b.x * tw, b.y * th, sz, sz);
-      });
-
-      // Draw Physical Agents
-      state.agents.forEach(a => {
-        ctx.fillStyle = a.energy < 30 ? "#ff5252" : "#00e676";
-        ctx.beginPath();
-        ctx.arc(a.x * tw + tw / 2, a.y * th + th / 2, tw * 0.3, 0, Math.PI * 2);
-        ctx.fill();
-      });
-
-      // Render Speech Bubbles Over Map Grid
-      state.speechBubbles.forEach(b => {
-        let px = b.x * tw;
-        let py = b.y * th - 8;
-
-        ctx.font = "10px sans-serif";
-        let textWidth = ctx.measureText(b.text).width;
-
-        ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
-        ctx.fillRect(px - 4, py - 12, textWidth + 8, 14);
-
-        ctx.fillStyle = "#fff";
-        ctx.fillText(b.text, px, py);
-      });
-    }
-
-    let lastTime = 0;
-    function loop(time) {
-      if (state.running) {
-        let delta = time - lastTime;
-        if (delta > (1000 / (30 * state.speed))) {
-          update();
-          draw();
-          lastTime = time;
-        }
-      }
-      requestAnimationFrame(loop);
-    }
-
-    document.getElementById("pause-btn").onclick = (e) => {
-      state.running = !state.running;
-      e.target.innerText = state.running ? "Pause" : "Resume";
-      if (state.running) requestAnimationFrame(loop);
-    };
-
-    document.getElementById("speed-select").onchange = (e) => {
-      state.speed = parseInt(e.target.value);
-    };
-
-    init();
+document.addEventListener('DOMContentLoaded', start);
   </script>
 </body>
 </html>
