@@ -39,7 +39,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
 .btn.danger { background: #5c2a2a; }
 .btn.small { padding: 4px 8px; font-size: 0.75rem; }
 .speed-select { background: var(--border); color: var(--text); border: none; border-radius: 6px; padding: 7px 8px; font-size: 0.85rem; }
-.main { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 1px; background: var(--border); flex: 1; min-height: 0; overflow: hidden; }
+.main { display: grid; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 1px; background: var(--border); flex: 1; min-height: 0; overflow: hidden; }
 .panel { background: var(--panel); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .world-panel { grid-row: 1 / 3; }
 .panel-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
@@ -67,11 +67,14 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
 .agent-detail.hidden { display: none; }
 .agent-detail h3 { font-size: 1.1rem; margin: 8px 0 4px; }
 .section { margin-top: 14px; }
-.section-title { font-size: 0.75rem; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+.section-title { font-size: 0.75rem; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; font-weight: 600; }
 .bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
 .bar-fill { height: 100%; border-radius: 3px; }
 .bar-fill.energy { background: var(--success); }
 .bar-fill.mood { background: var(--warning); }
+.library-entry { background: rgba(79, 195, 247, 0.1); border-left: 2px solid var(--accent); padding: 6px 8px; margin-bottom: 6px; border-radius: 3px; font-size: 0.75rem; }
+.library-entry-title { color: var(--accent); font-weight: 600; }
+.library-entry-meta { color: var(--muted); font-size: 0.7rem; margin-top: 2px; }
 .rel-item, .mem-item, .pos-item { font-size: 0.8rem; padding: 3px 0; border-bottom: 1px solid rgba(45,58,79,0.4); }
 .rel-positive { color: var(--success); }
 .rel-negative { color: var(--danger); }
@@ -128,6 +131,10 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
         <div id="event-log" class="event-log"></div>
       </section>
       <section class="panel">
+        <div class="panel-header"><h2>📚 Library</h2></div>
+        <div id="library-panel" class="agent-list"></div>
+      </section>
+      <section class="panel">
         <div class="panel-header"><h2>Inhabitant</h2></div>
         <div id="agent-list" class="agent-list"></div>
         <div id="agent-detail" class="agent-detail hidden">
@@ -141,6 +148,56 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
 const TILE = { GRASS: 0, FOREST: 1, RIVER: 2, HOUSE: 3, PATH: 4 };
 const TILE_COLORS = { [TILE.GRASS]: '#1b3a1b', [TILE.FOREST]: '#0d4a1f', [TILE.RIVER]: '#0a3a5c', [TILE.HOUSE]: '#4a3728', [TILE.PATH]: '#2a2a20' };
 const MAP_W = 30, MAP_H = 20;
+
+// Library system - shared knowledge base
+class Library {
+  constructor() {
+    this.entries = [];
+    this.trends = {};
+  }
+  
+  addKnowledge(title, category, value, discoveredBy, world) {
+    const entry = {
+      id: `lib_${this.entries.length}`,
+      title,
+      category, // 'gathering', 'hunting', 'building', 'farming', 'survival'
+      value,
+      discoveredBy,
+      discovered: world.tick,
+      citations: 1
+    };
+    this.entries.push(entry);
+    if (this.entries.length > 100) this.entries.shift();
+    this.updateTrends();
+    return entry;
+  }
+  
+  learnFromLibrary(agent) {
+    // Agents learn from trending knowledge
+    const entries = this.entries.filter(e => e.category && agent.skills[e.category] !== undefined);
+    if (entries.length > 0) {
+      const trending = entries.sort((a, b) => b.citations - a.citations).slice(0, 3);
+      trending.forEach(e => {
+        agent.skills[e.category] = Math.min(100, agent.skills[e.category] + e.value * 0.3);
+        e.citations++;
+      });
+      return trending.map(e => e.title);
+    }
+    return [];
+  }
+  
+  updateTrends() {
+    this.trends = {};
+    this.entries.forEach(e => {
+      if (!this.trends[e.category]) this.trends[e.category] = 0;
+      this.trends[e.category] += e.citations;
+    });
+  }
+  
+  getTopEntries(limit = 8) {
+    return [...this.entries].sort((a, b) => b.citations - a.citations).slice(0, limit);
+  }
+}
 
 function createMap() {
   const map = Array.from({ length: MAP_H }, () => Array.from({ length: MAP_W }, () => TILE.GRASS));
@@ -188,7 +245,8 @@ function createWorld() {
   return {
     version: 1, day: 1, hour: 6, minute: 0, weather: 'clear',
     map: createMap(), resources: createResourceNodes(), buildings: createBuildings(),
-    global: { food: 25, wood: 15, money: 50 }, agents: [], events: [], tick: 0, births: 0
+    global: { food: 25, wood: 15, money: 50 }, agents: [], events: [], tick: 0, births: 0,
+    library: new Library()
   };
 }
 
@@ -243,7 +301,8 @@ function logEvent(w, text, important = false, agentIds = []) {
 function totalResourceLeft(w, type) {
   return w.resources.filter(r => r.type === type).reduce((s, r) => s + r.amount, 0);
 }
-const NAMES = ['Mira', 'Arin', 'Liora', 'Kael', 'Soren', 'Nova', 'Zen', 'Iris', 'Rowan', 'Sage'];
+
+const NAMES = ['Mira', 'Arin', 'Liora', 'Kael', 'Soren', 'Nova', 'Zen', 'Iris', 'Rowan', 'Sage', 'River', 'Sky', 'Stone', 'Echo', 'Ember'];
 const PERSONALITY_TRAITS = ['curious', 'cautious', 'generous', 'ambitious', 'solitary', 'sociable', 'practical', 'dreamy', 'stubborn', 'empathetic'];
 
 function createAgent(id, name, x, y, parentIds = []) {
@@ -257,7 +316,7 @@ function createAgent(id, name, x, y, parentIds = []) {
     money: 5 + Math.floor(Math.random() * 10),
     intention: 'explore', currentAction: null, homeId: null, history: [],
     skills: { gathering: 0, hunting: 0, building: 0, farming: 0 },
-    foodCached: 0, reproductiveUrge: 0, partner: null
+    foodCached: 0, reproductiveUrge: 0, partner: null, knowledgeAcquired: []
   };
 }
 
@@ -269,13 +328,6 @@ function createInitialAgents() {
 function addShortMemory(agent, text, tick) {
   agent.shortTerm.unshift({ text, tick });
   if (agent.shortTerm.length > 15) agent.shortTerm.pop();
-}
-
-function addLongMemory(agent, text, tick) {
-  agent.longTerm.unshift({ text, tick });
-  if (agent.longTerm.length > 40) agent.longTerm.pop();
-  agent.history.unshift({ text, tick });
-  if (agent.history.length > 30) agent.history.pop();
 }
 
 function adjustRelationship(agent, otherId, delta, note, tick) {
@@ -306,9 +358,8 @@ function observe(agent, world) {
   return obs.trim();
 }
 
-// Real conversation generator
 function generateConversation(agent, other, world) {
-  const topics = ['weather', 'resources', 'relationships', 'survival', 'future'];
+  const topics = ['weather', 'resources', 'relationships', 'survival', 'learning'];
   const topic = topics[Math.floor(Math.random() * topics.length)];
   const relScore = getRelScore(agent, other.id);
   
@@ -319,6 +370,10 @@ function generateConversation(agent, other, world) {
   } else if (topic === 'resources') {
     response = `${agent.name}: "Found good ${agent.inventory.food > 2 ? 'food' : 'wood'} today."\n`;
     response += `${other.name}: "We should explore together sometime."`;
+  } else if (topic === 'learning') {
+    const learned = world.library.learnFromLibrary(agent);
+    response = `${agent.name}: "Just read from library: ${learned[0] || 'better techniques'}"\n`;
+    response += `${other.name}: "The knowledge of our people grows!"`;
   } else if (topic === 'survival') {
     response = `${agent.name}: "Winter's coming. Better stock up."\n`;
     response += `${other.name}: "Agreed. Share your knowledge?"`;
@@ -334,11 +389,18 @@ function decide(agent, world) {
   const hungry = agent.energy < 35, veryHungry = agent.energy < 18, tired = agent.energy < 25 && isNight(world);
   const nearby = world.agents.filter(a => a.id !== agent.id && dist(agent, a) <= 2);
   
-  // Age increases reproductive urge
   agent.age += 1;
   agent.reproductiveUrge = Math.min(100, agent.reproductiveUrge + (agent.age > 100 ? 0.5 : 0.1));
   
-  // Survival priority
+  // Learn from library periodically
+  if (Math.random() < 0.02 && agent.age % 50 === 0) {
+    const learned = world.library.learnFromLibrary(agent);
+    if (learned.length > 0) {
+      agent.knowledgeAcquired.push(...learned);
+      logEvent(world, `${agent.name} learned: ${learned.join(', ')}`, false, [agent.id]);
+    }
+  }
+  
   if (veryHungry && agent.inventory.food > 0) return { intention: 'survive', action: 'eat', target: null, reason: 'Eating food.' };
   if (veryHungry && agent.foodCached > 0) return { intention: 'survive', action: 'eat_cached', target: null, reason: 'Eating stored food.' };
   
@@ -353,7 +415,6 @@ function decide(agent, world) {
     }
   }
 
-  // Rest priority
   if ((isNight(world) && agent.energy < 60) || tired) {
     const house = agent.homeId ? world.buildings.find(b => b.id === agent.homeId) : findNearestHouse(world, agent);
     if (house) {
@@ -362,19 +423,16 @@ function decide(agent, world) {
     }
   }
 
-  // Reproduction
   if (agent.reproductiveUrge > 60 && !agent.partner && nearby.length > 0) {
     const potential = nearby.find(a => getRelScore(agent, a.id) > 30 && !a.partner && a.reproductiveUrge > 40);
     if (potential) return { intention: 'reproduce', action: 'mate', target: { type: 'agent', id: potential.id }, reason: 'Seeking partner.' };
   }
 
-  // Social interaction
   if (nearby.length && (agent.mood < 40 || hasTrait(agent, 'sociable') || Math.random() < 0.25)) {
     const other = nearby[Math.floor(Math.random() * nearby.length)];
     return { intention: 'socialize', action: 'talk', target: { type: 'agent', id: other.id, topic: 'chat' }, reason: 'Talking.' };
   }
 
-  // Home claiming
   if (!agent.homeId) {
     const freeHouse = world.buildings.find(b => b.type === 'house' && !b.ownerId);
     if (freeHouse && dist(agent, freeHouse) <= 6) {
@@ -383,7 +441,6 @@ function decide(agent, world) {
     }
   }
 
-  // Caching food for winter
   if (!isNight(world) && agent.inventory.food > 3 && agent.energy > 50) {
     return { intention: 'cache_food', action: 'cache', target: null, reason: 'Storing food for later.' };
   }
@@ -431,6 +488,21 @@ function executeAction(world, agent, decision) {
       agent.inventory[node.type] = (agent.inventory[node.type] || 0) + take;
       agent.energy -= ACTION_COSTS.gather;
       improveSkill(agent, 'gathering', 0.3);
+      
+      // Discover and document techniques in library
+      if (Math.random() < 0.15) {
+        const techniques = [
+          `${agent.name}'s efficient foraging method`,
+          `Best ${node.type} gathering locations`,
+          `Sustainable harvesting techniques`,
+          `Quick${node.type} identification`,
+          `Peak harvest season for ${node.type}`
+        ];
+        const discovery = techniques[Math.floor(Math.random() * techniques.length)];
+        world.library.addKnowledge(discovery, 'gathering', 2, agent.name, world);
+        logEvent(world, `📖 ${agent.name} documented: "${discovery}"`, true, [agent.id]);
+      }
+      
       logEvent(world, `${agent.name} gathered ${take} ${node.type}.`, false, [agent.id]);
     }
   } else if (action === 'eat') {
@@ -479,10 +551,15 @@ function executeAction(world, agent, decision) {
       agent.reproductiveUrge = 0;
       other.reproductiveUrge = 0;
       
-      // Create offspring
       const childName = NAMES.find(n => !world.agents.some(a => a.name === n));
-      if (childName && world.agents.length < 30) {
+      if (childName && world.agents.length < 40) {
         const child = createAgent(`agent_${Math.max(...world.agents.map(a => parseInt(a.id.split('_')[1]))) + 1}`, childName, agent.x, agent.y, [agent.id, other.id]);
+        
+        // Children inherit parent skills
+        Object.keys(child.skills).forEach(skill => {
+          child.skills[skill] = (agent.skills[skill] + other.skills[skill]) / 2 + 5;
+        });
+        
         world.agents.push(child);
         world.births++;
         adjustRelationship(agent, other.id, 20, 'Mated together', world.tick);
@@ -525,7 +602,7 @@ function initUI() {
 }
 
 function renderAll(w) {
-  renderMap(w); renderStats(w); renderEventLog(w); renderAgentList(w);
+  renderMap(w); renderStats(w); renderEventLog(w); renderAgentList(w); renderLibrary(w);
   if (selectedAgentId) showAgentDetail(selectedAgentId);
   document.getElementById('time-display').textContent = formatTime(w);
   document.getElementById('weather-display').textContent = w.weather.charAt(0).toUpperCase() + w.weather.slice(1);
@@ -568,6 +645,18 @@ function renderEventLog(w) {
   `).join('');
 }
 
+function renderLibrary(w) {
+  const topEntries = w.library.getTopEntries(8);
+  document.getElementById('library-panel').innerHTML = topEntries.length > 0 
+    ? topEntries.map(e => `
+      <div class="library-entry">
+        <div class="library-entry-title">${e.title}</div>
+        <div class="library-entry-meta">Category: ${e.category} | Citations: ${e.citations} | By: ${e.discoveredBy}</div>
+      </div>
+    `).join('')
+    : '<div style="color: var(--muted); padding: 8px; font-size: 0.8rem; font-style: italic;">Waiting for discoveries...</div>';
+}
+
 function renderAgentList(w) {
   if (selectedAgentId) return;
   document.getElementById('agent-list').innerHTML = w.agents.map(a => `
@@ -596,7 +685,22 @@ function showAgentDetail(agentId) {
     <div style="margin-top:6px;font-size:0.85rem">Location: (${a.x}, ${a.y})</div>
     <div style="font-size:0.85rem">Intention: <strong>${a.intention}</strong></div>
     <div style="font-size:0.85rem">Age: ${Math.floor(a.age / 100)} · Parents: ${parentInfo}</div>
-    <div style="font-size:0.85rem">Food Cached: ${a.foodCached} · Skills: G:${Math.round(a.skills.gathering)}% H:${Math.round(a.skills.hunting)}%</div>
+    <div style="font-size:0.85rem">Food Cached: ${a.foodCached}</div>
+    <div class="section">
+      <div class="section-title">Skills</div>
+      <div style="font-size:0.8rem">
+        <div>Gathering: ${Math.round(a.skills.gathering)}%</div>
+        <div>Hunting: ${Math.round(a.skills.hunting)}%</div>
+        <div>Building: ${Math.round(a.skills.building)}%</div>
+        <div>Farming: ${Math.round(a.skills.farming)}%</div>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Knowledge Acquired</div>
+      <div style="font-size:0.75rem; color: var(--accent);">
+        ${a.knowledgeAcquired.slice(0, 3).map(k => `• ${k}`).join('<br>')}
+      </div>
+    </div>
     <div class="section">
       <div class="section-title">Energy</div>
       <div class="bar"><div class="bar-fill energy" style="width:${a.energy}%"></div></div>
@@ -604,13 +708,6 @@ function showAgentDetail(agentId) {
     <div class="section">
       <div class="section-title">Mood</div>
       <div class="bar"><div class="bar-fill mood" style="width:${a.mood}%"></div></div>
-    </div>
-    <div class="section">
-      <div class="section-title">Relationships</div>
-      ${Object.entries(a.relationships).slice(0, 5).map(([otherId, rel]) => {
-        const other = world.agents.find(ag => ag.id === otherId);
-        return `<div style="font-size:0.8rem;padding:2px 0"><strong>${other?.name || '?'}</strong>: ${rel.score > 0 ? '❤️' : rel.score < 0 ? '❌' : '😐'} ${Math.round(rel.score)}</div>`;
-      }).join('')}
     </div>
   `;
 }
