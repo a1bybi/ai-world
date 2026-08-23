@@ -10,6 +10,7 @@
 // except to the provider you name. Requests are throttled and fire-and-forget:
 // if the network is slow or the key is wrong, the world carries on unchanged.
 
+import { load as loadJSON, save as saveJSON } from '../core/store.js';
 const LS = 'aurorae.llm';
 
 export class LLMBridge {
@@ -26,15 +27,13 @@ export class LLMBridge {
   }
 
   load() {
-    try {
-      const raw = localStorage.getItem(LS);
-      if (raw) Object.assign(this.cfg, JSON.parse(raw));
-    } catch { /* private browsing, or no storage: run local-only */ }
+    const saved = loadJSON(LS, null);
+    if (saved) Object.assign(this.cfg, saved);
   }
 
   save(cfg) {
     Object.assign(this.cfg, cfg);
-    try { localStorage.setItem(LS, JSON.stringify(this.cfg)); } catch { /* ignore */ }
+    saveJSON(LS, this.cfg);
   }
 
   get enabled() { return this.cfg.provider !== 'off' && !!this.cfg.model && (this.cfg.provider === 'ollama' || !!this.cfg.key); }
