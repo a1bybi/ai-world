@@ -621,7 +621,7 @@ function initUI() {
   document.getElementById('btn-hour').onclick = () => { simulationStep(world, 60); renderAll(world); };
   document.getElementById('btn-day').onclick = () => { simulationStep(world, 1440); renderAll(world); };
   
-  // Bind run/pause/reset buttons - THIS IS THE FIX
+  // Bind run/pause/reset buttons
   document.getElementById('btn-run').onclick = () => {
     running = true;
     document.getElementById('btn-run').disabled = true;
@@ -632,7 +632,6 @@ function initUI() {
     running = false;
     document.getElementById('btn-run').disabled = false;
     document.getElementById('btn-pause').disabled = true;
-    if (loopTimer) clearTimeout(loopTimer);
   };
   document.getElementById('btn-reset').onclick = () => {
     running = false;
@@ -761,12 +760,14 @@ function start() {
   window.world = world;
   initUI();
   renderAll(world);
+  loop();
 }
 
 function loop() {
-  if (!running) return;
-  simulationStep(world, 20);
-  renderAll(world);
+  if (running) {
+    simulationStep(world, 20);
+    renderAll(world);
+  }
   loopTimer = setTimeout(loop, Math.max(30, 1000 / speed));
 }
 
