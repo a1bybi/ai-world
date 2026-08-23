@@ -416,6 +416,12 @@ let selectedAgentId = null, canvas, ctx, world = null, running = false, speed = 
 function initUI() {
   canvas = document.getElementById('world-canvas');
   ctx = canvas.getContext('2d');
+  
+  // Speed select handler
+  document.getElementById('speed-select').addEventListener('change', (e) => {
+    speed = parseInt(e.target.value);
+  });
+  
   document.getElementById('agent-list').onclick = (e) => {
     const card = e.target.closest('.agent-card');
     if (card) { selectedAgentId = card.dataset.id; showAgentDetail(selectedAgentId); }
@@ -424,8 +430,11 @@ function initUI() {
     selectedAgentId = null;
     document.getElementById('agent-detail').classList.add('hidden');
     document.getElementById('agent-list').style.display = '';
+    renderAgentList(world);
   };
   document.getElementById('btn-clear-log').onclick = () => { world.events = []; renderEventLog(world); };
+  document.getElementById('btn-hour').onclick = () => { simulationStep(world, 60); renderAll(world); };
+  document.getElementById('btn-day').onclick = () => { simulationStep(world, 1440); renderAll(world); };
 }
 
 function renderAll(w) {
@@ -464,12 +473,12 @@ function renderMap(w) {
 }
 
 function renderEventLog(w) {
-  document.getElementById('event-log').innerHTML = w.events.slice(-120).reverse().e => `
+  document.getElementById('event-log').innerHTML = w.events.slice(-120).reverse().map(e => `
     <div class="event-entry${e.important ? ' important' : ''}">
       <span class="event-time">Day ${e.day} — ${String(e.hour).padStart(2,'0')}:${String(e.minute).padStart(2,'0')}</span>
       <span>${e.text}</span>
     </div>
-  `.join('');
+  `).join('');
 }
 
 function renderAgentList(w) {
@@ -522,6 +531,8 @@ function start() {
   };
   document.getElementById('btn-reset').onclick = () => {
     running = false; world = createWorld(); world.agents = createInitialAgents();
+    document.getElementById('btn-run').disabled = false;
+    document.getElementById('btn-pause').disabled = true;
     renderAll(world);
   };
 }
