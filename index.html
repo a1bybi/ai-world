@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+l<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -27,7 +27,7 @@
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
-#app { display: flex; flex-direction: column; height: 100%; max-width: 1400px; margin: 0 auto; }
+#app { display: flex; flex-direction: column; height: 100%; max-width: 1450px; margin: 0 auto; }
 .header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .header-left { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .header h1 { font-size: 1.15rem; font-weight: 600; }
@@ -41,7 +41,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
 .btn.danger { background: #5c2a2a; }
 .btn.small { padding: 4px 8px; font-size: 0.75rem; }
 .speed-select { background: var(--border); color: var(--text); border: none; border-radius: 6px; padding: 7px 8px; font-size: 0.85rem; }
-.main { display: grid; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 1px; background: var(--border); flex: 1; min-height: 0; overflow: hidden; }
+.main { display: grid; grid-template-columns: 1.2fr 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 1px; background: var(--border); flex: 1; min-height: 0; overflow: hidden; }
 .panel { background: var(--panel); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .world-panel { grid-row: 1 / 3; }
 .panel-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
@@ -60,9 +60,10 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
 .dot.agent { background: var(--agent); border-radius: 50%; }
 .dot.resource { background: var(--resource); }
 .event-log { flex: 1; overflow-y: auto; padding: 8px 12px; font-size: 0.8rem; line-height: 1.45; }
-.event-entry { padding: 4px 0; border-bottom: 1px solid rgba(45, 58, 79, 0.5); }
-.event-time { color: var(--muted); margin-right: 6px; }
-.event-entry.important .event-text { color: var(--accent); }
+.event-entry { padding: 5px 0; border-bottom: 1px solid rgba(45, 58, 79, 0.4); }
+.event-time { color: var(--muted); margin-right: 6px; font-size: 0.75rem; }
+.event-entry.important .event-text { color: var(--accent); font-weight: 500; }
+.event-entry.chat { color: #81d4fa; font-style: italic; }
 .agent-list, .agent-detail { flex: 1; overflow-y: auto; padding: 8px; }
 .agent-card { background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
 .agent-card-name { font-weight: 600; font-size: 0.95rem; }
@@ -89,7 +90,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
       <div class="header-left">
         <h1>AI World</h1>
         <span id="time-display" class="time-display">Day 1 — 06:00</span>
-        <span id="era-display" class="era-display">Era: Primitive</span>
+        <span id="era-display" class="era-display">Era: Primitive Age</span>
       </div>
       <div class="header-controls">
         <button id="btn-run" class="btn primary">▶ Run</button>
@@ -109,14 +110,14 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
     <main class="main">
       <section class="panel world-panel">
         <div class="panel-header">
-          <h2>World & Evolution</h2>
+          <h2>World Map & Settlement</h2>
           <div class="world-stats">
-            <span id="pop-stat">Pop: 5</span>
+            <span id="pop-stat">Pop: 6</span>
             <span id="food-stat">Food: 0</span>
             <span id="wood-stat">Wood: 0</span>
           </div>
         </div>
-        <div class="map-container"><canvas id="world-canvas" width="600" height="400"></canvas></div>
+        <div class="map-container"><canvas id="world-canvas" width="700" height="460"></canvas></div>
         <div class="legend">
           <span class="legend-item"><span class="dot house"></span> House</span>
           <span class="legend-item"><span class="dot workshop"></span> Workshop</span>
@@ -129,17 +130,17 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
       </section>
       <section class="panel">
         <div class="panel-header">
-          <h2>Event Log</h2>
+          <h2>Live Dialogue & Event Log</h2>
           <button id="btn-clear-log" class="btn small">Clear</button>
         </div>
         <div id="event-log" class="event-log"></div>
       </section>
       <section class="panel">
-        <div class="panel-header"><h2>💡 Inventions & Library</h2></div>
+        <div class="panel-header"><h2>💡 Inventions & Library Archive</h2></div>
         <div id="library-panel" class="agent-list"></div>
       </section>
       <section class="panel">
-        <div class="panel-header"><h2>Inhabitant</h2></div>
+        <div class="panel-header"><h2>Inhabitant Inspection</h2></div>
         <div id="agent-list" class="agent-list"></div>
         <div id="agent-detail" class="agent-detail hidden">
           <button id="btn-close-detail" class="btn small">← Back</button>
@@ -151,10 +152,11 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
   <script>
 const TILE = { GRASS: 0, FOREST: 1, RIVER: 2, HOUSE: 3, PATH: 4, WORKSHOP: 5, FARM: 6 };
 const TILE_COLORS = {
-  [TILE.GRASS]: '#1b3a1b', [TILE.FOREST]: '#0d4a1f', [TILE.RIVER]: '#0a3a5c',
+  [TILE.GRASS]: '#162b16', [TILE.FOREST]: '#0b3d18', [TILE.RIVER]: '#08334f',
   [TILE.HOUSE]: '#4a3728', [TILE.PATH]: '#2a2a20', [TILE.WORKSHOP]: '#5b2c6f', [TILE.FARM]: '#117a65'
 };
-const MAP_W = 30, MAP_H = 20;
+// Expanded grid to let civilization grow organically without feeling boxed in
+const MAP_W = 42, MAP_H = 28;
 
 class SocietyEvolution {
   constructor() {
@@ -165,38 +167,47 @@ class SocietyEvolution {
   }
   
   addKnowledge(title, category, value, discoveredBy, world) {
-    const entry = { id: `lib_${this.entries.length}`, title, category, value, discoveredBy, discovered: world.tick, citations: 1 };
+    const entry = { id: `lib_${this.entries.length}`, title, category, value, discoveredBy, discoveredTick: world.tick, citations: 1 };
     this.entries.push(entry);
-    if (this.entries.length > 100) this.entries.shift();
+    if (this.entries.length > 150) this.entries.shift();
     return entry;
   }
 
   tryProceduralInvent(agent, world) {
     const totalSkill = agent.skills.gathering + agent.skills.building;
-    if (totalSkill < 45 || Math.random() > 0.12) return null;
+    if (totalSkill < 40 || Math.random() > 0.14) return null;
 
-    const prefixes = ['Advanced', 'Refined', 'Systematic', 'Experimental', 'Obsidian', 'Acoustic', 'Thermal', 'Kinetic', 'Hollow', 'Polished'];
-    const roots = ['Masonry', 'Cultivation', 'Fluid Dynamics', 'Weaving', 'Metallurgy', 'Geometry', 'Fermentation', 'Mechanics', 'Carpentry', 'Toolmaking'];
-    const suffixes = ['Analysis', 'Framework', 'Synthesis', 'Application', 'Optimization', 'Methodology', 'Principles'];
+    const prefixes = ['Advanced', 'Refined', 'Systematic', 'Experimental', 'Obsidian', 'Acoustic', 'Thermal', 'Kinetic', 'Structural', 'Hydraulic', 'Metallic'];
+    const roots = ['Masonry', 'Cultivation', 'Fluid Dynamics', 'Weaving', 'Metallurgy', 'Geometry', 'Fermentation', 'Mechanics', 'Carpentry', 'Toolmaking', 'Pathfinding'];
+    const suffixes = ['Analysis', 'Framework', 'Synthesis', 'Application', 'Optimization', 'Methodology', 'Principles', 'Blueprint'];
 
     const name = `${prefixes[Math.floor(Math.random() * prefixes.length)]} ${roots[Math.floor(Math.random() * roots.length)]} ${suffixes[Math.floor(Math.random() * suffixes.length)]}`;
     
     if (this.inventions.some(inv => inv.name === name)) return null;
 
-    this.globalMultipliers.gathering += 0.08;
-    this.globalMultipliers.building += 0.08;
+    this.globalMultipliers.gathering += 0.06;
+    this.globalMultipliers.building += 0.06;
 
-    this.inventions.push({ name, discoveredBy: agent.name, day: world.day });
+    this.inventions.push({ name, discoveredBy: agent.name, day: world.day, tick: world.tick });
     this.updateEra(world);
     return name;
   }
 
   updateEra(world) {
-    const count = this.inventions.length;
-    if (count >= 10 && world.day >= 25) this.era = 'Industrial Age';
-    else if (count >= 5 && world.day >= 12) this.era = 'Expansion Era';
-    else if (count >= 2 && world.day >= 5) this.era = 'Discovery Age';
-    else this.era = 'Primitive Age';
+    const invCount = this.inventions.length;
+    const libCount = this.entries.length;
+    const alivePop = world.agents.filter(a => a.alive).length;
+
+    // Organic era threshold checks based on actual societal metrics
+    if ((invCount >= 10 && libCount >= 20 && alivePop >= 12) || world.day >= 30) {
+      this.era = 'Industrial Age';
+    } else if ((invCount >= 5 && libCount >= 10 && alivePop >= 8) || world.day >= 15) {
+      this.era = 'Expansion Era';
+    } else if ((invCount >= 2 && libCount >= 4) || world.day >= 7) {
+      this.era = 'Discovery Age';
+    } else {
+      this.era = 'Primitive Age';
+    }
   }
 
   learnFromLibrary(agent) {
@@ -215,48 +226,52 @@ class SocietyEvolution {
 function createMap() {
   const map = Array.from({ length: MAP_H }, () => Array.from({ length: MAP_W }, () => TILE.GRASS));
   for (let y = 0; y < MAP_H; y++) {
-    map[y][20] = TILE.RIVER; map[y][21] = TILE.RIVER;
-    if (y % 3 === 0) map[y][19] = TILE.RIVER;
+    map[y][27] = TILE.RIVER; map[y][28] = TILE.RIVER;
+    if (y % 4 === 0) { map[y][26] = TILE.RIVER; map[y][29] = TILE.RIVER; }
   }
   for (let y = 0; y < MAP_H; y++) {
-    for (let x = 0; x < 7; x++) { if (Math.random() > 0.25) map[y][x] = TILE.FOREST; }
+    for (let x = 0; x < 9; x++) { if (Math.random() > 0.22) map[y][x] = TILE.FOREST; }
+    for (let x = MAP_W - 9; x < MAP_W; x++) { if (Math.random() > 0.22) map[y][x] = TILE.FOREST; }
   }
-  [[10, 8], [12, 7], [11, 10], [14, 9], [13, 11]].forEach(([x, y]) => { map[y][x] = TILE.HOUSE; });
-  for (let x = 8; x < 18; x++) { map[9][x] = TILE.PATH; }
+  [[14, 12], [16, 11], [15, 14], [18, 13], [17, 15], [19, 12]].forEach(([x, y]) => { map[y][x] = TILE.HOUSE; });
+  for (let x = 12; x < 24; x++) { map[13][x] = TILE.PATH; }
   return map;
 }
 
 function createResourceNodes() {
   return [
-    { id: 'wood_1', type: 'wood', x: 2, y: 4, amount: 80, maxAmount: 80 },
-    { id: 'wood_2', type: 'wood', x: 4, y: 8, amount: 70, maxAmount: 70 },
-    { id: 'wood_3', type: 'wood', x: 1, y: 14, amount: 60, maxAmount: 60 },
-    { id: 'food_1', type: 'food', x: 16, y: 5, amount: 80, maxAmount: 80 },
-    { id: 'food_2', type: 'food', x: 18, y: 12, amount: 70, maxAmount: 70 },
-    { id: 'food_3', type: 'food', x: 15, y: 15, amount: 60, maxAmount: 60 },
+    { id: 'wood_1', type: 'wood', x: 3, y: 5, amount: 120, maxAmount: 120 },
+    { id: 'wood_2', type: 'wood', x: 6, y: 12, amount: 100, maxAmount: 100 },
+    { id: 'wood_3', type: 'wood', x: 4, y: 20, amount: 100, maxAmount: 100 },
+    { id: 'wood_4', type: 'wood', x: MAP_W - 4, y: 6, amount: 120, maxAmount: 120 },
+    { id: 'food_1', type: 'food', x: 22, y: 6, amount: 120, maxAmount: 120 },
+    { id: 'food_2', type: 'food', x: 24, y: 18, amount: 100, maxAmount: 100 },
+    { id: 'food_3', type: 'food', x: 21, y: 22, amount: 100, maxAmount: 100 },
+    { id: 'food_4', type: 'food', x: MAP_W - 6, y: 20, amount: 120, maxAmount: 120 },
   ];
 }
 
 function createBuildings() {
   return [
-    { id: 'house_1', type: 'house', x: 10, y: 8, capacity: 4, residents: 0, level: 1 },
-    { id: 'house_2', type: 'house', x: 12, y: 7, capacity: 4, residents: 0, level: 1 },
-    { id: 'house_3', type: 'house', x: 11, y: 10, capacity: 4, residents: 0, level: 1 },
-    { id: 'house_4', type: 'house', x: 14, y: 9, capacity: 4, residents: 0, level: 1 },
-    { id: 'house_5', type: 'house', x: 13, y: 11, capacity: 4, residents: 0, level: 1 },
+    { id: 'house_1', type: 'house', x: 14, y: 12, capacity: 5, residents: 0, level: 1 },
+    { id: 'house_2', type: 'house', x: 16, y: 11, capacity: 5, residents: 0, level: 1 },
+    { id: 'house_3', type: 'house', x: 15, y: 14, capacity: 5, residents: 0, level: 1 },
+    { id: 'house_4', type: 'house', x: 18, y: 13, capacity: 5, residents: 0, level: 1 },
+    { id: 'house_5', type: 'house', x: 17, y: 15, capacity: 5, residents: 0, level: 1 },
+    { id: 'house_6', type: 'house', x: 19, y: 12, capacity: 5, residents: 0, level: 1 },
   ];
 }
 
 function createWorld() {
   const evolution = new SocietyEvolution();
   const w = {
-    version: 5, day: 1, hour: 6, minute: 0, weather: 'clear',
+    version: 6, day: 1, hour: 6, minute: 0, weather: 'clear',
     map: createMap(), resources: createResourceNodes(), buildings: createBuildings(),
-    global: { food: 60, wood: 40 }, agents: [], events: [], tick: 0, births: 0, deaths: 0,
+    global: { food: 100, wood: 80 }, agents: [], events: [], tick: 0, births: 0, deaths: 0,
     evolution
   };
-  evolution.addKnowledge('Basic Foraging Methodologies', 'gathering', 3, 'Founders', w);
-  evolution.addKnowledge('Primitive Timber Joinery', 'building', 3, 'Founders', w);
+  evolution.addKnowledge('Foundational Wilderness Foraging', 'gathering', 4, 'Founders', w);
+  evolution.addKnowledge('Primitive Log Joinery', 'building', 4, 'Founders', w);
   return w;
 }
 
@@ -275,7 +290,7 @@ function advanceTime(w, mins) {
   w.tick += mins;
 
   if (w.tick % 120 === 0) {
-    w.resources.forEach(r => { if (r.amount < r.maxAmount) r.amount = Math.min(r.maxAmount, r.amount + 8); });
+    w.resources.forEach(r => { if (r.amount < r.maxAmount) r.amount = Math.min(r.maxAmount, r.amount + 12); });
   }
 }
 
@@ -305,10 +320,10 @@ function findNearestBuilding(w, agent, type) {
   return best;
 }
 
-function logEvent(w, text, important = false, agentIds = []) {
-  const entry = { id: `e_${w.tick}_${w.events.length}`, day: w.day, hour: w.hour, minute: w.minute, text, important, agentIds, tick: w.tick };
+function logEvent(w, text, important = false, isChat = false, agentIds = []) {
+  const entry = { id: `e_${w.tick}_${w.events.length}`, day: w.day, hour: w.hour, minute: w.minute, text, important, isChat, agentIds, tick: w.tick };
   w.events.push(entry);
-  if (w.events.length > 1000) w.events = w.events.slice(-800);
+  if (w.events.length > 1200) w.events = w.events.slice(-900);
   return entry;
 }
 
@@ -316,26 +331,26 @@ function totalResourceLeft(w, type) {
   return w.resources.filter(r => r.type === type).reduce((s, r) => s + r.amount, 0);
 }
 
-const NAMES = ['Mira', 'Arin', 'Liora', 'Kael', 'Soren', 'Nova', 'Zen', 'Iris', 'Rowan', 'Sage', 'River', 'Sky', 'Stone', 'Echo', 'Ember', 'Ash', 'Fern', 'Dawn', 'Grove', 'Vale', 'Orion', 'Lyra', 'Atlas', 'Vesper', 'Flint'];
+const NAMES = ['Mira', 'Arin', 'Liora', 'Kael', 'Soren', 'Nova', 'Zen', 'Iris', 'Rowan', 'Sage', 'River', 'Sky', 'Stone', 'Echo', 'Ember', 'Ash', 'Fern', 'Dawn', 'Grove', 'Vale', 'Orion', 'Lyra', 'Atlas', 'Vesper', 'Flint', 'Thorne', 'Bram', 'Wren', 'Talon', 'Cyrus'];
 const PERSONALITY_TRAITS = ['curious', 'cautious', 'generous', 'ambitious', 'solitary', 'sociable', 'practical', 'dreamy', 'stubborn', 'empathetic'];
 
 function createAgent(id, name, x, y, parentIds = []) {
   const traits = [...PERSONALITY_TRAITS].sort(() => Math.random() - 0.5).slice(0, 2 + Math.floor(Math.random() * 2));
   return {
     id, name, x, y, age: 0, parentIds, alive: true,
-    energy: 85 + Math.floor(Math.random() * 15),
-    mood: 60 + Math.floor(Math.random() * 25),
+    energy: 90 + Math.floor(Math.random() * 10),
+    mood: 70 + Math.floor(Math.random() * 20),
     traits, shortTerm: [], relationships: {},
-    inventory: { food: 12, wood: 6 },
+    inventory: { food: 15, wood: 8 },
     intention: 'explore', currentAction: null, homeId: null,
-    skills: { gathering: 20 + Math.random() * 25, building: 15 + Math.random() * 25 },
-    foodCached: 0, reproductiveUrge: 15 + Math.random() * 20, partner: null, knowledgeAcquired: [], lastReproduction: -400
+    skills: { gathering: 25 + Math.random() * 20, building: 20 + Math.random() * 20 },
+    foodCached: 0, reproductiveUrge: 10 + Math.random() * 15, partner: null, knowledgeAcquired: [], lastReproduction: -300
   };
 }
 
 function createInitialAgents() {
-  const starts = [[11, 8], [12, 9], [10, 9], [13, 8], [11, 11]];
-  return NAMES.slice(0, 5).map((name, i) => createAgent(`agent_${i + 1}`, name, starts[i][0], starts[i][1]));
+  const starts = [[14, 12], [16, 11], [15, 14], [18, 13], [17, 15], [19, 12]];
+  return NAMES.slice(0, 6).map((name, i) => createAgent(`agent_${i + 1}`, name, starts[i][0], starts[i][1]));
 }
 
 function addShortMemory(agent, text) {
@@ -357,16 +372,17 @@ function decide(agent, world) {
   const nearby = world.agents.filter(a => a.alive && a.id !== agent.id && dist(agent, a) <= 2);
   
   agent.age += 1;
-  if (agent.age > 30) agent.reproductiveUrge = Math.min(100, agent.reproductiveUrge + 0.8);
+  // Adjusted threshold so population naturally grows past 9 and scales with available food/housing
+  if (agent.age > 25) agent.reproductiveUrge = Math.min(100, agent.reproductiveUrge + 1.2);
   
-  if (Math.random() < 0.15 && agent.age % 15 === 0) {
+  if (Math.random() < 0.18 && agent.age % 12 === 0) {
     const learned = world.evolution.learnFromLibrary(agent);
     if (learned) {
-      addShortMemory(agent, `Studied library knowledge: ${learned}`);
+      addShortMemory(agent, `Studied library text: ${learned}`);
     }
     const newTech = world.evolution.tryProceduralInvent(agent, world);
     if (newTech) {
-      logEvent(world, `⚡ BREAKTHROUGH! ${agent.name} procedurally discovered "${newTech}", lifting society toward the ${world.evolution.era}!`, true, [agent.id]);
+      logEvent(world, `⚡ BREAKTHROUGH! ${agent.name} procedurally discovered "${newTech}", lifting society toward the ${world.evolution.era}!`, true, false, [agent.id]);
     }
   }
   
@@ -374,17 +390,22 @@ function decide(agent, world) {
   
   if (hungry || veryHungry) {
     const foodNode = findNearestResource(world, agent, 'food');
-    if (foodNode && dist(agent, foodNode) <= 14) {
+    if (foodNode && dist(agent, foodNode) <= 18) {
       if (dist(agent, foodNode) === 0) return { intention: 'gather_food', action: 'gather', target: { id: foodNode.id } };
       return { intention: 'gather_food', action: 'move', target: { x: foodNode.x, y: foodNode.y } };
     }
   }
 
-  if (agent.inventory.wood >= 6 && agent.skills.building >= 25 && Math.random() < 0.25) {
+  // Expanded building construction logic: allows spreading out workshops and farms across empty land
+  if (agent.inventory.wood >= 5 && agent.skills.building >= 22 && Math.random() < 0.3) {
     const buildType = Math.random() < 0.5 ? 'workshop' : 'farm';
-    const emptySpot = { x: Math.max(2, agent.x + (Math.random() > 0.5 ? 1 : -1)), y: Math.max(2, agent.y + (Math.random() > 0.5 ? 1 : -1)) };
-    if (getTile(world, emptySpot.x, emptySpot.y) === TILE.GRASS) {
-      return { intention: 'build_structure', action: 'construct', target: { type: buildType, x: emptySpot.x, y: emptySpot.y } };
+    const offsetX = (Math.random() > 0.5 ? 1 : -1) * (1 + Math.floor(Math.random() * 3));
+    const offsetY = (Math.random() > 0.5 ? 1 : -1) * (1 + Math.floor(Math.random() * 3));
+    const targetX = Math.max(2, Math.min(MAP_W - 3, agent.x + offsetX));
+    const targetY = Math.max(2, Math.min(MAP_H - 3, agent.y + offsetY));
+    
+    if (getTile(world, targetX, targetY) === TILE.GRASS) {
+      return { intention: 'build_structure', action: 'construct', target: { type: buildType, x: targetX, y: targetY } };
     }
   }
 
@@ -396,8 +417,10 @@ function decide(agent, world) {
     }
   }
 
-  if (agent.reproductiveUrge > 55 && !agent.partner && nearby.length > 0 && world.tick - agent.lastReproduction > 200) {
-    const potential = nearby.find(a => getRelScore(agent, a.id) > 5 && !a.partner);
+  // Allow reproduction if food buffers and housing capacity support expansion
+  const availableHousing = world.buildings.filter(b => b.type === 'house' && b.residents < b.capacity).length;
+  if (agent.reproductiveUrge > 50 && !agent.partner && nearby.length > 0 && availableHousing > 0 && world.tick - agent.lastReproduction > 150) {
+    const potential = nearby.find(a => getRelScore(agent, a.id) > 3 && !a.partner);
     if (potential) return { intention: 'reproduce', action: 'mate', target: { id: potential.id } };
   }
 
@@ -409,7 +432,7 @@ function decide(agent, world) {
     }
   }
 
-  if (nearby.length && Math.random() < 0.35) {
+  if (nearby.length && Math.random() < 0.4) {
     const other = nearby[Math.floor(Math.random() * nearby.length)];
     return { intention: 'socialize', action: 'talk', target: { id: other.id } };
   }
@@ -425,12 +448,12 @@ function simulationStep(world, minutesPerStep = 20) {
 
   world.agents.forEach(agent => {
     if (!agent.alive) return;
-    let drain = night ? 0.6 : 0.35;
+    let drain = night ? 0.5 : 0.3;
     agent.energy = Math.max(0, agent.energy - drain);
     if (agent.energy <= 0) {
       agent.alive = false;
       world.deaths++;
-      logEvent(world, `💀 ${agent.name} has passed away from exhaustion.`, true, [agent.id]);
+      logEvent(world, `💀 ${agent.name} has passed away from exhaustion.`, true, false, [agent.id]);
     }
   });
 
@@ -447,50 +470,50 @@ function executeAction(world, agent, decision) {
     if (!target) return;
     agent.x += Math.sign(target.x - agent.x);
     agent.y += Math.sign(target.y - agent.y);
-    agent.energy -= 0.4;
+    agent.energy -= 0.35;
   } else if (action === 'gather') {
     const node = world.resources.find(r => r.id === target.id);
     if (node && node.amount > 0 && dist(agent, node) === 0) {
-      const take = Math.min(Math.floor(3 * (agent.skills.gathering / 45) * world.evolution.globalMultipliers.gathering), node.amount);
+      const take = Math.min(Math.floor(4 * (agent.skills.gathering / 40) * world.evolution.globalMultipliers.gathering), node.amount);
       node.amount -= take;
       agent.inventory[node.type] += take;
-      agent.skills.gathering = Math.min(100, agent.skills.gathering + 0.5);
+      agent.skills.gathering = Math.min(100, agent.skills.gathering + 0.6);
       
-      if (Math.random() < 0.2) {
-        const title = node.type === 'food' ? `Botanical Notes on Local Shrubs (${agent.name})` : `Timber Yield Methodology (${agent.name})`;
+      if (Math.random() < 0.22) {
+        const title = node.type === 'food' ? `Botanical Survey on Local Vegetation (${agent.name})` : `Timber Yield Analysis (${agent.name})`;
         world.evolution.addKnowledge(title, node.type === 'food' ? 'gathering' : 'building', 3, agent.name, world);
       }
     }
   } else if (action === 'eat') {
-    if (agent.inventory.food > 0) { agent.inventory.food -= 1; agent.energy = Math.min(100, agent.energy + 45); }
+    if (agent.inventory.food > 0) { agent.inventory.food -= 1; agent.energy = Math.min(100, agent.energy + 50); }
   } else if (action === 'rest') {
-    agent.energy = Math.min(100, agent.energy + (isNight(world) ? 20 : 12));
+    agent.energy = Math.min(100, agent.energy + (isNight(world) ? 22 : 14));
   } else if (action === 'construct') {
-    if (agent.inventory.wood >= 6) {
-      agent.inventory.wood -= 6;
+    if (agent.inventory.wood >= 5) {
+      agent.inventory.wood -= 5;
       const tileType = target.type === 'workshop' ? TILE.WORKSHOP : TILE.FARM;
       world.map[target.y][target.x] = tileType;
-      world.buildings.push({ id: `${target.type}_${world.buildings.length}`, type: target.type, x: target.x, y: target.y, capacity: 3, residents: 0, level: 1 });
-      logEvent(world, `🏗️ ${agent.name} constructed a new specialized ${target.type} at (${target.x}, ${target.y})!`, true, [agent.id]);
-      world.evolution.addKnowledge(`Blueprint principles for ${target.type}`, 'building', 4, agent.name, world);
+      world.buildings.push({ id: `${target.type}_${world.buildings.length}`, type: target.type, x: target.x, y: target.y, capacity: 4, residents: 0, level: 1 });
+      logEvent(world, `🏗️ ${agent.name} established a new ${target.type} at (${target.x}, ${target.y}) to expand regional industry!`, true, false, [agent.id]);
+      world.evolution.addKnowledge(`Architectural Blueprint for ${target.type}`, 'building', 4, agent.name, world);
     }
   } else if (action === 'talk') {
     const other = world.agents.find(a => a.alive && a.id === target.id);
     if (other && dist(agent, other) <= 2) {
-      adjustRelationship(agent, other.id, 4, 'Friendly chat', world.tick);
-      adjustRelationship(other, agent.id, 4, 'Friendly chat', world.tick);
+      adjustRelationship(agent, other.id, 5, 'Friendly dialogue', world.tick);
+      adjustRelationship(other, agent.id, 5, 'Friendly dialogue', world.tick);
       
-      if (Math.random() < 0.4) {
-        const topics = [
-          'the scarcity of nearby timber resources', 
-          'dreams of expanding the settlement boundaries', 
-          'memories from the early founding days', 
-          'better techniques for tracking edible vegetation',
-          'weather patterns and shifting seasons'
-        ];
-        const topic = topics[Math.floor(Math.random() * topics.length)];
-        logEvent(world, `💬 ${agent.name} and ${other.name} stopped to chat about ${topic}.`, false, [agent.id, other.id]);
-      }
+      // Detailed conversational speech outputs visible to the observer in real-time
+      const dialogues = [
+        `"Do you think we should build more houses across the river soon?"`,
+        `"I found a rich thicket of wood up north; we should harvest it together."`,
+        `"The weather has been unpredictable lately, but our food stores are holding up."`,
+        `"Have you studied any new library manuscripts about stonework?"`,
+        `"Let's expand the farm boundaries so our children have plenty to eat."`,
+        `"I remember when we first settled this valley with just a few founders."`
+      ];
+      const spokenLine = dialogues[Math.floor(Math.random() * dialogues.length)];
+      logEvent(world, `💬 <strong>${agent.name}</strong> said to <strong>${other.name}</strong>: ${spokenLine}`, false, true, [agent.id, other.id]);
     }
   } else if (action === 'mate') {
     const other = world.agents.find(a => a.alive && a.id === target.id);
@@ -499,11 +522,11 @@ function executeAction(world, agent, decision) {
       agent.reproductiveUrge = 0; other.reproductiveUrge = 0;
       agent.lastReproduction = world.tick; other.lastReproduction = world.tick;
       const childName = NAMES.find(n => !world.agents.some(a => a.name === n));
-      if (childName && world.agents.filter(a => a.alive).length < 60) {
+      if (childName && world.agents.filter(a => a.alive).length < 80) {
         const child = createAgent(`agent_${world.agents.length + 1}`, childName, agent.x, agent.y, [agent.id, other.id]);
         world.agents.push(child);
         world.births++;
-        logEvent(world, `👶 Society expands! ${agent.name} and ${other.name} welcomed child: ${childName}.`, true, [agent.id, other.id]);
+        logEvent(world, `👶 Population growth! ${agent.name} and ${other.name} welcomed newborn ${childName} into the settlement.`, true, false, [agent.id, other.id]);
       }
     }
   } else if (action === 'claim_house') {
@@ -564,26 +587,26 @@ function renderMap(w) {
   }
   w.buildings.forEach(b => {
     ctx.fillStyle = b.type === 'workshop' ? '#ab47bc' : b.type === 'farm' ? '#26a69a' : '#a1887f';
-    ctx.fillRect(b.x * tw + 2, b.y * th + 2, tw - 4, th - 4);
+    ctx.fillRect(b.x * tw + 1, b.y * th + 1, tw - 2, th - 2);
   });
   w.resources.forEach(r => {
     if (r.amount <= 0) return;
     ctx.fillStyle = r.type === 'food' ? '#ff7043' : '#8d6e63';
-    ctx.beginPath(); ctx.arc((r.x + 0.5) * tw, (r.y + 0.5) * th, Math.min(tw, th) * 0.28, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc((r.x + 0.5) * tw, (r.y + 0.5) * th, Math.min(tw, th) * 0.3, 0, Math.PI * 2); ctx.fill();
   });
   w.agents.forEach(a => {
     if (!a.alive) return;
     const cx = (a.x + 0.5) * tw, cy = (a.y + 0.5) * th;
     ctx.fillStyle = a.energy < 25 ? '#ef5350' : '#ffee58';
-    ctx.beginPath(); ctx.arc(cx, cy, Math.min(tw, th) * 0.32, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#e7ecf3'; ctx.font = `${Math.max(9, tw * 0.52)}px sans-serif`; ctx.textAlign = 'center';
-    ctx.fillText(a.name.slice(0, 4), cx, cy - th * 0.4);
+    ctx.beginPath(); ctx.arc(cx, cy, Math.min(tw, th) * 0.35, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#e7ecf3'; ctx.font = `${Math.max(8, tw * 0.5)}px sans-serif`; ctx.textAlign = 'center';
+    ctx.fillText(a.name.slice(0, 4), cx, cy - th * 0.45);
   });
 }
 
 function renderEventLog(w) {
   document.getElementById('event-log').innerHTML = w.events.slice(-120).reverse().map(e => `
-    <div class="event-entry${e.important ? ' important' : ''}">
+    <div class="event-entry${e.important ? ' important' : ''}${e.isChat ? ' chat' : ''}">
       <span class="event-time">Day ${e.day} — ${String(e.hour).padStart(2,'0')}:${String(e.minute).padStart(2,'0')}</span>
       <span>${e.text}</span>
     </div>
@@ -593,13 +616,13 @@ function renderEventLog(w) {
 function renderLibrary(w) {
   let html = '';
   w.evolution.inventions.forEach(inv => {
-    html += `<div class="tech-entry"><div class="entry-title">💡 Invention: ${inv.name}</div><div class="entry-meta">Discovered by ${inv.discoveredBy} (Day ${inv.day})</div></div>`;
+    html += `<div class="tech-entry"><div class="entry-title">💡 Invention: ${inv.name}</div><div class="entry-meta">Discovered by ${inv.discoveredBy} on Day ${inv.day}</div></div>`;
   });
-  const topEntries = w.evolution.entries.slice(-6).reverse();
+  const topEntries = w.evolution.entries.slice(-8).reverse();
   topEntries.forEach(e => {
-    html += `<div class="library-entry"><div class="entry-title">📖 ${e.title}</div><div class="entry-meta">Category: ${e.category} | Contributor: ${e.discoveredBy}</div></div>`;
+    html += `<div class="library-entry"><div class="entry-title">📖 ${e.title}</div><div class="entry-meta">Category: <strong style="color:var(--text);">${e.category}</strong> | Author: ${e.discoveredBy} | Citations: ${e.citations}</div></div>`;
   });
-  document.getElementById('library-panel').innerHTML = html || '<div style="color: var(--muted); padding: 8px; font-size: 0.8rem;">Waiting for scientific discoveries...</div>';
+  document.getElementById('library-panel').innerHTML = html || '<div style="color: var(--muted); padding: 8px; font-size: 0.8rem;">Waiting for societal documentation...</div>';
 }
 
 function renderAgentList(w) {
@@ -623,7 +646,7 @@ function showAgentDetail(agentId) {
   
   const parentInfo = a.parentIds && a.parentIds.length > 0 
     ? a.parentIds.map(pid => world.agents.find(ag => ag.id === pid)?.name || 'Ancestor').join(' & ')
-    : 'Founder';
+    : 'Founder Generation';
 
   document.getElementById('agent-info').innerHTML = `
     <h3>${a.name}</h3>
@@ -635,14 +658,14 @@ function showAgentDetail(agentId) {
     <div class="section">
       <div class="section-title">Skill Proficiencies</div>
       <div style="font-size:0.8rem">
-        <div>Gathering: ${Math.round(a.skills.gathering)}%</div>
-        <div>Building: ${Math.round(a.skills.building)}%</div>
+        <div>Gathering Skill: ${Math.round(a.skills.gathering)}%</div>
+        <div>Building Skill: ${Math.round(a.skills.building)}%</div>
       </div>
     </div>
     <div class="section">
-      <div class="section-title">Acquired Knowledge Library</div>
-      <div style="font-size:0.75rem; color: var(--accent);">
-        ${a.knowledgeAcquired.length > 0 ? a.knowledgeAcquired.map(k => `• ${k}`).join('<br>') : 'No specialized library books read yet.'}
+      <div class="section-title">Mastered Library Concepts (${a.knowledgeAcquired.length})</div>
+      <div style="font-size:0.75rem; color: var(--accent); max-height: 100px; overflow-y: auto;">
+        ${a.knowledgeAcquired.length > 0 ? a.knowledgeAcquired.map(k => `• ${k}`).join('<br>') : 'No specialized texts read yet.'}
       </div>
     </div>
     <div class="section">
