@@ -620,6 +620,28 @@ function initUI() {
   document.getElementById('btn-clear-log').onclick = () => { world.events = []; renderEventLog(world); };
   document.getElementById('btn-hour').onclick = () => { simulationStep(world, 60); renderAll(world); };
   document.getElementById('btn-day').onclick = () => { simulationStep(world, 1440); renderAll(world); };
+  
+  // Bind run/pause/reset buttons - THIS IS THE FIX
+  document.getElementById('btn-run').onclick = () => {
+    running = true;
+    document.getElementById('btn-run').disabled = true;
+    document.getElementById('btn-pause').disabled = false;
+    loop();
+  };
+  document.getElementById('btn-pause').onclick = () => {
+    running = false;
+    document.getElementById('btn-run').disabled = false;
+    document.getElementById('btn-pause').disabled = true;
+    if (loopTimer) clearTimeout(loopTimer);
+  };
+  document.getElementById('btn-reset').onclick = () => {
+    running = false;
+    world = createWorld();
+    world.agents = createInitialAgents();
+    document.getElementById('btn-run').disabled = false;
+    document.getElementById('btn-pause').disabled = true;
+    renderAll(world);
+  };
 }
 
 function renderAll(w) {
@@ -739,25 +761,6 @@ function start() {
   window.world = world;
   initUI();
   renderAll(world);
-  
-  document.getElementById('btn-run').onclick = () => {
-    running = true;
-    document.getElementById('btn-run').disabled = true;
-    document.getElementById('btn-pause').disabled = false;
-    loop();
-  };
-  document.getElementById('btn-pause').onclick = () => {
-    running = false;
-    document.getElementById('btn-run').disabled = false;
-    document.getElementById('btn-pause').disabled = true;
-    if (loopTimer) clearTimeout(loopTimer);
-  };
-  document.getElementById('btn-reset').onclick = () => {
-    running = false; world = createWorld(); world.agents = createInitialAgents();
-    document.getElementById('btn-run').disabled = false;
-    document.getElementById('btn-pause').disabled = true;
-    renderAll(world);
-  };
 }
 
 function loop() {
