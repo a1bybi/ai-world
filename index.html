@@ -3,8 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <title>AI World — Autonomous Artificial Society & Evolution</title>
+  <title>AI World — Metallurgical & Adaptive Civilization</title>
   <style>
 :root {
   --bg: #0b0f14;
@@ -22,15 +21,22 @@
   --forest: #2e7d32;
   --river: #0288d1;
   --agent: #ffee58;
-  --resource: #ff7043;
+  --resource-food: #ff7043;
+  --resource-wood: #8d6e63;
+  --resource-stone: #90a4ae;
+  --resource-metal: #b0bec5;
+  --resource-coal: #37474f;
+  --smelter: #ff5722;
   --workshop: #ab47bc;
   --farm: #26a69a;
-  --tower: #78909c;
+  --tower: #546e7a;
   --granary: #d4e157;
+  --academy: #3f51b5;
+  --manor: #795548;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); overflow-x: hidden; }
-#app { display: flex; flex-direction: column; min-height: 100vh; max-width: 1550px; margin: 0 auto; position: relative; }
+#app { display: flex; flex-direction: column; min-height: 100vh; max-width: 1600px; margin: 0 auto; position: relative; }
 
 /* Header */
 .header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--border); flex-shrink: 0; }
@@ -55,14 +61,14 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
 .god-bar { display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: #121822; border-bottom: 1px solid var(--border); font-size: 0.8rem; overflow-x: auto; flex-shrink: 0; -webkit-overflow-scrolling: touch; }
 .god-title { color: #b388ff; font-weight: 600; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.5px; white-space: nowrap; }
 
-/* Main Desktop/Mobile Grid Layout */
-.main { display: grid; grid-template-columns: 1.3fr 1fr 1fr; grid-template-rows: minmax(320px, 1fr) minmax(280px, 1fr); gap: 1px; background: var(--border); flex: 1; min-height: 0; }
+/* Main Grid Layout */
+.main { display: grid; grid-template-columns: 1.35fr 1fr 1fr; grid-template-rows: minmax(320px, 1.1fr) minmax(280px, 0.9fr); gap: 1px; background: var(--border); flex: 1; min-height: 0; }
 .panel { background: var(--panel); display: flex; flex-direction: column; min-height: 240px; overflow: hidden; }
 .world-panel { grid-row: 1 / 3; }
 .panel-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--panel-light); }
 .panel-header h2 { font-size: 0.85rem; font-weight: 600; letter-spacing: 0.3px; }
-.world-stats { display: flex; gap: 10px; font-size: 0.78rem; color: var(--muted); font-weight: 500; }
-.world-stats span { color: var(--text); }
+.world-stats { display: flex; gap: 8px; font-size: 0.75rem; color: var(--muted); font-weight: 500; flex-wrap: wrap; }
+.world-stats span { color: var(--text); font-weight: 600; }
 
 /* Canvas Container */
 .map-container { flex: 1; display: flex; align-items: center; justify-content: center; padding: 8px; min-height: 280px; position: relative; background: #080c10; width: 100%; height: 100%; }
@@ -70,30 +76,29 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
 .canvas-hint { position: absolute; bottom: 12px; right: 12px; background: rgba(0,0,0,0.6); padding: 4px 8px; border-radius: 4px; font-size: 0.7rem; color: var(--muted); pointer-events: none; }
 
 /* Map Legend */
-.legend { display: flex; flex-wrap: wrap; gap: 6px 10px; padding: 6px 12px; font-size: 0.7rem; color: var(--muted); border-top: 1px solid var(--border); flex-shrink: 0; background: var(--panel); }
-.legend-item { display: flex; align-items: center; gap: 4px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 8px; padding: 6px 12px; font-size: 0.68rem; color: var(--muted); border-top: 1px solid var(--border); flex-shrink: 0; background: var(--panel); }
+.legend-item { display: flex; align-items: center; gap: 3px; }
 .dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
 .dot.house { background: var(--house); }
+.dot.manor { background: var(--manor); }
 .dot.workshop { background: var(--workshop); }
+.dot.smelter { background: var(--smelter); }
 .dot.farm { background: var(--farm); }
 .dot.tower { background: var(--tower); }
-.dot.granary { background: var(--granary); }
-.dot.forest { background: var(--forest); }
-.dot.river { background: var(--river); }
-.dot.agent { background: var(--agent); border-radius: 50%; }
-.dot.resource { background: var(--resource); }
+.dot.academy { background: var(--academy); }
+.dot.metal { background: var(--resource-metal); }
+.dot.coal { background: var(--resource-coal); }
 
-/* Event Log */
+/* Log and Lists */
 .log-filter-bar { display: flex; gap: 4px; padding: 4px 8px; background: var(--panel); border-bottom: 1px solid var(--border); overflow-x: auto; }
 .log-filter-btn { background: transparent; border: none; color: var(--muted); padding: 3px 8px; font-size: 0.72rem; cursor: pointer; border-radius: 3px; white-space: nowrap; }
 .log-filter-btn.active { background: var(--panel-light); color: var(--accent); font-weight: 600; }
-.event-log { flex: 1; overflow-y: auto; padding: 8px 12px; font-size: 0.8rem; line-height: 1.45; -webkit-overflow-scrolling: touch; }
+.event-log { flex: 1; overflow-y: auto; padding: 8px 12px; font-size: 0.78rem; line-height: 1.45; -webkit-overflow-scrolling: touch; }
 .event-entry { padding: 4px 0; border-bottom: 1px solid rgba(42, 54, 74, 0.4); }
-.event-time { color: var(--muted); margin-right: 6px; font-size: 0.7rem; }
+.event-time { color: var(--muted); margin-right: 6px; font-size: 0.68rem; }
 .event-entry.important .event-text { color: var(--accent); font-weight: 600; }
 .event-entry.chat { color: #81d4fa; font-style: italic; }
 
-/* Lists & Panels */
 .agent-list, .agent-detail { flex: 1; overflow-y: auto; padding: 8px; -webkit-overflow-scrolling: touch; }
 .agent-card { background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; cursor: pointer; transition: border-color 0.15s; }
 .agent-card:hover { border-color: var(--accent-dim); }
@@ -107,14 +112,12 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
 .bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin-top: 2px; }
 .bar-fill { height: 100%; border-radius: 3px; }
 .bar-fill.energy { background: var(--success); }
-.bar-fill.mood { background: var(--warning); }
-.library-entry, .tech-entry { background: rgba(79, 195, 247, 0.05); border-left: 3px solid var(--accent); padding: 6px 8px; margin-bottom: 6px; border-radius: 3px; font-size: 0.75rem; }
-.tech-entry { background: rgba(171, 71, 188, 0.08); border-left-color: var(--workshop); }
-.entry-title { color: var(--accent); font-weight: 600; }
-.tech-entry .entry-title { color: #ce93d8; }
+
+.tech-entry { background: rgba(171, 71, 188, 0.08); border-left: 3px solid var(--workshop); padding: 6px 8px; margin-bottom: 6px; border-radius: 3px; font-size: 0.75rem; }
+.entry-title { color: #ce93d8; font-weight: 600; }
 .entry-meta { color: var(--muted); font-size: 0.7rem; margin-top: 2px; }
 
-/* Modal Summary Styling */
+/* Modals */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 100; opacity: 0; pointer-events: none; transition: opacity 0.2s ease; backdrop-filter: blur(3px); }
 .modal-overlay.active { opacity: 1; pointer-events: auto; }
 .modal-box { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; width: 620px; max-width: 92%; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 12px 40px rgba(0,0,0,0.6); }
@@ -123,7 +126,6 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
 .modal-body { padding: 16px; overflow-y: auto; font-size: 0.85rem; line-height: 1.6; }
 .modal-footer { padding: 10px 16px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; background: var(--panel-light); }
 
-/* Responsive Mobile Layout Fixes */
 @media (max-width: 900px) {
   html, body { overflow-y: auto; height: auto; }
   #app { height: auto; min-height: 100vh; }
@@ -140,7 +142,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
       <div class="header-left">
         <h1>AI World</h1>
         <span id="time-display" class="time-display">Day 1 — 06:00</span>
-        <span id="era-display" class="era-display">Era: Primitive Age</span>
+        <span id="era-display" class="era-display">Era: Stone Age</span>
       </div>
       <div class="header-controls">
         <button id="btn-run" class="btn primary">▶ Run</button>
@@ -149,7 +151,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
         <button id="btn-day" class="btn">+1 Day</button>
         <button id="btn-reset" class="btn danger">Reset</button>
         <select id="speed-select" class="speed-select">
-          <option value="1" selected>1×</option>
+          <option value="1" selected>1× Speed</option>
           <option value="2">2×</option>
           <option value="5">5×</option>
           <option value="10">10×</option>
@@ -157,24 +159,27 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
       </div>
     </header>
 
-    <!-- Overseer Controls Bar -->
     <div class="god-bar">
       <span class="god-title">⚡ Overseer Powers:</span>
-      <button id="god-food" class="btn god small">+ Spawn Food</button>
-      <button id="god-wood" class="btn god small">+ Spawn Wood</button>
-      <button id="god-agent" class="btn god small">+ Summon Agent</button>
+      <button id="god-food" class="btn god small">+ Food</button>
+      <button id="god-wood" class="btn god small">+ Wood</button>
+      <button id="god-stone" class="btn god small">+ Stone</button>
+      <button id="god-metal" class="btn god small">+ Ore</button>
+      <button id="god-agent" class="btn god small">+ Agent</button>
       <button id="god-invent" class="btn god small">⚡ Epiphany</button>
-      <button id="god-weather" class="btn god small">🌧️ Weather</button>
     </div>
 
     <main class="main">
       <section class="panel world-panel">
         <div class="panel-header">
-          <h2>World Map & Settlement</h2>
+          <h2>World Map & Settlements</h2>
           <div class="world-stats">
             <div>Pop: <span id="pop-stat">6</span></div>
-            <div>Food: <span id="food-stat">0</span></div>
-            <div>Wood: <span id="wood-stat">0</span></div>
+            <div>🌾 <span id="food-stat">0</span></div>
+            <div>🪵 <span id="wood-stat">0</span></div>
+            <div>🪨 <span id="stone-stat">0</span></div>
+            <div>⛏️ <span id="metal-stat">0</span></div>
+            <div>🔥 <span id="coal-stat">0</span></div>
           </div>
         </div>
         <div class="map-container">
@@ -183,14 +188,14 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
         </div>
         <div class="legend">
           <span class="legend-item"><span class="dot house"></span> House</span>
+          <span class="legend-item"><span class="dot manor"></span> Stone Manor</span>
           <span class="legend-item"><span class="dot workshop"></span> Workshop</span>
+          <span class="legend-item"><span class="dot smelter"></span> Smelter</span>
           <span class="legend-item"><span class="dot farm"></span> Farm</span>
-          <span class="legend-item"><span class="dot tower"></span> Tower</span>
-          <span class="legend-item"><span class="dot granary"></span> Granary</span>
-          <span class="legend-item"><span class="dot forest"></span> Forest</span>
-          <span class="legend-item"><span class="dot river"></span> River</span>
-          <span class="legend-item"><span class="dot agent"></span> Agent</span>
-          <span class="legend-item"><span class="dot resource"></span> Resource</span>
+          <span class="legend-item"><span class="dot tower"></span> Watchtower</span>
+          <span class="legend-item"><span class="dot academy"></span> Academy</span>
+          <span class="legend-item"><span class="dot metal"></span> Ore</span>
+          <span class="legend-item"><span class="dot coal"></span> Coal</span>
         </div>
       </section>
 
@@ -208,7 +213,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
       </section>
 
       <section class="panel">
-        <div class="panel-header"><h2>💡 Tech Archives & Library</h2></div>
+        <div class="panel-header"><h2>💡 Metallurgy & Technology Archives</h2></div>
         <div id="library-panel" class="agent-list"></div>
       </section>
 
@@ -223,11 +228,10 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
     </main>
   </div>
 
-  <!-- Summary Modal -->
   <div id="summary-modal" class="modal-overlay">
     <div class="modal-box">
       <div class="modal-header">
-        <h2>📜 Comprehensive Society Chronicle</h2>
+        <h2>📜 Society Chronicle</h2>
         <button id="btn-close-modal" class="btn small">Close</button>
       </div>
       <div id="summary-content" class="modal-body"></div>
@@ -238,11 +242,12 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
   </div>
 
   <script>
-const TILE = { GRASS: 0, FOREST: 1, RIVER: 2, HOUSE: 3, PATH: 4, WORKSHOP: 5, FARM: 6, TOWER: 7, GRANARY: 8 };
+const TILE = { GRASS: 0, FOREST: 1, RIVER: 2, HOUSE: 3, PATH: 4, WORKSHOP: 5, FARM: 6, TOWER: 7, GRANARY: 8, SMELTER: 9, MANOR: 10, ACADEMY: 11 };
 const TILE_COLORS = {
   [TILE.GRASS]: '#162b16', [TILE.FOREST]: '#0b3d18', [TILE.RIVER]: '#08334f',
-  [TILE.HOUSE]: '#4a3728', [TILE.PATH]: '#2a2a20', [TILE.WORKSHOP]: '#5b2c6f', 
-  [TILE.FARM]: '#117a65', [TILE.TOWER]: '#546e7a', [TILE.GRANARY]: '#9e9d24'
+  [TILE.HOUSE]: '#4a3728', [TILE.MANOR]: '#795548', [TILE.PATH]: '#2a2a20', 
+  [TILE.WORKSHOP]: '#5b2c6f', [TILE.SMELTER]: '#b71c1c', [TILE.FARM]: '#117a65', 
+  [TILE.TOWER]: '#546e7a', [TILE.GRANARY]: '#9e9d24', [TILE.ACADEMY]: '#3f51b5'
 };
 const MAP_W = 42, MAP_H = 28;
 
@@ -250,75 +255,64 @@ class SocietyEvolution {
   constructor() {
     this.entries = [];
     this.inventions = [];
-    this.unlockedStructures = ['house', 'workshop', 'farm'];
-    this.era = 'Primitive Age';
-    this.globalMultipliers = { gathering: 1.0, building: 1.0, energyEfficiency: 1.0 };
+    this.unlockedStructures = ['house', 'farm'];
+    this.era = 'Stone Age';
+    this.globalMultipliers = { gathering: 1.0, building: 1.0, mining: 1.0, energyEfficiency: 1.0 };
   }
   
   addKnowledge(title, category, value, discoveredBy, world) {
-    const entry = { id: `lib_${this.entries.length}`, title, category, value, discoveredBy, discoveredTick: world.tick, citations: 1 };
+    const entry = { id: `lib_${this.entries.length}`, title, category, value, discoveredBy, discoveredTick: world.tick };
     this.entries.push(entry);
     if (this.entries.length > 200) this.entries.shift();
     return entry;
   }
 
   tryProceduralInvent(agent, world, force = false) {
-    const totalSkill = agent ? (agent.skills.gathering + agent.skills.building) : 50;
-    if (!force && (totalSkill < 20 || Math.random() > 0.15)) return null;
+    const totalSkill = agent ? (agent.skills.gathering + agent.skills.building + agent.skills.mining) : 50;
+    if (!force && (totalSkill < 15 || Math.random() > 0.08)) return null;
 
-    const disciplines = ['Metallurgy', 'Fluid Dynamics', 'Structural Geometry', 'Agronomy', 'Kinetic Mechanics', 'Masonry', 'Aquaponics', 'Automated Weaving'];
-    const focus = disciplines[Math.floor(Math.random() * disciplines.length)];
+    const techTrees = [
+      { name: 'Bronze Smelting', structure: 'smelter' },
+      { name: 'Masonry & Manor Framing', structure: 'manor' },
+      { name: 'Metal Tool Forging', structure: 'workshop' },
+      { name: 'Scientific Method', structure: 'academy' },
+      { name: 'Ironworking & Blast Furnaces', structure: null },
+      { name: 'Deep Shaft Mining', structure: null }
+    ];
+
+    const available = techTrees.filter(t => !this.inventions.some(i => i.name === t.name));
+    if (available.length === 0 && !force) return null;
+
+    const chosen = available.length > 0 ? available[Math.floor(Math.random() * available.length)] : { name: `Advanced Crafting v${this.inventions.length + 1}`, structure: null };
     const authorName = agent ? agent.name : 'Overseer';
-    const name = `${focus} System v${this.inventions.length + 1}`;
-    
-    if (this.inventions.some(inv => inv.name === name)) return null;
 
     this.globalMultipliers.gathering += 0.15;
     this.globalMultipliers.building += 0.15;
-    this.globalMultipliers.energyEfficiency += 0.10;
+    this.globalMultipliers.mining += 0.20;
 
-    if (this.inventions.length >= 2 && !this.unlockedStructures.includes('tower')) {
-      this.unlockedStructures.push('tower');
-    }
-    if (this.inventions.length >= 4 && !this.unlockedStructures.includes('granary')) {
-      this.unlockedStructures.push('granary');
+    if (chosen.structure && !this.unlockedStructures.includes(chosen.structure)) {
+      this.unlockedStructures.push(chosen.structure);
     }
 
-    this.inventions.push({ name, discoveredBy: authorName, day: world.day, tick: world.tick });
+    this.inventions.push({ name: chosen.name, discoveredBy: authorName, day: world.day, tick: world.tick });
     this.updateEra(world);
-    return name;
+    return chosen.name;
   }
 
   updateEra(world) {
     const invCount = this.inventions.length;
-    const libCount = this.entries.length;
-    const alivePop = world.agents.filter(a => a.alive).length;
+    const hasSmelter = world.buildings.some(b => b.type === 'smelter');
+    const hasAcademy = world.buildings.some(b => b.type === 'academy');
 
-    if ((invCount >= 6 && libCount >= 12 && alivePop >= 10) || world.day >= 20) {
+    if (hasAcademy || invCount >= 5) {
       this.era = 'Industrial Age';
-    } else if ((invCount >= 3 && libCount >= 6 && alivePop >= 7) || world.day >= 10) {
-      this.era = 'Expansion Era';
-    } else if ((invCount >= 1 && libCount >= 3) || world.day >= 4) {
-      this.era = 'Discovery Age';
+    } else if (hasSmelter || invCount >= 3) {
+      this.era = 'Iron Age';
+    } else if (invCount >= 1) {
+      this.era = 'Bronze Age';
     } else {
-      this.era = 'Primitive Age';
+      this.era = 'Stone Age';
     }
-  }
-
-  learnFromLibrary(agent) {
-    const entries = this.entries;
-    if (entries.length > 0) {
-      const target = entries[Math.floor(Math.random() * entries.length)];
-      target.citations++;
-      if (agent.skills[target.category] !== undefined) {
-        agent.skills[target.category] = Math.min(100, agent.skills[target.category] + target.value * 2.0);
-      }
-      if (!agent.knowledgeAcquired.includes(target.title)) {
-        agent.knowledgeAcquired.push(target.title);
-      }
-      return target.title;
-    }
-    return null;
   }
 }
 
@@ -329,43 +323,42 @@ function createMap() {
     if (y % 4 === 0) { map[y][26] = TILE.RIVER; map[y][29] = TILE.RIVER; }
   }
   for (let y = 0; y < MAP_H; y++) {
-    for (let x = 0; x < 9; x++) { if (Math.random() > 0.25) map[y][x] = TILE.FOREST; }
-    for (let x = MAP_W - 9; x < MAP_W; x++) { if (Math.random() > 0.25) map[y][x] = TILE.FOREST; }
+    for (let x = 0; x < 8; x++) { if (Math.random() > 0.3) map[y][x] = TILE.FOREST; }
   }
-  [[14, 12], [16, 11], [15, 14], [18, 13]].forEach(([x, y]) => { map[y][x] = TILE.HOUSE; });
+  [[14, 12], [16, 11]].forEach(([x, y]) => { map[y][x] = TILE.HOUSE; });
   return map;
 }
 
 function createResourceNodes() {
   return [
-    { id: 'wood_1', type: 'wood', x: 4, y: 5, amount: 500, maxAmount: 500 },
-    { id: 'wood_2', type: 'wood', x: 6, y: 12, amount: 500, maxAmount: 500 },
-    { id: 'wood_3', type: 'wood', x: MAP_W - 4, y: 6, amount: 500, maxAmount: 500 },
-    { id: 'food_1', type: 'food', x: 21, y: 6, amount: 500, maxAmount: 500 },
-    { id: 'food_2', type: 'food', x: 23, y: 18, amount: 500, maxAmount: 500 },
-    { id: 'food_3', type: 'food', x: MAP_W - 6, y: 20, amount: 500, maxAmount: 500 },
+    { id: 'wood_1', type: 'wood', x: 4, y: 5, amount: 200, maxAmount: 300 },
+    { id: 'wood_2', type: 'wood', x: 5, y: 18, amount: 200, maxAmount: 300 },
+    { id: 'stone_1', type: 'stone', x: 35, y: 5, amount: 250, maxAmount: 400 },
+    { id: 'stone_2', type: 'stone', x: 36, y: 22, amount: 250, maxAmount: 400 },
+    { id: 'metal_1', type: 'metal', x: 33, y: 12, amount: 150, maxAmount: 300 },
+    { id: 'coal_1', type: 'coal', x: 38, y: 14, amount: 180, maxAmount: 300 },
+    { id: 'food_1', type: 'food', x: 21, y: 6, amount: 120, maxAmount: 200 },
+    { id: 'food_2', type: 'food', x: 23, y: 18, amount: 120, maxAmount: 200 },
   ];
 }
 
 function createBuildings() {
   return [
-    { id: 'house_1', type: 'house', x: 14, y: 12, capacity: 6, residents: 0 },
-    { id: 'house_2', type: 'house', x: 16, y: 11, capacity: 6, residents: 0 },
-    { id: 'house_3', type: 'house', x: 15, y: 14, capacity: 6, residents: 0 },
-    { id: 'house_4', type: 'house', x: 18, y: 13, capacity: 6, residents: 0 },
+    { id: 'house_1', type: 'house', x: 14, y: 12, capacity: 4, residents: 0, level: 1 },
+    { id: 'house_2', type: 'house', x: 16, y: 11, capacity: 4, residents: 0, level: 1 },
   ];
 }
 
 function createWorld() {
   const evolution = new SocietyEvolution();
   const w = {
-    version: 11, day: 1, hour: 6, minute: 0, weather: 'clear',
+    version: 13, day: 1, hour: 6, minute: 0, weather: 'clear',
     map: createMap(), resources: createResourceNodes(), buildings: createBuildings(),
-    global: { food: 500, wood: 400 }, agents: [], events: [], tick: 0, births: 0, deaths: 0,
+    global: { food: 80, wood: 40, stone: 20, metal: 10, coal: 10 }, agents: [], events: [], tick: 0, births: 0, deaths: 0,
     evolution
   };
-  evolution.addKnowledge('Wilderness Foraging & Botany', 'gathering', 5, 'Founders', w);
-  evolution.addKnowledge('Primitive Carpentry', 'building', 5, 'Founders', w);
+  evolution.addKnowledge('Wilderness Foraging', 'gathering', 4, 'Founders', w);
+  evolution.addKnowledge('Metallurgy Basics', 'mining', 4, 'Founders', w);
   return w;
 }
 
@@ -383,18 +376,10 @@ function advanceTime(w, mins) {
   }
   w.tick += mins;
 
-  // Resource regeneration & Agricultural yields
   if (w.tick % 60 === 0) {
-    const regenBonus = Math.floor(w.evolution.globalMultipliers.gathering * 40);
-    w.resources.forEach(r => { if (r.amount < r.maxAmount) r.amount = Math.min(r.maxAmount, r.amount + regenBonus); });
-
-    // Farms produce food automatically during daytime
-    const activeFarms = w.buildings.filter(b => b.type === 'farm').length;
-    if (activeFarms > 0 && !isNight(w)) {
-      const yieldFood = activeFarms * 25;
-      w.global.food += yieldFood;
-      if (w.tick % 180 === 0) logEvent(w, `🌾 Settlement farms yielded +${yieldFood} Food stock.`, false, false);
-    }
+    w.resources.forEach(r => {
+      if (r.amount < r.maxAmount) r.amount = Math.min(r.maxAmount, r.amount + 12);
+    });
   }
 }
 
@@ -438,25 +423,24 @@ function totalResourceLeft(w, type) {
   return w.resources.filter(r => r.type === type).reduce((s, r) => s + r.amount, 0);
 }
 
-const NAMES = ['Mira', 'Arin', 'Liora', 'Kael', 'Soren', 'Nova', 'Zen', 'Iris', 'Rowan', 'Sage', 'River', 'Sky', 'Stone', 'Echo', 'Ember', 'Ash', 'Fern', 'Dawn', 'Grove', 'Vale', 'Orion', 'Lyra', 'Atlas', 'Vesper', 'Flint', 'Thorne', 'Bram', 'Wren', 'Talon', 'Cyrus'];
-const PERSONALITY_TRAITS = ['curious', 'cautious', 'generous', 'ambitious', 'solitary', 'sociable', 'practical', 'dreamy', 'stubborn', 'empathetic'];
+const NAMES = ['Mira', 'Arin', 'Liora', 'Kael', 'Soren', 'Nova', 'Zen', 'Iris', 'Rowan', 'Sage', 'River', 'Sky', 'Stone', 'Echo', 'Ember', 'Ash', 'Fern', 'Dawn', 'Grove', 'Vale', 'Orion', 'Lyra', 'Atlas', 'Vesper'];
+const PERSONALITY_TRAITS = ['curious', 'cautious', 'generous', 'ambitious', 'practical', 'sociable', 'hardworking'];
 
 function createAgent(id, name, x, y, parentIds = []) {
-  const traits = [...PERSONALITY_TRAITS].sort(() => Math.random() - 0.5).slice(0, 2 + Math.floor(Math.random() * 2));
+  const traits = [...PERSONALITY_TRAITS].sort(() => Math.random() - 0.5).slice(0, 2);
   return {
     id, name, x, y, age: 0, parentIds, alive: true,
-    energy: 100,
-    mood: 85 + Math.floor(Math.random() * 15),
+    energy: 100, mood: 90,
     traits, shortTerm: [], relationships: {},
-    inventory: { food: 100, wood: 60 },
+    inventory: { food: 25, wood: 10, stone: 5, metal: 2, coal: 2 },
     intention: 'explore', homeId: null,
-    skills: { gathering: 35 + Math.random() * 20, building: 30 + Math.random() * 20 },
-    reproductiveUrge: 10 + Math.random() * 10, partner: null, knowledgeAcquired: [], lastReproduction: -200
+    skills: { gathering: 20 + Math.random() * 20, building: 20 + Math.random() * 20, mining: 20 + Math.random() * 20 },
+    hasTools: false, reproductiveUrge: 10, partner: null, lastReproduction: -100
   };
 }
 
 function createInitialAgents() {
-  const starts = [[14, 12], [16, 11], [15, 14], [18, 13], [17, 15], [19, 12]];
+  const starts = [[14, 12], [16, 11], [15, 13], [17, 12], [13, 14], [18, 11]];
   return NAMES.slice(0, 6).map((name, i) => createAgent(`agent_${i + 1}`, name, starts[i][0], starts[i][1]));
 }
 
@@ -465,42 +449,31 @@ function addShortMemory(agent, text) {
   if (agent.shortTerm.length > 8) agent.shortTerm.pop();
 }
 
-function adjustRelationship(agent, otherId, delta, note, tick) {
-  if (!agent.relationships[otherId]) agent.relationships[otherId] = { score: 0, notes: [] };
-  const rel = agent.relationships[otherId];
-  rel.score = Math.max(-100, Math.min(100, rel.score + delta));
-  if (note) rel.notes.unshift({ text: note, tick });
+function adjustRelationship(agent, otherId, delta) {
+  if (!agent.relationships[otherId]) agent.relationships[otherId] = { score: 0 };
+  agent.relationships[otherId].score = Math.max(-100, Math.min(100, agent.relationships[otherId].score + delta));
 }
 
 function getRelScore(agent, otherId) { return agent.relationships[otherId]?.score ?? 0; }
 
 function decide(agent, world) {
-  const hungry = agent.energy < 70, veryHungry = agent.energy < 40, tired = agent.energy < 30 && isNight(world);
+  const hungry = agent.energy < 65, veryHungry = agent.energy < 35, tired = agent.energy < 30 && isNight(world);
   const nearby = world.agents.filter(a => a.alive && a.id !== agent.id && dist(agent, a) <= 2);
   
   agent.age += 1;
-  agent.reproductiveUrge = Math.min(100, agent.reproductiveUrge + 1.0);
-  
-  if (Math.random() < 0.20 && agent.age % 8 === 0) {
-    const learned = world.evolution.learnFromLibrary(agent);
-    if (learned) addShortMemory(agent, `Studied manuscript: ${learned}`);
-    const newTech = world.evolution.tryProceduralInvent(agent, world);
-    if (newTech) {
-      logEvent(world, `⚡ BREAKTHROUGH! ${agent.name} invented "${newTech}", pushing society into the ${world.evolution.era}!`, true, false, [agent.id]);
-    }
-  }
-  
+  agent.reproductiveUrge = Math.min(100, agent.reproductiveUrge + 0.8);
+
+  // Eating & Survival
   if (veryHungry && agent.inventory.food > 0) return { intention: 'survive', action: 'eat' };
-  
-  // Try taking food from global reserve if personal inventory is empty
-  if (veryHungry && agent.inventory.food <= 0 && world.global.food >= 10) {
-    world.global.food -= 10;
-    agent.inventory.food += 10;
-    addShortMemory(agent, 'Took food from global reserve');
+  if (veryHungry && agent.inventory.food <= 0 && world.global.food >= 5) {
+    world.global.food -= 5; agent.inventory.food += 5;
     return { intention: 'survive', action: 'eat' };
   }
 
   if (hungry || veryHungry) {
+    const farm = findNearestBuilding(world, agent, 'farm');
+    if (farm && dist(agent, farm) <= 1) return { intention: 'farm_harvest', action: 'harvest_farm', target: { id: farm.id } };
+
     const foodNode = findNearestResource(world, agent, 'food');
     if (foodNode) {
       if (dist(agent, foodNode) === 0) return { intention: 'gather_food', action: 'gather', target: { id: foodNode.id } };
@@ -508,25 +481,79 @@ function decide(agent, world) {
     }
   }
 
-  // Construction logic using unlocked structures
-  const totalPop = world.agents.filter(a => a.alive).length;
-  const totalCap = world.buildings.filter(b => b.type === 'house').reduce((s, b) => s + b.capacity, 0);
-  const needHouse = totalPop >= totalCap - 3;
-
-  if (agent.inventory.wood >= 4 && agent.skills.building >= 20 && Math.random() < 0.3) {
-    const unlocked = world.evolution.unlockedStructures;
-    let buildType = needHouse ? 'house' : unlocked[Math.floor(Math.random() * unlocked.length)];
-    
-    const offsetX = (Math.random() > 0.5 ? 1 : -1) * (1 + Math.floor(Math.random() * 4));
-    const offsetY = (Math.random() > 0.5 ? 1 : -1) * (1 + Math.floor(Math.random() * 4));
-    const targetX = Math.max(2, Math.min(MAP_W - 3, agent.x + offsetX));
-    const targetY = Math.max(2, Math.min(MAP_H - 3, agent.y + offsetY));
-    
-    if (getTile(world, targetX, targetY) === TILE.GRASS) {
-      return { intention: 'build_structure', action: 'construct', target: { type: buildType, x: targetX, y: targetY } };
+  // Smelting Ores at Smelter
+  if (agent.inventory.metal >= 5 && agent.inventory.coal >= 5) {
+    const smelter = findNearestBuilding(world, agent, 'smelter');
+    if (smelter) {
+      if (dist(agent, smelter) <= 1) return { intention: 'smelt_ore', action: 'smelt', target: { id: smelter.id } };
+      return { intention: 'smelt_ore', action: 'move', target: { x: smelter.x, y: smelter.y } };
     }
   }
 
+  // Metal / Coal Mining Strategy
+  if (agent.inventory.metal < 8 && Math.random() < 0.35) {
+    const metalNode = findNearestResource(world, agent, 'metal');
+    if (metalNode) {
+      if (dist(agent, metalNode) === 0) return { intention: 'mine_metal', action: 'gather', target: { id: metalNode.id } };
+      return { intention: 'mine_metal', action: 'move', target: { x: metalNode.x, y: metalNode.y } };
+    }
+  }
+
+  if (agent.inventory.coal < 8 && Math.random() < 0.3) {
+    const coalNode = findNearestResource(world, agent, 'coal');
+    if (coalNode) {
+      if (dist(agent, coalNode) === 0) return { intention: 'mine_coal', action: 'gather', target: { id: coalNode.id } };
+      return { intention: 'mine_coal', action: 'move', target: { x: coalNode.x, y: coalNode.y } };
+    }
+  }
+
+  // Building Upgrades & Demolition Logic
+  const houseToUpgrade = world.buildings.find(b => b.type === 'house' && b.level === 1 && agent.inventory.stone >= 15 && agent.inventory.metal >= 5);
+  if (houseToUpgrade && dist(agent, houseToUpgrade) <= 1) {
+    return { intention: 'upgrade_manor', action: 'upgrade', target: { id: houseToUpgrade.id, toType: 'manor' } };
+  }
+
+  // Demolish outdated structures if crowded
+  const unusedHouse = world.buildings.find(b => b.type === 'house' && b.residents === 0 && world.buildings.filter(x=>x.type==='house').length > 5);
+  if (unusedHouse && Math.random() < 0.1) {
+    if (dist(agent, unusedHouse) <= 1) return { intention: 'demolish_structure', action: 'demolish', target: { id: unusedHouse.id } };
+  }
+
+  // Advanced Construction
+  const unlocked = world.evolution.unlockedStructures;
+  let buildType = unlocked[Math.floor(Math.random() * unlocked.length)];
+
+  const canAfford = (type) => {
+    if (type === 'house') return agent.inventory.wood >= 12;
+    if (type === 'farm') return agent.inventory.wood >= 8 && agent.inventory.food >= 10;
+    if (type === 'workshop') return agent.inventory.wood >= 15 && agent.inventory.stone >= 10;
+    if (type === 'smelter') return agent.inventory.stone >= 20 && agent.inventory.coal >= 10;
+    if (type === 'manor') return agent.inventory.stone >= 25 && agent.inventory.metal >= 10;
+    if (type === 'academy') return agent.inventory.stone >= 30 && agent.inventory.wood >= 20;
+    return false;
+  };
+
+  if (canAfford(buildType) && Math.random() < 0.4) {
+    const offsetX = (Math.random() > 0.5 ? 1 : -1) * (1 + Math.floor(Math.random() * 3));
+    const offsetY = (Math.random() > 0.5 ? 1 : -1) * (1 + Math.floor(Math.random() * 3));
+    const targetX = Math.max(2, Math.min(MAP_W - 3, agent.x + offsetX));
+    const targetY = Math.max(2, Math.min(MAP_H - 3, agent.y + offsetY));
+
+    if (getTile(world, targetX, targetY) === TILE.GRASS) {
+      return { intention: `build_${buildType}`, action: 'construct', target: { type: buildType, x: targetX, y: targetY } };
+    }
+  }
+
+  // Basic Gathering (Wood/Stone)
+  if (agent.inventory.wood < 15 && Math.random() < 0.4) {
+    const woodNode = findNearestResource(world, agent, 'wood');
+    if (woodNode) {
+      if (dist(agent, woodNode) === 0) return { intention: 'gather_wood', action: 'gather', target: { id: woodNode.id } };
+      return { intention: 'gather_wood', action: 'move', target: { x: woodNode.x, y: woodNode.y } };
+    }
+  }
+
+  // Resting
   if ((isNight(world) && agent.energy < 85) || tired) {
     const house = agent.homeId ? world.buildings.find(b => b.id === agent.homeId) : findNearestBuilding(world, agent, 'house');
     if (house) {
@@ -535,31 +562,16 @@ function decide(agent, world) {
     }
   }
 
-  const availableHousing = world.buildings.filter(b => b.type === 'house' && b.residents < b.capacity).length;
-  if (agent.reproductiveUrge > 50 && !agent.partner && nearby.length > 0 && availableHousing > 0 && world.tick - agent.lastReproduction > 120) {
-    const potential = nearby.find(a => getRelScore(agent, a.id) > -10 && !a.partner);
-    if (potential) return { intention: 'reproduce', action: 'mate', target: { id: potential.id } };
-  }
-
-  if (!agent.homeId) {
-    const freeHouse = world.buildings.find(b => b.type === 'house' && b.residents < b.capacity);
-    if (freeHouse) {
-      if (dist(agent, freeHouse) === 0) return { intention: 'claim_home', action: 'claim_house', target: { id: freeHouse.id } };
-      return { intention: 'claim_home', action: 'move', target: { x: freeHouse.x, y: freeHouse.y } };
-    }
-  }
-
-  if (nearby.length && Math.random() < 0.5) {
+  // Socializing
+  if (nearby.length && Math.random() < 0.4) {
     const other = nearby[Math.floor(Math.random() * nearby.length)];
     return { intention: 'socialize', action: 'talk', target: { id: other.id } };
   }
 
+  // Wandering
   const dirs = [{x:0,y:-1},{x:0,y:1},{x:-1,y:0},{x:1,y:0}];
   const d = dirs[Math.floor(Math.random() * dirs.length)];
-  const nextX = Math.max(0, Math.min(MAP_W - 1, agent.x + d.x));
-  const nextY = Math.max(0, Math.min(MAP_H - 1, agent.y + d.y));
-
-  return { intention: 'explore', action: 'move', target: { x: nextX, y: nextY } };
+  return { intention: 'explore', action: 'move', target: { x: Math.max(0, Math.min(MAP_W - 1, agent.x + d.x)), y: Math.max(0, Math.min(MAP_H - 1, agent.y + d.y)) } };
 }
 
 function simulationStep(world, minutesPerStep = 15) {
@@ -568,117 +580,88 @@ function simulationStep(world, minutesPerStep = 15) {
 
   world.agents.forEach(agent => {
     if (!agent.alive) return;
-    // Decreased decay rate heavily to allow agents to survive long-term
-    let drain = (night ? 0.06 : 0.04) / world.evolution.globalMultipliers.energyEfficiency;
+    let drain = (night ? 0.05 : 0.03) / world.evolution.globalMultipliers.energyEfficiency;
     agent.energy = Math.max(0, agent.energy - drain);
     if (agent.energy <= 0) {
-      agent.alive = false;
-      world.deaths++;
-      logEvent(world, `💀 ${agent.name} has passed away from exhaustion.`, true, false, [agent.id]);
+      agent.alive = false; world.deaths++;
+      logEvent(world, `💀 ${agent.name} passed away from exhaustion.`, true, false, [agent.id]);
     }
   });
 
   const activeAgents = world.agents.filter(a => a.alive);
   activeAgents.sort(() => Math.random() - 0.5).forEach(agent => {
-    addShortMemory(agent, `At (${agent.x},${agent.y}) - Intention: ${agent.intention}`);
     executeAction(world, agent, decide(agent, world));
   });
 }
 
 function executeAction(world, agent, decision) {
   const { action, target } = decision;
+
   if (action === 'move') {
     if (!target) return;
     const targetTile = getTile(world, target.x, target.y);
     if (targetTile !== TILE.RIVER || getTile(world, agent.x, agent.y) === TILE.RIVER) {
-      agent.x = target.x;
-      agent.y = target.y;
+      agent.x = target.x; agent.y = target.y;
     }
-    agent.energy -= 0.03;
-    if (targetTile === TILE.GRASS && Math.random() < 0.02) {
-      world.map[agent.y][agent.x] = TILE.PATH;
-    }
+    agent.energy -= 0.02;
+    if (targetTile === TILE.GRASS && Math.random() < 0.02) world.map[agent.y][agent.x] = TILE.PATH;
   } else if (action === 'gather') {
     const node = world.resources.find(r => r.id === target.id);
     if (node && node.amount > 0 && dist(agent, node) === 0) {
-      const take = Math.min(Math.floor(15 * (agent.skills.gathering / 30) * world.evolution.globalMultipliers.gathering), node.amount);
-      node.amount -= take;
-      agent.inventory[node.type] += take;
-      agent.skills.gathering = Math.min(100, agent.skills.gathering + 1.2);
-      
-      if (Math.random() < 0.2) {
-        const title = node.type === 'food' ? `Botanical Harvest Mechanics (${agent.name})` : `Timber Yield Analysis (${agent.name})`;
-        world.evolution.addKnowledge(title, node.type === 'food' ? 'gathering' : 'building', 3.5, agent.name, world);
-      }
+      const toolMultiplier = agent.hasTools ? 1.8 : 1.0;
+      const yieldAmt = Math.min(Math.round(10 * toolMultiplier), node.amount);
+      node.amount -= yieldAmt;
+      agent.inventory[node.type] += yieldAmt;
+      if (['metal', 'stone', 'coal'].includes(node.type)) agent.skills.mining += 0.8;
+      else agent.skills.gathering += 0.8;
+    }
+  } else if (action === 'smelt') {
+    if (agent.inventory.metal >= 5 && agent.inventory.coal >= 5) {
+      agent.inventory.metal -= 5;
+      agent.inventory.coal -= 5;
+      world.global.metal += 10;
+      agent.hasTools = true;
+      logEvent(world, `🔥 ${agent.name} refined raw metal at the Smelter into High-Grade Tools!`, true, false, [agent.id]);
+    }
+  } else if (action === 'upgrade') {
+    const b = world.buildings.find(x => x.id === target.id);
+    if (b) {
+      b.type = 'manor'; b.level = 2; b.capacity = 8;
+      world.map[b.y][b.x] = TILE.MANOR;
+      agent.inventory.stone -= 15; agent.inventory.metal -= 5;
+      logEvent(world, `🏰 ${agent.name} upgraded House into a Stone Manor!`, true, false, [agent.id]);
+    }
+  } else if (action === 'demolish') {
+    const b = world.buildings.find(x => x.id === target.id);
+    if (b) {
+      world.map[b.y][b.x] = TILE.GRASS;
+      world.buildings = world.buildings.filter(x => x.id !== b.id);
+      world.global.wood += 6; // Recover partial materials
+      logEvent(world, `🏚️ ${agent.name} demolished an unneeded structure at (${b.x}, ${b.y}) to re-zone land.`, true, false, [agent.id]);
     }
   } else if (action === 'eat') {
-    if (agent.inventory.food > 0) { agent.inventory.food -= 1; agent.energy = Math.min(100, agent.energy + 50); }
+    if (agent.inventory.food > 0) { agent.inventory.food -= 1; agent.energy = Math.min(100, agent.energy + 45); }
   } else if (action === 'rest') {
-    agent.energy = Math.min(100, agent.energy + (isNight(world) ? 25 : 15));
+    agent.energy = Math.min(100, agent.energy + (isNight(world) ? 20 : 12));
   } else if (action === 'construct') {
-    if (agent.inventory.wood >= 4) {
-      agent.inventory.wood -= 4;
-      const type = target.type;
-      let tileType = TILE.HOUSE;
-      if (type === 'workshop') tileType = TILE.WORKSHOP;
-      else if (type === 'farm') tileType = TILE.FARM;
-      else if (type === 'tower') tileType = TILE.TOWER;
-      else if (type === 'granary') tileType = TILE.GRANARY;
+    const type = target.type;
+    let tileType = TILE.HOUSE;
+    if (type === 'workshop') tileType = TILE.WORKSHOP;
+    else if (type === 'smelter') tileType = TILE.SMELTER;
+    else if (type === 'farm') tileType = TILE.FARM;
+    else if (type === 'tower') tileType = TILE.TOWER;
+    else if (type === 'manor') tileType = TILE.MANOR;
+    else if (type === 'academy') tileType = TILE.ACADEMY;
 
-      world.map[target.y][target.x] = tileType;
-      
-      const cap = type === 'house' ? 6 : (type === 'granary' ? 12 : 4);
-      world.buildings.push({ id: `${type}_${world.buildings.length}`, type, x: target.x, y: target.y, capacity: cap, residents: 0 });
-      logEvent(world, `🏗️ ${agent.name} constructed a ${type} at (${target.x}, ${target.y})!`, true, false, [agent.id]);
-      world.evolution.addKnowledge(`Structural Blueprint: ${type}`, 'building', 4.5, agent.name, world);
-    }
+    world.map[target.y][target.x] = tileType;
+    world.buildings.push({ id: `${type}_${world.buildings.length}`, type, x: target.x, y: target.y, capacity: 4, residents: 0, level: 1 });
+    logEvent(world, `🏗️ ${agent.name} built a ${type.toUpperCase()}!`, true, false, [agent.id]);
   } else if (action === 'talk') {
     const other = world.agents.find(a => a.alive && a.id === target.id);
     if (other && dist(agent, other) <= 2) {
-      adjustRelationship(agent, other.id, 10, 'Meaningful conversation', world.tick);
-      adjustRelationship(other, agent.id, 10, 'Meaningful conversation', world.tick);
-      
-      if (agent.skills.gathering > other.skills.gathering + 4) other.skills.gathering += 2.5;
-      if (agent.skills.building > other.skills.building + 4) other.skills.building += 2.5;
-
-      const recentTech = world.evolution.inventions[world.evolution.inventions.length - 1];
-      const recentLib = world.evolution.entries[world.evolution.entries.length - 1];
-      
-      let chatLine = '';
-      const roll = Math.random();
-      if (roll < 0.35 && recentTech) {
-        chatLine = `"Have you tested the principles behind ${recentTech.name}? It completely changes our productivity."`;
-      } else if (roll < 0.70 && recentLib) {
-        chatLine = `"I was just reviewing our archives on ${recentLib.title}. We should apply those techniques."`;
-      } else {
-        const casuals = [
-          `"Our food supplies look strong right now. Let's focus on expanding housing."`,
-          `"If we work together on gathering timber, our society can expand much faster."`,
-          `"The weather has been peaceful lately. A great time for building."`
-        ];
-        chatLine = casuals[Math.floor(Math.random() * casuals.length)];
-      }
-
-      logEvent(world, `💬 <strong>${agent.name}</strong> to <strong>${other.name}</strong>: ${chatLine}`, false, true, [agent.id, other.id]);
-    }
-  } else if (action === 'mate') {
-    const other = world.agents.find(a => a.alive && a.id === target.id);
-    if (other && dist(agent, other) <= 2) {
-      agent.partner = other.id; other.partner = agent.id;
-      agent.reproductiveUrge = 0; other.reproductiveUrge = 0;
-      agent.lastReproduction = world.tick; other.lastReproduction = world.tick;
-      const childName = NAMES.find(n => !world.agents.some(a => a.name === n));
-      if (childName && world.agents.filter(a => a.alive).length < 120) {
-        const child = createAgent(`agent_${world.agents.length + 1}`, childName, agent.x, agent.y, [agent.id, other.id]);
-        world.agents.push(child);
-        world.births++;
-        logEvent(world, `👶 Population milestone! ${agent.name} and ${other.name} welcomed newborn ${childName}.`, true, false, [agent.id, other.id]);
-      }
-    }
-  } else if (action === 'claim_house') {
-    const building = world.buildings.find(b => b.id === target.id);
-    if (building && building.residents < building.capacity) {
-      building.residents += 1; agent.homeId = building.id;
+      adjustRelationship(agent, other.id, 10);
+      let dialog = `"Our technology in the ${world.evolution.era} is opening up metal forging and larger stone architecture."`;
+      logEvent(world, `💬 <strong>${agent.name}</strong> to <strong>${other.name}</strong>: ${dialog}`, false, true, [agent.id, other.id]);
     }
   }
 }
@@ -689,57 +672,33 @@ function initUI() {
   canvas = document.getElementById('world-canvas');
   ctx = canvas.getContext('2d');
   
-  // Interactive Canvas Tap/Click Inspector
-  const handleCanvasClick = (e) => {
+  canvas.onclick = (e) => {
     const rect = canvas.getBoundingClientRect();
-    const scaleX = MAP_W / rect.width;
-    const scaleY = MAP_H / rect.height;
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    
-    const clickX = Math.floor((clientX - rect.left) * scaleX);
-    const clickY = Math.floor((clientY - rect.top) * scaleY);
+    const clickX = Math.floor((e.clientX - rect.left) * (MAP_W / rect.width));
+    const clickY = Math.floor((e.clientY - rect.top) * (MAP_H / rect.height));
 
     const hitAgent = world.agents.find(a => a.alive && Math.abs(a.x - clickX) <= 1 && Math.abs(a.y - clickY) <= 1);
-    if (hitAgent) {
-      selectedAgentId = hitAgent.id;
-      showAgentDetail(selectedAgentId);
-    }
+    if (hitAgent) { selectedAgentId = hitAgent.id; showAgentDetail(selectedAgentId); }
   };
 
-  canvas.onclick = handleCanvasClick;
-  canvas.ontouchstart = handleCanvasClick;
-
-  // Overseer Controls
-  document.getElementById('god-food').onclick = () => {
-    world.global.food += 200;
-    logEvent(world, `⚡ Overseer granted +200 Food to global reserves!`, true);
-    renderStats(world);
-  };
-  document.getElementById('god-wood').onclick = () => {
-    world.global.wood += 200;
-    logEvent(world, `⚡ Overseer granted +200 Wood to global reserves!`, true);
-    renderStats(world);
-  };
+  document.getElementById('god-food').onclick = () => { world.global.food += 100; logEvent(world, `⚡ Overseer +100 Food`, true); renderStats(world); };
+  document.getElementById('god-wood').onclick = () => { world.global.wood += 100; logEvent(world, `⚡ Overseer +100 Wood`, true); renderStats(world); };
+  document.getElementById('god-stone').onclick = () => { world.global.stone += 100; logEvent(world, `⚡ Overseer +100 Stone`, true); renderStats(world); };
+  document.getElementById('god-metal').onclick = () => { world.global.metal += 100; world.global.coal += 100; logEvent(world, `⚡ Overseer +100 Ores & Coal`, true); renderStats(world); };
+  
   document.getElementById('god-agent').onclick = () => {
     const nextName = NAMES.find(n => !world.agents.some(a => a.name === n)) || `Agent_${world.agents.length + 1}`;
-    const newA = createAgent(`agent_${world.agents.length + 1}`, nextName, 20, 14);
-    world.agents.push(newA);
-    logEvent(world, `⚡ Overseer summoned new inhabitant: ${nextName}!`, true);
+    world.agents.push(createAgent(`agent_${world.agents.length + 1}`, nextName, 20, 14));
+    logEvent(world, `⚡ Overseer summoned ${nextName}!`, true);
     renderAll(world);
   };
+  
   document.getElementById('god-invent').onclick = () => {
     const tech = world.evolution.tryProceduralInvent(null, world, true);
-    if (tech) logEvent(world, `⚡ Overseer sparked technological Epiphany: "${tech}"!`, true);
-    renderAll(world);
-  };
-  document.getElementById('god-weather').onclick = () => {
-    world.weather = world.weather === 'clear' ? 'rain' : world.weather === 'rain' ? 'cloudy' : 'clear';
-    logEvent(world, `⚡ Overseer shifted local weather to ${world.weather.toUpperCase()}.`, true);
+    if (tech) logEvent(world, `⚡ Overseer sparked Epiphany: "${tech}"!`, true);
     renderAll(world);
   };
 
-  // Log filter buttons
   document.querySelectorAll('.log-filter-btn').forEach(btn => {
     btn.onclick = (e) => {
       document.querySelectorAll('.log-filter-btn').forEach(b => b.classList.remove('active'));
@@ -750,10 +709,6 @@ function initUI() {
   });
 
   document.getElementById('speed-select').addEventListener('change', (e) => { speed = parseInt(e.target.value); });
-  document.getElementById('agent-list').onclick = (e) => {
-    const card = e.target.closest('.agent-card');
-    if (card) { selectedAgentId = card.dataset.id; showAgentDetail(selectedAgentId); }
-  };
   document.getElementById('btn-close-detail').onclick = () => {
     selectedAgentId = null;
     document.getElementById('agent-detail').classList.add('hidden');
@@ -778,9 +733,7 @@ function initUI() {
     showSummaryModal();
   };
 
-  document.getElementById('btn-close-modal').onclick = () => {
-    document.getElementById('summary-modal').classList.remove('active');
-  };
+  document.getElementById('btn-close-modal').onclick = () => { document.getElementById('summary-modal').classList.remove('active'); };
   document.getElementById('modal-resume-btn').onclick = () => {
     document.getElementById('summary-modal').classList.remove('active');
     running = true;
@@ -794,41 +747,18 @@ function initUI() {
     world.agents = createInitialAgents(); 
     document.getElementById('btn-run').disabled = false; 
     document.getElementById('btn-pause').disabled = true; 
-    document.getElementById('summary-modal').classList.remove('active');
     renderAll(world); 
   };
 }
 
 function showSummaryModal() {
-  const alivePop = world.agents.filter(a => a.alive).length;
-  const housesCount = world.buildings.filter(b => b.type === 'house').length;
-  const workshopsCount = world.buildings.filter(b => b.type === 'workshop').length;
-  const farmsCount = world.buildings.filter(b => b.type === 'farm').length;
-  const towersCount = world.buildings.filter(b => b.type === 'tower').length;
-  const granaryCount = world.buildings.filter(b => b.type === 'granary').length;
-
   const content = `
-    <p><strong>Current Era:</strong> ${world.evolution.era}</p>
-    <p><strong>Elapsed Time:</strong> Day ${world.day} (${String(world.hour).padStart(2,'0')}:00) — Weather: ${world.weather}</p>
-    <p><strong>Population Demographics:</strong> ${alivePop} living inhabitants (${world.births} births, ${world.deaths} deaths)</p>
-    
-    <div style="margin: 12px 0; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 6px; border: 1px solid var(--border);">
-      <p style="color:var(--accent); font-weight:600; margin-bottom:4px;">🏗️ Settlement Infrastructure:</p>
-      <ul>
-        <li>Houses: ${housesCount}</li>
-        <li>Workshops: ${workshopsCount}</li>
-        <li>Farms: ${farmsCount}</li>
-        <li>Observation Towers: ${towersCount}</li>
-        <li>Granaries: ${granaryCount}</li>
-      </ul>
-    </div>
-
-    <p><strong>Total Inventions Discovered (${world.evolution.inventions.length}):</strong></p>
-    <ul>
-      ${world.evolution.inventions.map(i => `<li>${i.name} — Discovered by ${i.discoveredBy} on Day ${i.day}</li>`).join('') || '<li>No major inventions yet.</li>'}
-    </ul>
-    
-    <p style="margin-top:10px;"><strong>Library Archive Manuscripts:</strong> ${world.evolution.entries.length} stored documents.</p>
+    <p><strong>Era:</strong> ${world.evolution.era}</p>
+    <p><strong>Time Passed:</strong> Day ${world.day}</p>
+    <p><strong>Living Population:</strong> ${world.agents.filter(a => a.alive).length}</p>
+    <p><strong>Refined Metal Reserves:</strong> ${world.global.metal} units</p>
+    <p><strong>Inventions (${world.evolution.inventions.length}):</strong></p>
+    <ul>${world.evolution.inventions.map(i => `<li>${i.name} (by ${i.discoveredBy})</li>`).join('') || '<li>None</li>'}</ul>
   `;
   document.getElementById('summary-content').innerHTML = content;
   document.getElementById('summary-modal').classList.add('active');
@@ -842,10 +772,12 @@ function renderAll(w) {
 }
 
 function renderStats(w) {
-  const aliveCount = w.agents.filter(a => a.alive).length;
-  document.getElementById('pop-stat').textContent = `${aliveCount} (Births: ${w.births} | Deaths: ${w.deaths})`;
+  document.getElementById('pop-stat').textContent = `${w.agents.filter(a => a.alive).length}`;
   document.getElementById('food-stat').textContent = `${totalResourceLeft(w, 'food') + w.global.food}`;
   document.getElementById('wood-stat').textContent = `${totalResourceLeft(w, 'wood') + w.global.wood}`;
+  document.getElementById('stone-stat').textContent = `${totalResourceLeft(w, 'stone') + w.global.stone}`;
+  document.getElementById('metal-stat').textContent = `${totalResourceLeft(w, 'metal') + w.global.metal}`;
+  document.getElementById('coal-stat').textContent = `${totalResourceLeft(w, 'coal') + w.global.coal}`;
 }
 
 function renderMap(w) {
@@ -853,7 +785,6 @@ function renderMap(w) {
   const tw = canvas.width / MAP_W, th = canvas.height / MAP_H;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Render Base Map
   for (let y = 0; y < MAP_H; y++) {
     for (let x = 0; x < MAP_W; x++) {
       ctx.fillStyle = TILE_COLORS[w.map[y][x]] || '#111';
@@ -861,80 +792,25 @@ function renderMap(w) {
     }
   }
 
-  // Render Buildings
   w.buildings.forEach(b => {
-    let bColor = '#a1887f';
-    if (b.type === 'workshop') bColor = '#ab47bc';
-    else if (b.type === 'farm') bColor = '#26a69a';
-    else if (b.type === 'tower') bColor = '#546e7a';
-    else if (b.type === 'granary') bColor = '#9e9d24';
-
-    ctx.fillStyle = bColor;
+    ctx.fillStyle = TILE_COLORS[w.map[b.y][b.x]] || '#a1887f';
     ctx.fillRect(b.x * tw + 1, b.y * th + 1, tw - 2, th - 2);
   });
 
-  // Render Resources
   w.resources.forEach(r => {
     if (r.amount <= 0) return;
-    ctx.fillStyle = r.type === 'food' ? '#ff7043' : '#8d6e63';
+    ctx.fillStyle = r.type === 'food' ? '#ff7043' : r.type === 'wood' ? '#8d6e63' : r.type === 'stone' ? '#90a4ae' : r.type === 'metal' ? '#b0bec5' : '#37474f';
     ctx.beginPath(); 
     ctx.arc((r.x + 0.5) * tw, (r.y + 0.5) * th, Math.min(tw, th) * 0.35, 0, Math.PI * 2); 
     ctx.fill();
   });
 
-  // Render Agents
   w.agents.forEach(a => {
     if (!a.alive) return;
     const cx = (a.x + 0.5) * tw, cy = (a.y + 0.5) * th;
-    
-    let ringColor = '#ffee58';
-    let glyph = '•';
-    if (a.intention.includes('gather')) { ringColor = '#ff7043'; glyph = '⛏'; }
-    else if (a.intention.includes('build')) { ringColor = '#ab47bc'; glyph = '🔨'; }
-    else if (a.intention.includes('social')) { ringColor = '#4fc3f7'; glyph = '💬'; }
-    else if (a.intention.includes('rest')) { ringColor = '#66bb6a'; glyph = '💤'; }
-    else if (a.intention.includes('reproduce')) { ringColor = '#ec407a'; glyph = '♥'; }
-
-    // Highlight selected agent
-    if (a.id === selectedAgentId) {
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2.5;
-      ctx.beginPath(); ctx.arc(cx, cy, Math.min(tw, th) * 0.7, 0, Math.PI * 2); ctx.stroke();
-    }
-
-    ctx.fillStyle = ringColor;
+    ctx.fillStyle = a.hasTools ? '#00e676' : '#ffee58';
     ctx.beginPath(); ctx.arc(cx, cy, Math.min(tw, th) * 0.45, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#0f1419'; ctx.lineWidth = 1.2; ctx.stroke();
-
-    ctx.fillStyle = '#0f1419'; ctx.font = `bold ${Math.max(8, tw * 0.45)}px sans-serif`; ctx.textAlign = 'center';
-    ctx.fillText(glyph, cx, cy + th * 0.15);
-
-    ctx.fillStyle = '#e7ecf3'; ctx.font = `${Math.max(7, tw * 0.38)}px sans-serif`;
-    ctx.fillText(a.name.slice(0, 4), cx, cy - th * 0.5);
   });
-
-  // Environmental Night / Weather Shader Effects
-  const night = isNight(w);
-  if (night) {
-    ctx.fillStyle = 'rgba(5, 10, 25, 0.55)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    w.buildings.forEach(b => {
-      const grad = ctx.createRadialGradient((b.x+0.5)*tw, (b.y+0.5)*th, 2, (b.x+0.5)*tw, (b.y+0.5)*th, 28);
-      grad.addColorStop(0, 'rgba(255, 200, 100, 0.35)');
-      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-      ctx.fillStyle = grad;
-      ctx.beginPath(); ctx.arc((b.x+0.5)*tw, (b.y+0.5)*th, 28, 0, Math.PI*2); ctx.fill();
-    });
-  }
-
-  if (w.weather === 'rain') {
-    ctx.fillStyle = 'rgba(40, 70, 100, 0.18)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-  } else if (w.weather === 'cloudy') {
-    ctx.fillStyle = 'rgba(100, 100, 120, 0.12)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-  }
 }
 
 function renderEventLog(w) {
@@ -953,25 +829,17 @@ function renderEventLog(w) {
 function renderLibrary(w) {
   let html = '';
   w.evolution.inventions.forEach(inv => {
-    html += `<div class="tech-entry"><div class="entry-title">💡 Invention: ${inv.name}</div><div class="entry-meta">Discovered by ${inv.discoveredBy} on Day ${inv.day}</div></div>`;
+    html += `<div class="tech-entry"><div class="entry-title">💡 Tech: ${inv.name}</div><div class="entry-meta">Discovered by ${inv.discoveredBy} on Day ${inv.day}</div></div>`;
   });
-  const topEntries = w.evolution.entries.slice(-8).reverse();
-  topEntries.forEach(e => {
-    html += `<div class="library-entry"><div class="entry-title">📖 ${e.title}</div><div class="entry-meta">Category: <strong style="color:var(--text);">${e.category}</strong> | Author: ${e.discoveredBy} | Citations: ${e.citations}</div></div>`;
-  });
-  document.getElementById('library-panel').innerHTML = html || '<div style="color: var(--muted); padding: 8px; font-size: 0.8rem;">Waiting for societal documentation...</div>';
+  document.getElementById('library-panel').innerHTML = html || '<div style="color: var(--muted); padding: 8px; font-size: 0.8rem;">Awaiting research...</div>';
 }
 
 function renderAgentList(w) {
   if (selectedAgentId) return;
-  const aliveAgents = w.agents.filter(a => a.alive);
-  document.getElementById('agent-list').innerHTML = aliveAgents.map(a => `
+  document.getElementById('agent-list').innerHTML = w.agents.filter(a => a.alive).map(a => `
     <div class="agent-card" data-id="${a.id}">
-      <div class="agent-card-name">
-        <span>${a.name}</span>
-        <span style="font-size:0.7rem; color:var(--muted)">(${a.x}, ${a.y})</span>
-      </div>
-      <div class="agent-card-meta">${a.traits.join(', ')} · ⚡${Math.round(a.energy)}% · 😊${Math.round(a.mood)}</div>
+      <div class="agent-card-name"><span>${a.name}</span><span>(${a.x}, ${a.y})</span></div>
+      <div class="agent-card-meta">${a.hasTools ? '⚒️ Forged Tools' : 'Basic Gear'} · ⚡${Math.round(a.energy)}%</div>
       <div class="agent-card-status">Intention: ${a.intention}</div>
     </div>
   `).join('');
@@ -983,49 +851,12 @@ function showAgentDetail(agentId) {
   document.getElementById('agent-list').style.display = 'none';
   const detail = document.getElementById('agent-detail');
   detail.classList.remove('hidden');
-  
-  const parentInfo = a.parentIds && a.parentIds.length > 0 
-    ? a.parentIds.map(pid => world.agents.find(ag => ag.id === pid)?.name || 'Ancestor').join(' & ')
-    : 'Founder Generation';
 
   document.getElementById('agent-info').innerHTML = `
     <h3>${a.name}</h3>
-    <div class="agent-card-meta">${a.traits.join(' · ')}</div>
-    <div style="margin-top:6px;font-size:0.85rem">Position: (${a.x}, ${a.y})</div>
-    <div style="font-size:0.85rem">Current Intention: <strong style="color:var(--accent);">${a.intention}</strong></div>
-    <div style="font-size:0.85rem">Age Ticks: ${a.age} · Lineage: ${parentInfo}</div>
-    <div style="font-size:0.85rem">Inventory: Food: ${a.inventory.food}, Wood: ${a.inventory.wood}</div>
-    
-    <div class="section">
-      <div class="section-title">Skill Proficiencies</div>
-      <div style="font-size:0.8rem">
-        <div>Gathering Skill: ${Math.round(a.skills.gathering)}%</div>
-        <div>Building Skill: ${Math.round(a.skills.building)}%</div>
-      </div>
-    </div>
-
-    <div class="section">
-      <div class="section-title">Mastered Knowledge (${a.knowledgeAcquired.length})</div>
-      <div style="font-size:0.75rem; color: var(--accent); max-height: 80px; overflow-y: auto;">
-        ${a.knowledgeAcquired.length > 0 ? a.knowledgeAcquired.map(k => `• ${k}`).join('<br>') : 'No specialized texts read yet.'}
-      </div>
-    </div>
-
-    <div class="section">
-      <div class="section-title">Recent Memory Log</div>
-      <div style="font-size:0.72rem; color: var(--muted); max-height: 90px; overflow-y: auto; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px;">
-        ${a.shortTerm.length > 0 ? a.shortTerm.map(m => `• ${m}`).join('<br>') : 'No recorded memories.'}
-      </div>
-    </div>
-
-    <div class="section">
-      <div class="section-title">Energy Level</div>
-      <div class="bar"><div class="bar-fill energy" style="width:${Math.max(0, a.energy)}%"></div></div>
-    </div>
-    <div class="section">
-      <div class="section-title">Mood Status</div>
-      <div class="bar"><div class="bar-fill mood" style="width:${Math.max(0, a.mood)}%"></div></div>
-    </div>
+    <div style="font-size:0.85rem">Intention: <strong style="color:var(--accent);">${a.intention}</strong></div>
+    <div style="font-size:0.85rem">Equipped Tools: ${a.hasTools ? 'Yes (Metal/Forged)' : 'None'}</div>
+    <div style="font-size:0.85rem">Inventory: Wood:${a.inventory.wood}, Stone:${a.inventory.stone}, Metal:${a.inventory.metal}, Coal:${a.inventory.coal}</div>
   `;
 }
 
@@ -1043,7 +874,7 @@ function loop() {
     simulationStep(world, 15);
     renderAll(world);
   }
-  setTimeout(loop, Math.max(80, 400 / speed));
+  setTimeout(loop, Math.max(100, 1000 / speed));
 }
 
 window.onload = start;
