@@ -12,29 +12,6 @@ You watch. When you pause, you get a chronicle of what happened and why.
 
 ![Aurorae](docs/screenshot.png)
 
----
-
-## Run it
-
-The project uses native ES modules, so it must be served over HTTP — opening
-`index.html` from the filesystem will not work.
-
-```bash
-python3 -m http.server 5000
-# then open http://localhost:5000
-```
-
-No build step, no dependencies, no bundler. Any static host works, including
-GitHub Pages:
-
-1. Push to `main`.
-2. Settings → Pages → Source: *Deploy from a branch* → `main` / `/ (root)`.
-3. The site appears at `https://<user>.github.io/<repo>/`.
-
-Node 18+ is only needed for the optional tools in `tools/`.
-
----
-
 ## Controls
 
 | Key       | Does                                       |
