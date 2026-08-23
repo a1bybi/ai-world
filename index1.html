@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>AI World — Autonomous Artificial Society</title>
+  <style>
+:root {
+  --bg: #0f1419;
+  --panel: #1a2332;
+  --border: #2d3a4f;
+  --text: #e7ecf3;
+  --muted: #8b9bb4;
+  --accent: #4fc3f7;
+  --accent-dim: #2896c4;
+  --success: #66bb6a;
+  --warning: #ffa726;
+  --danger: #ef5350;
+  --house: #a1887f;
+  --forest: #43a047;
+  --river: #29b6f6;
+  --agent: #ffee58;
+  --resource: #ff7043;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
+#app { display: flex; flex-direction: column; height: 100%; max-width: 1400px; margin: 0 auto; }
+.header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.header-left { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.header h1 { font-size: 1.15rem; font-weight: 600; }
+.time-display { font-size: 0.9rem; color: var(--accent); font-variant-numeric: tabular-nums; }
+.weather-display { font-size: 0.85rem; color: var(--muted); }
+.header-controls { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.btn { background: var(--border); color: var(--text); border: none; border-radius: 6px; padding: 7px 12px; font-size: 0.85rem; cursor: pointer; transition: background 0.15s; }
+.btn:hover:not(:disabled) { background: #3a4a63; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn.primary { background: var(--accent-dim); color: #fff; }
+.btn.danger { background: #5c2a2a; }
+.btn.small { padding: 4px 8px; font-size: 0.75rem; }
+.speed-select { background: var(--border); color: var(--text); border: none; border-radius: 6px; padding: 7px 8px; font-size: 0.85rem; }
+.main { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 1px; background: var(--border); flex: 1; min-height: 0; overflow: hidden; }
+.panel { background: var(--panel); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.world-panel { grid-row: 1 / 3; }
+.panel-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.panel-header h2 { font-size: 0.95rem; font-weight: 500; }
+.world-stats { display: flex; gap: 12px; font-size: 0.8rem; color: var(--muted); }
+.map-container { flex: 1; display: flex; align-items: center; justify-content: center; padding: 8px; min-height: 0; overflow: hidden; }
+#world-canvas { max-width: 100%; max-height: 100%; border-radius: 4px; background: #0a0e14; image-rendering: pixelated; }
+.legend { display: flex; flex-wrap: wrap; gap: 10px; padding: 6px 12px; font-size: 0.75rem; color: var(--muted); border-top: 1px solid var(--border); flex-shrink: 0; }
+.legend-item { display: flex; align-items: center; gap: 4px; }
+.dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.dot.house { background: var(--house); }
+.dot.forest { background: var(--forest); }
+.dot.river { background: var(--river); }
+.dot.agent { background: var(--agent); border-radius: 50%; }
+.dot.resource { background: var(--resource); }
+.event-log { flex: 1; overflow-y: auto; padding: 8px 12px; font-size: 0.8rem; line-height: 1.45; }
+.event-entry { padding: 4px 0; border-bottom: 1px solid rgba(45, 58, 79, 0.5); }
+.event-time { color: var(--muted); margin-right: 6px; }
+.event-entry.important .event-text { color: var(--accent); }
+.agent-list, .agent-detail { flex: 1; overflow-y: auto; padding: 8px; }
+.agent-card { background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
+.agent-card-name { font-weight: 600; font-size: 0.95rem; }
+.agent-card-meta { font-size: 0.75rem; color: var(--muted); }
+.agent-card-status { font-size: 0.8rem; margin-top: 4px; color: var(--accent); }
+.agent-detail.hidden { display: none; }
+.agent-detail h3 { font-size: 1.1rem; margin: 8px 0 4px; }
+.section { margin-top: 14px; }
+.section-title { font-size: 0.75rem; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+.bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 3px; }
+.bar-fill.energy { background: var(--success); }
+.bar-fill.mood { background: var(--warning); }
+.rel-item, .mem-item, .pos-item { font-size: 0.8rem; padding: 3px 0; border-bottom: 1px solid rgba(45,58,79,0.4); }
+.rel-positive { color: var(--success); }
+.rel-negative { color: var(--danger); }
+.rel-neutral { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header class="header">
+      <div class="header-left">
+        <h1>AI World</h1>
+        <span id="time-display" class="time-display">Day 1 — 06:00</span>
+        <span id="weather-display" class="weather-display">Clear</span>
+      </div>
+      <div class="header-controls">
+        <button id="btn-run" class="btn primary">▶ Run</button>
+        <button id="btn-pause" class="btn" disabled>■ Pause</button>
+        <button id="btn-hour" class="btn">+1 Hour</button>
+        <button id="btn-day" class="btn">+1 Day</button>
+        <button id="btn-reset" class="btn danger">Reset</button>
+        <select id="speed-select" class="speed-select">
+          <option value="1">1×</option>
+          <option value="2">2×</option>
+          <option value="5" selected>5×</option>
+          <option value="10">10×</option>
+          <option value="30">30×</option>
+        </select>
+      </div>
+    </header>
+    <main class="main">
+      <section class="panel world-panel">
+        <div class="panel-header">
+          <h2>World</h2>
+          <div class="world-stats">
+            <span id="pop-stat">Pop: 5</span>
+            <span id="food-stat">Food: 0</span>
+            <span id="wood-stat">Wood: 0</span>
+          </div>
+        </div>
+        <div class="map-container"><canvas id="world-canvas" width="600" height="400"></canvas></div>
+        <div class="legend">
+          <span class="legend-item"><span class="dot house"></span> House</span>
+          <span class="legend-item"><span class="dot forest"></span> Forest</span>
+          <span class="legend-item"><span class="dot river"></span> River</span>
+          <span class="legend-item"><span class="dot agent"></span> Agent</span>
+          <span class="legend-item"><span class="dot resource"></span> Resource</span>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Event Log</h2>
+          <button id="btn-clear-log" class="btn small">Clear</button>
+        </div>
+        <div id="event-log" class="event-log"></div>
+      </section>
+      <section class="panel">
+        <div class="panel-header"><h2>Inhabitant</h2></div>
+        <div id="agent-list" class="agent-list"></div>
+        <div id="agent-detail" class="agent-detail hidden">
+          <button id="btn-close-detail" class="btn small">← Back</button>
+          <div id="agent-info"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>
+const TILE = { GRASS: 0, FOREST: 1, RIVER: 2, HOUSE: 3, PATH: 4 };
+const TILE_COLORS = { [TILE.GRASS]: '#1b3a1b', [TILE.FOREST]: '#0d4a1f', [TILE.RIVER]: '#0a3a5c', [TILE.HOUSE]: '#4a3728', [TILE.PATH]: '#2a2a20' };
+const MAP_W = 30, MAP_H = 20;
+
+function createMap() {
+  const map = Array.from({ length: MAP_H }, () => Array.from({ length: MAP_W }, () => TILE.GRASS));
+  for (let y = 0; y < MAP_H; y++) {
+    map[y][20] = TILE.RIVER; map[y][21] = TILE.RIVER;
+    if (y % 3 === 0) map[y][19] = TILE.RIVER;
+  }
+  for (let y = 0; y < MAP_H; y++) {
+    for (let x = 0; x < 7; x++) { if (Math.random() > 0.25) map[y][x] = TILE.FOREST; }
+  }
+  for (let y = 3; y < 12; y++) {
+    for (let x = 0; x < 5; x++) { map[y][x] = TILE.FOREST; }
+  }
+  [[10, 8], [12, 7], [11, 10], [14, 9], [13, 11]].forEach(([x, y]) => { map[y][x] = TILE.HOUSE; });
+  for (let x = 8; x < 18; x++) { map[9][x] = TILE.PATH; }
+  for (let y = 6; y < 13; y++) { map[y][12] = TILE.PATH; }
+  return map;
+}
+
+function createResourceNodes() {
+  return [
+    { id: 'wood_1', type: 'wood', x: 2, y: 4, amount: 40 },
+    { id: 'wood_2', type: 'wood', x: 4, y: 8, amount: 35 },
+    { id: 'wood_3', type: 'wood', x: 1, y: 14, amount: 30 },
+    { id: 'wood_4', type: 'wood', x: 5, y: 2, amount: 25 },
+    { id: 'food_1', type: 'food', x: 16, y: 5, amount: 20 },
+    { id: 'food_2', type: 'food', x: 18, y: 12, amount: 18 },
+    { id: 'food_3', type: 'food', x: 15, y: 15, amount: 15 },
+    { id: 'food_4', type: 'food', x: 8, y: 3, amount: 12 },
+    { id: 'food_5', type: 'food', x: 22, y: 8, amount: 10 },
+  ];
+}
+
+function createBuildings() {
+  return [
+    { id: 'house_1', type: 'house', x: 10, y: 8, ownerId: null, capacity: 2 },
+    { id: 'house_2', type: 'house', x: 12, y: 7, ownerId: null, capacity: 2 },
+    { id: 'house_3', type: 'house', x: 11, y: 10, ownerId: null, capacity: 2 },
+    { id: 'house_4', type: 'house', x: 14, y: 9, ownerId: null, capacity: 2 },
+    { id: 'house_5', type: 'house', x: 13, y: 11, ownerId: null, capacity: 2 },
+  ];
+}
+
+function createWorld() {
+  return {
+    version: 1, day: 1, hour: 6, minute: 0, weather: 'clear',
+    map: createMap(), resources: createResourceNodes(), buildings: createBuildings(),
+    global: { food: 25, wood: 15, money: 50 }, agents: [], events: [], tick: 0
+  };
+}
+
+function formatTime(w) {
+  return `Day ${w.day} — ${String(w.hour).padStart(2, '0')}:${String(w.minute).padStart(2, '0')}`;
+}
+
+function advanceTime(w, mins) {
+  w.minute += mins;
+  while (w.minute >= 60) { w.minute -= 60; w.hour += 1; }
+  while (w.hour >= 24) {
+    w.hour -= 24; w.day += 1;
+    const roll = Math.random();
+    w.weather = roll < 0.55 ? 'clear' : roll < 0.85 ? 'cloudy' : 'rain';
+  }
+  w.tick += mins;
+}
+
+function isNight(w) { return w.hour < 6 || w.hour >= 20; }
+function dist(a, b) { return Math.abs(a.x - b.x) + Math.abs(a.y - b.y); }
+function getTile(w, x, y) { return (y < 0 || y >= MAP_H || x < 0 || x >= MAP_W) ? null : w.map[y][x]; }
+
+function findNearestResource(w, agent, type) {
+  let best = null, bestD = Infinity;
+  for (const r of w.resources) {
+    if (r.type === type && r.amount > 0) {
+      const d = dist(agent, r);
+      if (d < bestD) { bestD = d; best = r; }
+    }
+  }
+  return best;
+}
+
+function findNearestHouse(w, agent) {
+  let best = null, bestD = Infinity;
+  for (const b of w.buildings) {
+    if (b.type === 'house') {
+      const d = dist(agent, b);
+      if (d < bestD) { bestD = d; best = b; }
+    }
+  }
+  return best;
+}
+
+function logEvent(w, text, important = false, agentIds = []) {
+  const entry = { id: `e_${w.tick}_${w.events.length}`, day: w.day, hour: w.hour, minute: w.minute, text, important, agentIds, tick: w.tick };
+  w.events.push(entry);
+  if (w.events.length > 800) w.events = w.events.slice(-600);
+  return entry;
+}
+
+function totalResourceLeft(w, type) {
+  return w.resources.filter(r => r.type === type).reduce((s, r) => s + r.amount, 0);
+}
+const NAMES = ['Mira', 'Arin', 'Liora', 'Kael', 'Soren'];
+const PERSONALITY_TRAITS = ['curious', 'cautious', 'generous', 'ambitious', 'solitary', 'sociable', 'practical', 'dreamy', 'stubborn', 'empathetic'];
+
+function createAgent(id, name, x, y) {
+  const traits = [...PERSONALITY_TRAITS].sort(() => Math.random() - 0.5).slice(0, 2 + Math.floor(Math.random() * 2));
+  return {
+    id, name, x, y,
+    energy: 70 + Math.floor(Math.random() * 20),
+    mood: 50 + Math.floor(Math.random() * 30),
+    traits, shortTerm: [], longTerm: [], relationships: {},
+    inventory: { food: Math.floor(Math.random() * 3), wood: Math.floor(Math.random() * 2) },
+    money: 5 + Math.floor(Math.random() * 10),
+    intention: 'explore', currentAction: null, homeId: null, history: []
+  };
+}
+
+function createInitialAgents() {
+  const starts = [[11, 8], [12, 9], [10, 9], [13, 8], [11, 11]];
+  return NAMES.map((name, i) => createAgent(`agent_${i + 1}`, name, starts[i][0], starts[i][1]));
+}
+
+function addShortMemory(agent, text, tick) {
+  agent.shortTerm.unshift({ text, tick });
+  if (agent.shortTerm.length > 15) agent.shortTerm.pop();
+}
+
+function addLongMemory(agent, text, tick) {
+  agent.longTerm.unshift({ text, tick });
+  if (agent.longTerm.length > 40) agent.longTerm.pop();
+  agent.history.unshift({ text, tick });
+  if (agent.history.length > 30) agent.history.pop();
+}
+
+function adjustRelationship(agent, otherId, delta, note, tick) {
+  if (!agent.relationships[otherId]) agent.relationships[otherId] = { score: 0, lastInteract: tick, notes: [] };
+  const rel = agent.relationships[otherId];
+  rel.score = Math.max(-100, Math.min(100, rel.score + delta));
+  rel.lastInteract = tick;
+  if (note) { rel.notes.unshift({ text: note, tick }); if (rel.notes.length > 8) rel.notes.pop(); }
+}
+
+function getRelScore(agent, otherId) { return agent.relationships[otherId]?.score ?? 0; }
+function hasTrait(agent, trait) { return agent.traits.includes(trait); }
+
+function observe(agent, world) {
+  const nearby = world.agents.filter(a => a.id !== agent.id && dist(agent, a) <= 3);
+  const tile = getTile(world, agent.x, agent.y);
+  const resHere = world.resources.find(r => r.x === agent.x && r.y === agent.y && r.amount > 0);
+  let obs = `At (${agent.x},${agent.y}). `;
+  if (tile === TILE.FOREST) obs += 'Forest. ';
+  else if (tile === TILE.RIVER) obs += 'River. ';
+  else if (tile === TILE.HOUSE) obs += 'Near a house. ';
+  if (resHere) obs += `${resHere.type} available (${resHere.amount}). `;
+  obs += nearby.length ? `Nearby: ${nearby.map(a => a.name).join(', ')}. ` : 'Alone. ';
+  return obs.trim();
+}
+
+function decide(agent, world) {
+  const hungry = agent.energy < 35, veryHungry = agent.energy < 18, tired = agent.energy < 25 && isNight(world);
+  const nearby = world.agents.filter(a => a.id !== agent.id && dist(agent, a) <= 2);
+
+  if (veryHungry && agent.inventory.food > 0) return { intention: 'survive', action: 'eat', target: null, reason: 'Eating food.' };
+  if (hungry || veryHungry) {
+    const foodNode = findNearestResource(world, agent, 'food');
+    if (foodNode && dist(agent, foodNode) <= 8) {
+      if (dist(agent, foodNode) === 0) return { intention: 'gather_food', action: 'gather', target: { type: 'resource', id: foodNode.id }, reason: 'Gathering food.' };
+      return { intention: 'gather_food', action: 'move', target: { x: foodNode.x, y: foodNode.y }, reason: 'Moving to food.' };
+    }
+    if (nearby.length && (veryHungry || hasTrait(agent, 'sociable'))) {
+      return { intention: 'request_food', action: 'talk', target: { type: 'agent', id: nearby[0].id, topic: 'ask_food' }, reason: 'Asking for food.' };
+    }
+  }
+
+  if ((isNight(world) && agent.energy < 60) || tired) {
+    const house = agent.homeId ? world.buildings.find(b => b.id === agent.homeId) : findNearestHouse(world, agent);
+    if (house) {
+      if (dist(agent, house) === 0) return { intention: 'rest', action: 'rest', target: null, reason: 'Resting.' };
+      return { intention: 'rest', action: 'move', target: { x: house.x, y: house.y }, reason: 'Heading to rest.' };
+    }
+  }
+
+  if (nearby.length && (agent.mood < 40 || hasTrait(agent, 'sociable') || Math.random() < 0.25)) {
+    const other = nearby[Math.floor(Math.random() * nearby.length)];
+    let topic = 'chat';
+    if (agent.inventory.food > 2 && hasTrait(agent, 'generous') && Math.random() < 0.4) topic = 'offer_food';
+    return { intention: 'socialize', action: 'talk', target: { type: 'agent', id: other.id, topic }, reason: 'Talking.' };
+  }
+
+  if (!agent.homeId) {
+    const freeHouse = world.buildings.find(b => b.type === 'house' && !b.ownerId);
+    if (freeHouse && dist(agent, freeHouse) <= 6) {
+      if (dist(agent, freeHouse) === 0) return { intention: 'claim_home', action: 'claim_house', target: { type: 'building', id: freeHouse.id }, reason: 'Claiming home.' };
+      return { intention: 'claim_home', action: 'move', target: { x: freeHouse.x, y: freeHouse.y }, reason: 'Moving to house.' };
+    }
+  }
+
+  const dirs = [{x:0,y:-1},{x:0,y:1},{x:-1,y:0},{x:1,y:0}];
+  const d = dirs[Math.floor(Math.random() * dirs.length)];
+  return { intention: 'explore', action: 'move', target: { x: Math.max(0, Math.min(MAP_W - 1, agent.x + d.x)), y: Math.max(0, Math.min(MAP_H - 1, agent.y + d.y)) }, reason: 'Exploring.' };
+}
+
+const ACTION_COSTS = { move: 1, gather: 3, eat: 0, rest: -8, talk: 1, claim_house: 2 };
+
+function simulationStep(world, minutesPerStep = 20) {
+  advanceTime(world, minutesPerStep);
+  const night = isNight(world);
+  for (const agent of world.agents) {
+    let drain = night ? 1.2 : 0.7;
+    if (world.weather === 'rain') drain += 0.3;
+    agent.energy = Math.max(0, agent.energy - drain);
+    if (agent.mood > 55) agent.mood -= 0.3; else if (agent.mood < 45) agent.mood += 0.2;
+  }
+
+  const proposals = world.agents.filter(a => a.energy > 0).map(agent => {
+    addShortMemory(agent, observe(agent, world), world.tick);
+    return { agentId: agent.id, decision: decide(agent, world) };
+  });
+
+  proposals.sort(() => Math.random() - 0.5).forEach(({ agentId, decision }) => {
+    const agent = world.agents.find(a => a.id === agentId);
+    if (agent && agent.energy > 0) executeAction(world, agent, decision);
+  });
+}
+
+function executeAction(world, agent, decision) {
+  const { action, target } = decision;
+  if (action === 'move') {
+    if (!target) return;
+    const dx = Math.sign(target.x - agent.x), dy = Math.sign(target.y - agent.y);
+    const nx = agent.x + dx, ny = agent.y + dy;
+    if (agent.energy >= ACTION_COSTS.move) { agent.x = nx; agent.y = ny; agent.energy -= ACTION_COSTS.move; }
+  } else if (action === 'gather') {
+    const node = world.resources.find(r => r.id === target.id);
+    if (node && node.amount > 0 && dist(agent, node) === 0 && agent.energy >= ACTION_COSTS.gather) {
+      const take = Math.min(2, node.amount);
+      node.amount -= take;
+      agent.inventory[node.type] = (agent.inventory[node.type] || 0) + take;
+      agent.energy -= ACTION_COSTS.gather;
+      logEvent(world, `${agent.name} gathered ${take} ${node.type}.`, false, [agent.id]);
+    }
+  } else if (action === 'eat') {
+    if (agent.inventory.food > 0) {
+      agent.inventory.food -= 1;
+      agent.energy = Math.min(100, agent.energy + 28);
+      logEvent(world, `${agent.name} ate some food.`, false, [agent.id]);
+    }
+  } else if (action === 'rest') {
+    agent.energy = Math.min(100, agent.energy + (isNight(world) ? 12 : 6));
+  } else if (action === 'talk') {
+    const other = world.agents.find(a => a.id === target.id);
+    if (other && dist(agent, other) <= 2) {
+      agent.energy -= ACTION_COSTS.talk;
+      if (target.topic === 'ask_food' && other.inventory.food > 0) {
+        other.inventory.food -= 1; agent.inventory.food = (agent.inventory.food || 0) + 1;
+        logEvent(world, `${agent.name} asked ${other.name} for food. ${other.name} shared some.`, true, [agent.id, other.id]);
+      } else {
+        logEvent(world, `${agent.name} and ${other.name} had a friendly chat.`, false, [agent.id, other.id]);
+      }
+    }
+  } else if (action === 'claim_house') {
+    const building = world.buildings.find(b => b.id === target.id);
+    if (building && !building.ownerId && dist(agent, building) === 0) {
+      building.ownerId = agent.id; agent.homeId = building.id;
+      logEvent(world, `${agent.name} claimed a house as home.`, true, [agent.id]);
+    }
+  }
+}
+
+let selectedAgentId = null, canvas, ctx, world = null, running = false, speed = 5, loopTimer = null;
+
+function initUI() {
+  canvas = document.getElementById('world-canvas');
+  ctx = canvas.getContext('2d');
+  document.getElementById('agent-list').onclick = (e) => {
+    const card = e.target.closest('.agent-card');
+    if (card) { selectedAgentId = card.dataset.id; showAgentDetail(selectedAgentId); }
+  };
+  document.getElementById('btn-close-detail').onclick = () => {
+    selectedAgentId = null;
+    document.getElementById('agent-detail').classList.add('hidden');
+    document.getElementById('agent-list').style.display = '';
+  };
+  document.getElementById('btn-clear-log').onclick = () => { world.events = []; renderEventLog(world); };
+}
+
+function renderAll(w) {
+  renderMap(w); renderStats(w); renderEventLog(w); renderAgentList(w);
+  if (selectedAgentId) showAgentDetail(selectedAgentId);
+  document.getElementById('time-display').textContent = formatTime(w);
+  document.getElementById('weather-display').textContent = w.weather.charAt(0).toUpperCase() + w.weather.slice(1);
+}
+
+function renderStats(w) {
+  document.getElementById('pop-stat').textContent = `Pop: ${w.agents.length}`;
+  document.getElementById('food-stat').textContent = `Food: ${totalResourceLeft(w, 'food') + w.global.food}`;
+  document.getElementById('wood-stat').textContent = `Wood: ${totalResourceLeft(w, 'wood') + w.global.wood}`;
+}
+
+function renderMap(w) {
+  const tw = canvas.width / MAP_W, th = canvas.height / MAP_H;
+  for (let y = 0; y < MAP_H; y++) {
+    for (let x = 0; x < MAP_W; x++) {
+      ctx.fillStyle = TILE_COLORS[w.map[y][x]] || '#111';
+      ctx.fillRect(x * tw, y * th, tw + 0.5, th + 0.5);
+    }
+  }
+  w.resources.forEach(r => {
+    if (r.amount <= 0) return;
+    ctx.fillStyle = r.type === 'food' ? '#ff7043' : '#8d6e63';
+    ctx.beginPath(); ctx.arc((r.x + 0.5) * tw, (r.y + 0.5) * th, Math.min(tw, th) * 0.28, 0, Math.PI * 2); ctx.fill();
+  });
+  w.agents.forEach(a => {
+    const cx = (a.x + 0.5) * tw, cy = (a.y + 0.5) * th;
+    ctx.fillStyle = a.energy < 15 ? '#ef5350' : '#ffee58';
+    ctx.beginPath(); ctx.arc(cx, cy, Math.min(tw, th) * 0.32, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#e7ecf3'; ctx.font = `${Math.max(9, tw * 0.55)}px sans-serif`; ctx.textAlign = 'center';
+    ctx.fillText(a.name.slice(0, 4), cx, cy - th * 0.4);
+  });
+}
+
+function renderEventLog(w) {
+  document.getElementById('event-log').innerHTML = w.events.slice(-120).reverse().e => `
+    <div class="event-entry${e.important ? ' important' : ''}">
+      <span class="event-time">Day ${e.day} — ${String(e.hour).padStart(2,'0')}:${String(e.minute).padStart(2,'0')}</span>
+      <span>${e.text}</span>
+    </div>
+  `.join('');
+}
+
+function renderAgentList(w) {
+  if (selectedAgentId) return;
+  document.getElementById('agent-list').innerHTML = w.agents.map(a => `
+    <div class="agent-card" data-id="${a.id}">
+      <div class="agent-card-name">${a.name}</div>
+      <div class="agent-card-meta">${a.traits.join(', ')} · ⚡${Math.round(a.energy)} · 😊${Math.round(a.mood)}</div>
+      <div class="agent-card-status">${a.currentAction || a.intention || '…'}</div>
+    </div>
+  `).join('');
+}
+
+function showAgentDetail(agentId) {
+  const a = world.agents.find(x => x.id === agentId);
+  if (!a) return;
+  document.getElementById('agent-list').style.display = 'none';
+  const detail = document.getElementById('agent-detail');
+  detail.classList.remove('hidden');
+  document.getElementById('agent-info').innerHTML = `
+    <h3>${a.name}</h3>
+    <div class="agent-card-meta">${a.traits.join(' · ')}</div>
+    <div style="margin-top:6px;font-size:0.85rem">Location: (${a.x}, ${a.y})</div>
+    <div style="font-size:0.85rem">Intention: <strong>${a.intention}</strong></div>
+    <div class="section">
+      <div class="section-title">Energy</div>
+      <div class="bar"><div class="bar-fill energy" style="width:${a.energy}%"></div></div>
+    </div>
+  `;
+}
+
+function start() {
+  world = createWorld();
+  world.agents = createInitialAgents();
+  window.world = world;
+  initUI();
+  renderAll(world);
+  
+  document.getElementById('btn-run').onclick = () => {
+    running = true;
+    document.getElementById('btn-run').disabled = true;
+    document.getElementById('btn-pause').disabled = false;
+    loop();
+  };
+  document.getElementById('btn-pause').onclick = () => {
+    running = false;
+    document.getElementById('btn-run').disabled = false;
+    document.getElementById('btn-pause').disabled = true;
+    if (loopTimer) clearTimeout(loopTimer);
+  };
+  document.getElementById('btn-reset').onclick = () => {
+    running = false; world = createWorld(); world.agents = createInitialAgents();
+    renderAll(world);
+  };
+}
+
+function loop() {
+  if (!running) return;
+  simulationStep(world, 20);
+  renderAll(world);
+  loopTimer = setTimeout(loop, Math.max(30, 1000 / speed));
+}
+
+document.addEventListener('DOMContentLoaded', start);
+  </script>
+</body>
+</html>
