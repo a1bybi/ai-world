@@ -2,538 +2,378 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>AI World — Autonomous Society Engine v2.0</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI World — Unified Map Engine</title>
   <style>
     :root {
-      --bg: #0b0e14; --panel: #151b26; --border: #232d3f; --text: #c9d1d9; 
-      --muted: #7a8a9e; --accent: #00e676; --accent-dim: #00b25c; --info: #29b6f6;
-      --warning: #ffb74d; --danger: #ef5350;
+      --bg: #0b0e14; --panel: #151b26; --border: #232d3f; 
+      --text: #c9d1d9; --muted: #7a8a9e; --accent: #00e676; 
+      --warning: #ffb74d; --info: #29b6f6;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Segoe UI", Roboto, sans-serif; }
-    html, body { height: 100%; background: var(--bg); color: var(--text); overflow: hidden; }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
+    body { background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
     
-    #app { display: flex; flex-direction: column; height: 100%; max-width: 1600px; margin: 0 auto; }
+    header { background: var(--panel); border-bottom: 1px solid var(--border); padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; }
+    .title { font-weight: bold; color: var(--accent); font-size: 1.1rem; letter-spacing: 1px; }
+    .stats { display: flex; gap: 20px; font-size: 0.85rem; }
+    .stat-val { font-weight: bold; color: #fff; }
+
+    .main-container { display: grid; grid-template-columns: 1fr 320px; flex: 1; min-height: 0; }
     
-    /* Header */
-    .header { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--border); }
-    .header h1 { font-size: 1.2rem; color: var(--accent); letter-spacing: 1px; text-transform: uppercase; }
-    .metrics { display: flex; gap: 20px; font-size: 0.9rem; }
-    .metric { display: flex; flex-direction: column; align-items: center; }
-    .metric-val { font-weight: bold; color: #fff; font-size: 1.1rem; }
-    .metric-label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; }
+    .map-container { position: relative; background: #000; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 10px; }
+    canvas { background: #132413; border-radius: 6px; box-shadow: 0 0 20px rgba(0,0,0,0.8); image-rendering: pixelated; }
+
+    .sidebar { background: var(--panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; }
+    .section-title { padding: 10px; background: rgba(0,0,0,0.2); font-size: 0.75rem; font-weight: bold; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border); }
+    
+    .scroll-area { flex: 1; overflow-y: auto; padding: 10px; font-size: 0.85rem; }
+    .log-item { margin-bottom: 8px; line-height: 1.3; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 6px; }
+    .log-time { color: var(--muted); font-size: 0.75rem; }
+    .log-name { color: var(--info); font-weight: bold; }
+
+    .progress-bar-bg { background: var(--border); height: 8px; border-radius: 4px; overflow: hidden; margin-top: 4px; }
+    .progress-bar-fill { background: var(--accent); height: 100%; width: 0%; transition: width 0.2s; }
+    
     .controls { display: flex; gap: 8px; }
-    button, select { background: var(--border); color: #fff; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
-    button:hover { background: #324059; }
-    button.primary { background: var(--accent-dim); color: #000; font-weight: bold; }
-    button.primary:hover { background: var(--accent); }
-    
-    /* Layout */
-    .main { display: grid; grid-template-columns: 300px 1fr 350px; flex: 1; min-height: 0; overflow: hidden; }
-    .sidebar { background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
-    .sidebar.right { border-right: none; border-left: 1px solid var(--border); }
-    .section-header { padding: 12px; background: rgba(0,0,0,0.2); border-bottom: 1px solid var(--border); font-size: 0.85rem; font-weight: bold; text-transform: uppercase; color: var(--muted); }
-    
-    /* Logs & Lists */
-    .scrollable { flex: 1; overflow-y: auto; padding: 10px; }
-    .chat-log .entry { padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.85rem; line-height: 1.4; }
-    .chat-log .time { color: var(--muted); font-size: 0.75rem; margin-right: 5px; }
-    .chat-log .name { color: var(--info); font-weight: bold; }
-    
-    /* Map */
-    .map-wrapper { display: flex; flex-direction: column; background: #000; position: relative; }
-    #canvas-container { flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 10px; }
-    canvas { background: #132413; border-radius: 8px; box-shadow: 0 0 20px rgba(0,0,0,0.5); image-rendering: pixelated; max-width: 100%; max-height: 100%; }
-    
-    /* Progress Bars */
-    .progress-container { width: 100%; background: #222; border-radius: 4px; height: 12px; margin-top: 5px; overflow: hidden; }
-    .progress-bar { height: 100%; background: var(--accent); width: 0%; transition: width 0.3s; }
-    
-    .tech-entry { padding: 10px; background: rgba(0, 230, 118, 0.1); border-left: 3px solid var(--accent); margin-bottom: 8px; border-radius: 0 4px 4px 0; }
-    .tech-title { font-weight: bold; color: var(--accent); font-size: 0.9rem; }
-    .tech-desc { font-size: 0.8rem; color: var(--muted); margin-top: 4px; }
+    button, select { background: var(--border); color: #fff; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
+    button:hover { background: #2f3c53; }
   </style>
 </head>
 <body>
-  <div id="app">
-    <header class="header">
-      <h1>AI World Engine</h1>
-      <div class="metrics">
-        <div class="metric"><span class="metric-val" id="ui-day">1</span><span class="metric-label">Day</span></div>
-        <div class="metric"><span class="metric-val" id="ui-pop">0</span><span class="metric-label">Population</span></div>
-        <div class="metric"><span class="metric-val" id="ui-food">0</span><span class="metric-label">Food</span></div>
-        <div class="metric"><span class="metric-val" id="ui-wood">0</span><span class="metric-label">Materials</span></div>
-        <div class="metric"><span class="metric-val" id="ui-era" style="color:var(--warning)">Primitive</span><span class="metric-label">Current Era</span></div>
-      </div>
-      <div class="controls">
-        <select id="speed"><option value="1">1x Speed</option><option value="5" selected>5x Speed</option><option value="20">20x Speed</option></select>
-        <button id="btn-toggle" class="primary">Pause</button>
-      </div>
-    </header>
-    
-    <div class="main">
-      <!-- Left: Technology & Progression -->
-      <div class="sidebar">
-        <div class="section-header">Evolution & Tech Tree</div>
-        <div style="padding: 15px; border-bottom: 1px solid var(--border);">
-          <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:5px;">
-            <span style="color:var(--muted)">Next Breakthrough Insight</span>
-            <span id="ui-insight-text">0 / 100</span>
-          </div>
-          <div class="progress-container"><div id="ui-insight-bar" class="progress-bar"></div></div>
+
+  <header>
+    <div class="title">AI WORLD: UNIFIED MAP SIMULATOR</div>
+    <div class="stats">
+      <div>Day: <span id="ui-day" class="stat-val">1</span></div>
+      <div>Pop: <span id="ui-pop" class="stat-val">0</span></div>
+      <div>Food: <span id="ui-food" class="stat-val">0</span></div>
+      <div>Wood: <span id="ui-wood" class="stat-val">0</span></div>
+      <div>Era: <span id="ui-era" class="stat-val" style="color:var(--warning)">Primitive</span></div>
+    </div>
+    <div class="controls">
+      <select id="speed-select">
+        <option value="1">1x Speed</option>
+        <option value="2" selected>2x Speed (Paced)</option>
+        <option value="5">5x Speed</option>
+      </select>
+      <button id="pause-btn">Pause</button>
+    </div>
+  </header>
+
+  <div class="main-container">
+    <div class="map-container">
+      <canvas id="world" width="900" height="675"></canvas>
+    </div>
+
+    <div class="sidebar">
+      <div class="section-title">Era & Research Pacing</div>
+      <div style="padding: 10px; border-bottom: 1px solid var(--border)">
+        <div style="display:flex; justify-content:space-between; font-size:0.8rem">
+          <span>Target Discovery</span>
+          <span id="ui-insight-num">0 / 250</span>
         </div>
-        <div class="scrollable" id="tech-list"></div>
+        <div class="progress-bar-bg"><div id="ui-insight-bar" class="progress-bar-fill"></div></div>
       </div>
 
-      <!-- Center: Map -->
-      <div class="map-wrapper">
-        <div id="canvas-container"><canvas id="world" width="800" height="600"></canvas></div>
-      </div>
-
-      <!-- Right: Dialogue & Activity -->
-      <div class="sidebar right">
-        <div class="section-header">Contextual Dialogue & Events</div>
-        <div class="scrollable chat-log" id="chat-log"></div>
-      </div>
+      <div class="section-title">Spatial Log & Dialogues</div>
+      <div id="log-list" class="scroll-area"></div>
     </div>
   </div>
 
   <script>
-    /**
-     * AI World Engine v2.0 - Contextual & Unbounded
-     */
-    
-    // --- CONFIG & CONSTANTS ---
     const MAP_W = 60, MAP_H = 45;
     const TILE = { GRASS: 0, FOREST: 1, WATER: 2, PATH: 3, ROAD: 4 };
-    
+
     const ERAS = [
-      { name: "Primitive", color: "#8d6e63", houseCap: 4, speed: 1.0 },
-      { name: "Bronze Age", color: "#ffb300", houseCap: 8, speed: 1.2 },
-      { name: "Iron Age", color: "#9e9e9e", houseCap: 16, speed: 1.5 },
-      { name: "Medieval", color: "#5c6bc0", houseCap: 30, speed: 1.8 },
-      { name: "Industrial", color: "#bf360c", houseCap: 80, speed: 2.5 },
-      { name: "Modern", color: "#29b6f6", houseCap: 200, speed: 3.5 },
-      { name: "Information", color: "#ab47bc", houseCap: 500, speed: 5.0 },
-      { name: "Space Age", color: "#00e676", houseCap: 2000, speed: 8.0 }
+      { name: "Primitive", color: "#8d6e63", reqInsight: 250 },
+      { name: "Bronze Age", color: "#ffb300", reqInsight: 750 },
+      { name: "Iron Age", color: "#9e9e9e", reqInsight: 2000 },
+      { name: "Medieval", color: "#5c6bc0", reqInsight: 5000 },
+      { name: "Industrial", color: "#bf360c", reqInsight: 12000 },
+      { name: "Modern", color: "#29b6f6", reqInsight: 30000 },
+      { name: "Information", color: "#ab47bc", reqInsight: 75000 },
+      { name: "Space Age", color: "#00e676", reqInsight: 180000 }
     ];
 
-    // Procedural Techs
-    const TECH_TREE = [
-      { name: "Language & Foraging", desc: "Allows coordinated gathering." },
-      { name: "Basic Tools", desc: "Increases material extraction." },
-      { name: "Agriculture", desc: "Allows planting. Unlocks Bronze Age.", eraUp: 1 },
-      { name: "Masonry", desc: "Buildings can be upgraded to level 2." },
-      { name: "Metallurgy", desc: "Unlocks Iron Age. Tools last longer.", eraUp: 2 },
-      { name: "Urban Planning", desc: "Roads form from paths. Buildings lvl 3." },
-      { name: "Guilds & Trade", desc: "Unlocks Medieval Era.", eraUp: 3 },
-      { name: "Steam Power", desc: "Massive productivity boost. Unlocks Industrial.", eraUp: 4 },
-      { name: "Steel Frameworks", desc: "Buildings lvl 4. Massive housing capacity." },
-      { name: "Electrification", desc: "Unlocks Modern Era.", eraUp: 5 },
-      { name: "Digital Networking", desc: "Unlocks Information Era. Instant communication.", eraUp: 6 },
-      { name: "Arcology Design", desc: "Buildings lvl 5. Practically infinite housing." },
-      { name: "Fusion & AI", desc: "Unlocks Space Age.", eraUp: 7 }
-    ];
-
-    // Contextual Chat Topics
-    const TOPICS = {
-      HUNGER: ["food", "starving", "crops", "foraging", "granary"],
-      WORK: ["wood", "stone", "building", "tools", "labor"],
-      SOCIAL: ["family", "children", "resting", "beautiful day"],
-      TECH: ["insight", "discovery", "new ways", "invention"]
-    };
-
-    // --- STATE ---
     let state = {
-      tick: 0, day: 1, hour: 8,
-      running: true, speedMult: 5,
-      map: [], paths: [], // paths[y][x] tracks foot traffic
+      tick: 0, day: 1, running: true, speed: 2,
+      map: [], paths: [],
       agents: [], buildings: [], resources: [],
-      global: { food: 50, materials: 50, insight: 0, nextInsightTarget: 100 },
-      techIndex: 0, currentEra: 0,
-      activeTopics: [], // { topic: "HUNGER", expires: tick+100 }
-      logs: []
+      global: { food: 40, wood: 40, insight: 0 },
+      currentEra: 0,
+      speechBubbles: [] // { x, y, text, time }
     };
 
     const canvas = document.getElementById("world");
     const ctx = canvas.getContext("2d");
 
-    // --- INITIALIZATION ---
     function init() {
-      // Generate Map
+      // Build terrain map
       for (let y = 0; y < MAP_H; y++) {
         state.map[y] = []; state.paths[y] = [];
         for (let x = 0; x < MAP_W; x++) {
           let type = TILE.GRASS;
-          if (Math.random() < 0.15) type = TILE.FOREST;
-          if (x > MAP_W - 5 || (x > MAP_W - 8 && Math.random() < 0.5)) type = TILE.WATER;
+          if (Math.random() < 0.18) type = TILE.FOREST;
+          if (x > MAP_W - 6 || (x > MAP_W - 10 && Math.random() < 0.4)) type = TILE.WATER;
           state.map[y][x] = type;
           state.paths[y][x] = 0;
         }
       }
-      
-      // Initial Agents & Building
-      state.buildings.push({ x: Math.floor(MAP_W/2), y: Math.floor(MAP_H/2), level: 1, capacity: ERAS[0].houseCap, pop: 4 });
-      for(let i=0; i<4; i++) createAgent();
-      
-      // Initial Resources
-      spawnResource('food', 5); spawnResource('materials', 5);
-      
+
+      // Initial settlement structure on map
+      let hX = Math.floor(MAP_W / 3), hY = Math.floor(MAP_H / 2);
+      state.map[hY][hX] = TILE.GRASS;
+      state.buildings.push({ x: hX, y: hY, level: 1, cap: 6 });
+
+      // Spawn initial villagers
+      for(let i = 0; i < 4; i++) spawnAgent(hX, hY);
+
+      // Populate resource nodes on physical tiles
+      spawnResources();
       requestAnimationFrame(loop);
     }
 
-    function createAgent(parentA = null, parentB = null) {
-      const names = ["Ael", "Bryn", "Cael", "Dara", "Eon", "Fay", "Gael", "Hale", "Ira", "Jace", "Kira", "Lorn", "Mina", "Nys", "Orin"];
-      const a = {
-        id: Math.random().toString(36).substr(2, 5),
-        name: names[Math.floor(Math.random()*names.length)] + (state.currentEra > 3 ? " "+names[Math.floor(Math.random()*names.length)] : ""),
-        x: parentA ? parentA.x : Math.floor(MAP_W/2), y: parentA ? parentA.y : Math.floor(MAP_H/2),
-        energy: 100, mood: 100, age: 0,
-        task: "idle", target: null,
-        inventory: { food: 0, materials: 0 },
-        memory: []
-      };
-      state.agents.push(a);
-      return a;
+    function spawnAgent(x, y) {
+      const names = ["Ael", "Bryn", "Cael", "Dara", "Eon", "Fay", "Gael", "Hale", "Ira", "Jace", "Kira", "Lorn"];
+      state.agents.push({
+        id: Math.random().toString(36).substr(2, 4),
+        name: names[Math.floor(Math.random() * names.length)],
+        x: x, y: y,
+        targetX: x, targetY: y,
+        energy: 100,
+        task: "idle"
+      });
     }
 
-    function spawnResource(type, count) {
-      for(let i=0; i<count; i++) {
-        let x = Math.floor(Math.random() * (MAP_W - 10));
-        let y = Math.floor(Math.random() * MAP_H);
-        if (state.map[y][x] === TILE.GRASS) {
-          state.resources.push({ x, y, type, amount: 50 * (state.currentEra + 1) });
+    function spawnResources() {
+      for(let i = 0; i < 8; i++) {
+        let rx = Math.floor(Math.random() * (MAP_W - 12));
+        let ry = Math.floor(Math.random() * MAP_H);
+        if (state.map[ry][rx] === TILE.GRASS) {
+          state.resources.push({ x: rx, y: ry, type: Math.random() > 0.5 ? 'food' : 'wood', amount: 100 });
         }
       }
     }
 
-    // --- LOGIC LOOP ---
     function update() {
       state.tick++;
-      if (state.tick % 60 === 0) {
-        state.hour++;
-        if (state.hour > 23) { state.hour = 0; state.day++; spawnResource('food', 2); spawnResource('materials', 2); }
+      if (state.tick % 100 === 0) {
+        state.day++;
+        if (state.resources.length < 12) spawnResources();
       }
 
-      // Cleanup active topics
-      state.activeTopics = state.activeTopics.filter(t => t.expires > state.tick);
+      let reqInsight = ERAS[state.currentEra].reqInsight;
 
-      // Process Agents
-      let totalPop = state.agents.length;
-      let capacity = state.buildings.reduce((sum, b) => sum + b.capacity, 0);
-
+      // Agent Logic & Movement
       state.agents.forEach(a => {
-        a.age++;
-        a.energy -= 0.1;
-        
-        // Insight Generation (The driver of pacing!)
-        if (a.energy > 50 && a.mood > 50) {
-          state.global.insight += 0.05 * ERAS[state.currentEra].speed;
+        a.energy -= 0.03; // Real movement cost slows progression naturally
+
+        // Slower Insight Generation tied to well-being & era depth
+        if (a.energy > 60) {
+          state.global.insight += 0.02 / (state.currentEra + 1);
         }
 
-        // Needs / Pathfinding
-        if (a.energy < 30 && state.global.food > 0) {
-          a.task = "eat"; state.global.food--; a.energy = 100; a.mood += 10;
-        } else if (a.task === "idle" || Math.random() < 0.05) {
-          decideTask(a, totalPop, capacity);
+        if (a.task === "idle" || (a.x === a.targetX && a.y === a.targetY)) {
+          assignTask(a);
+        } else {
+          // Physical walking on grid
+          if (a.x !== a.targetX) a.x += Math.sign(a.targetX - a.x);
+          else if (a.y !== a.targetY) a.y += Math.sign(a.targetY - a.y);
+
+          // Foot traffic dynamically carves dirt trails
+          if (state.map[a.y][a.x] === TILE.GRASS) {
+            state.paths[a.y][a.x]++;
+            if (state.paths[a.y][a.x] > 40) state.map[a.y][a.x] = TILE.PATH;
+          } else if (state.map[a.y][a.x] === TILE.PATH && state.currentEra >= 3 && state.paths[a.y][a.x] > 120) {
+            state.map[a.y][a.x] = TILE.ROAD; // Auto-pave stone roads in higher eras
+          }
         }
 
-        executeTask(a);
-        
-        // Track paths
-        if (state.map[a.y][a.x] === TILE.GRASS) {
-          state.paths[a.y][a.x] += 1;
-          if (state.paths[a.y][a.x] > 50) state.map[a.y][a.x] = TILE.PATH;
-        } else if (state.map[a.y][a.x] === TILE.PATH && state.currentEra >= 3 && state.paths[a.y][a.x] > 200) {
-          state.map[a.y][a.x] = TILE.ROAD; // Urban planning auto-paves paths
-        }
-
-        // Contextual Chat Check
-        if (Math.random() < 0.005) attemptChat(a);
+        // On-Map Contextual Conversations
+        if (Math.random() < 0.003) triggerContextualChat(a);
       });
 
-      // Death & Birth Mechanics (Tied to housing capacity & food to prevent runaway)
-      state.agents = state.agents.filter(a => {
-        if (a.energy <= 0) { logEvent(`💀 ${a.name} died of exhaustion/starvation.`); return false; }
-        return true;
-      });
+      // Spatial Construction: Expand buildings when population nears capacity
+      let capacity = state.buildings.reduce((sum, b) => sum + b.cap, 0);
+      if (state.agents.length >= capacity && state.global.wood >= 30) {
+        let builder = state.agents[Math.floor(Math.random() * state.agents.length)];
+        let bx = Math.min(MAP_W - 12, Math.max(2, builder.x + Math.floor(Math.random() * 5 - 2)));
+        let by = Math.min(MAP_H - 2, Math.max(2, builder.y + Math.floor(Math.random() * 5 - 2)));
 
-      if (state.global.food > totalPop * 2 && totalPop < capacity && Math.random() < 0.02) {
-        let parent = state.agents[Math.floor(Math.random() * state.agents.length)];
-        createAgent(parent);
-        logEvent(`👶 Population grew. A child was born in a level ${state.buildings[0].level} building.`);
+        if (state.map[by][bx] === TILE.GRASS && !state.buildings.find(b => b.x === bx && b.y === by)) {
+          state.global.wood -= 30;
+          state.buildings.push({ x: bx, y: by, level: 1, cap: 6 * (state.currentEra + 1) });
+          addLog(`🏗️ Built new structure at (${bx}, ${by})`);
+          addBubble(bx, by, "New home built!");
+        }
       }
 
-      // Tech Progression Check
-      if (state.global.insight >= state.global.nextInsightTarget && state.techIndex < TECH_TREE.length) {
-        unlockTech();
+      // Births require both food AND spatial housing capacity
+      if (state.global.food > state.agents.length * 5 && state.agents.length < capacity && Math.random() < 0.01) {
+        state.global.food -= 10;
+        let b = state.buildings[Math.floor(Math.random() * state.buildings.length)];
+        spawnAgent(b.x, b.y);
+        addLog(`👶 A new citizen was born.`);
       }
+
+      // Era Upgrade check
+      if (state.global.insight >= reqInsight && state.currentEra < ERAS.length - 1) {
+        state.currentEra++;
+        addLog(`🌍 ADVANCEMENT: Society reached the ${ERAS[state.currentEra].name}!`);
+        // Upgrade housing capacity on map buildings
+        state.buildings.forEach(b => { b.cap *= 2; b.level++; });
+      }
+
+      // Expire old map speech bubbles
+      state.speechBubbles = state.speechBubbles.filter(b => state.tick - b.time < 80);
 
       updateUI();
     }
 
-    // --- AI BEHAVIOR ---
-    function decideTask(a, totalPop, capacity) {
-      if (state.global.food < totalPop * 2) {
-        let r = findNearest(a, 'food');
-        if (r) { a.task = "gather"; a.target = r; return; }
+    function assignTask(a) {
+      if (a.energy < 30 && state.global.food > 0) {
+        state.global.food--; a.energy = 100;
+        return;
       }
-      
-      if (totalPop >= capacity - 2 && state.global.materials > 10) {
-        // Find building to upgrade OR build new
-        let b = findUpgradableBuilding();
-        if (b && state.global.materials >= b.level * 10) {
-          a.task = "upgrade"; a.target = b; return;
-        } else if (state.global.materials >= 20) {
-          a.task = "build"; a.target = {x: a.x + (Math.random()>0.5?2:-2), y: a.y + (Math.random()>0.5?2:-2)}; return;
+
+      // Look for physical resources nearby
+      let res = state.resources[Math.floor(Math.random() * state.resources.length)];
+      if (res) {
+        a.targetX = res.x; a.targetY = res.y;
+        if (a.x === res.x && a.y === res.y) {
+          res.amount -= 10;
+          state.global[res.type] += 10;
+          if (res.amount <= 0) state.resources = state.resources.filter(r => r !== res);
         }
+        return;
       }
 
-      if (state.global.materials < totalPop * 3) {
-        let r = findNearest(a, 'materials');
-        if (r) { a.task = "gather"; a.target = r; return; }
-      }
-
-      a.task = "wander";
-      a.target = { x: Math.max(0, Math.min(MAP_W-1, a.x + Math.floor(Math.random()*11 - 5))), 
-                   y: Math.max(0, Math.min(MAP_H-1, a.y + Math.floor(Math.random()*11 - 5))) };
+      // Wander nearby
+      a.targetX = Math.min(MAP_W - 12, Math.max(1, a.x + Math.floor(Math.random() * 9 - 4)));
+      a.targetY = Math.min(MAP_H - 1, Math.max(1, a.y + Math.floor(Math.random() * 9 - 4)));
     }
 
-    function executeTask(a) {
-      if (!a.target) { a.task = "idle"; return; }
-      
-      let dx = a.target.x - a.x; let dy = a.target.y - a.y;
-      if (Math.abs(dx) > 0 || Math.abs(dy) > 0) {
-        // Move
-        if (Math.random() < 0.5 && dx !== 0) a.x += Math.sign(dx);
-        else if (dy !== 0) a.y += Math.sign(dy);
-        a.energy -= 0.05;
-      } else {
-        // Arrived
-        if (a.task === "gather") {
-          a.target.amount -= 5;
-          state.global[a.target.type] += 5;
-          if (a.target.amount <= 0) state.resources = state.resources.filter(r => r !== a.target);
-          a.task = "idle";
-        } else if (a.task === "build") {
-          state.global.materials -= 20;
-          state.buildings.push({ x: a.x, y: a.y, level: 1, capacity: ERAS[state.currentEra].houseCap, pop: 0 });
-          logEvent(`🏗️ ${a.name} constructed a new building.`);
-          a.task = "idle";
-        } else if (a.task === "upgrade") {
-          let cost = a.target.level * 10;
-          if (state.global.materials >= cost) {
-            state.global.materials -= cost;
-            a.target.level++;
-            a.target.capacity = ERAS[state.currentEra].houseCap * Math.pow(2, a.target.level - 1);
-            logEvent(`🛠️ ${a.name} upgraded a building to level ${a.target.level}.`);
-          }
-          a.task = "idle";
-        } else {
-          a.task = "idle";
-        }
-      }
+    function triggerContextualChat(agent) {
+      let other = state.agents.find(o => o !== agent && Math.abs(o.x - agent.x) < 3 && Math.abs(o.y - agent.y) < 3);
+      if (!other) return;
+
+      let msg = "Nice weather.";
+      if (agent.energy < 40) msg = "I need food soon...";
+      else if (state.global.wood < 20) msg = "We are low on timber.";
+      else if (state.currentEra > 0) msg = `The ${ERAS[state.currentEra].name} brings new hope.`;
+
+      addBubble(agent.x, agent.y, msg);
+      addLog(`<span class="log-name">${agent.name}</span>: "${msg}"`);
     }
 
-    function findNearest(a, type) {
-      let best = null, bestD = 9999;
-      state.resources.forEach(r => {
-        if (r.type === type) {
-          let d = Math.abs(r.x - a.x) + Math.abs(r.y - a.y);
-          if (d < bestD) { bestD = d; best = r; }
-        }
-      });
-      return best;
+    function addBubble(x, y, text) {
+      state.speechBubbles.push({ x, y, text, time: state.tick });
     }
 
-    function findUpgradableBuilding() {
-      // Max level depends on era (e.g. Era 0 = max lvl 1, Era 2 = max lvl 3)
-      let maxLevel = state.currentEra + 1;
-      return state.buildings.find(b => b.level < maxLevel);
-    }
-
-    // --- CONTEXTUAL CHAT ENGINE ---
-    function attemptChat(agent) {
-      let nearby = state.agents.find(o => o !== agent && Math.abs(o.x - agent.x) < 3 && Math.abs(o.y - agent.y) < 3);
-      if (!nearby) return;
-
-      // Determine local topic
-      let topicKey = "SOCIAL";
-      let active = state.activeTopics.find(t => true); // just grab latest active topic in memory
-      
-      if (active) {
-        topicKey = active.topic;
-      } else if (agent.energy < 40) {
-        topicKey = "HUNGER";
-      } else if (state.global.materials < 10) {
-        topicKey = "WORK";
-      } else if (Math.random() < 0.2) {
-        topicKey = "TECH";
-      }
-
-      // Generate grammar based on context
-      let grammar = {
-        HUNGER: [
-          ["I am so hungry...", "We need to find foraging spots."],
-          ["The granaries are low.", `I'll head to the woods, ${agent.name}.`],
-          ["Food is scarce.", "I hope the crops yield soon."]
-        ],
-        WORK: [
-          ["We need more materials.", "I will start gathering."],
-          ["The buildings are full.", `Then we must build more, ${agent.name}.`],
-          ["Tools are wearing out.", "Let's gather near the edge."]
-        ],
-        TECH: [
-          ["I had a strange dream of a new machine.", "Focus that insight!"],
-          [`The ${ERAS[state.currentEra].name} provides so much.`, "But we can go further."],
-          ["Have you seen the new roads?", "Yes, progress is rapid!"]
-        ],
-        SOCIAL: [
-          ["It's a good day.", "Indeed it is."],
-          [`How is your family, ${nearby.name}?`, "Thriving, thanks to the settlement."],
-          ["The settlement grows vast.", "It is beautiful to see."]
-        ]
-      };
-
-      let exchange = grammar[topicKey][Math.floor(Math.random() * grammar[topicKey].length)];
-      
-      logChat(agent.name, exchange[0]);
-      setTimeout(() => logChat(nearby.name, exchange[1]), 800);
-
-      // Refresh topic context
-      state.activeTopics.push({ topic: topicKey, expires: state.tick + 100 });
-    }
-
-    // --- PROGRESSION ---
-    function unlockTech() {
-      let tech = TECH_TREE[state.techIndex];
-      state.global.insight -= state.global.nextInsightTarget;
-      state.global.nextInsightTarget = Math.floor(state.global.nextInsightTarget * 1.6); // Exponential curve
-      state.techIndex++;
-
-      let html = `<div class="tech-entry"><div class="tech-title">💡 ${tech.name}</div><div class="tech-desc">${tech.desc}</div></div>`;
-      document.getElementById("tech-list").insertAdjacentHTML('afterbegin', html);
-      logEvent(`🚀 BREAKTHROUGH: Society discovered ${tech.name}!`);
-
-      if (tech.eraUp) {
-        state.currentEra = tech.eraUp;
-        // Automatically boost capacities of all existing buildings to prevent stagnation
-        state.buildings.forEach(b => { b.capacity = ERAS[state.currentEra].houseCap * Math.pow(2, b.level - 1); });
-        logEvent(`🌍 ERA ADVANCEMENT: Welcome to the ${ERAS[state.currentEra].name}!`);
-        
-        // Inject a tech topic to force them to talk about it
-        state.activeTopics.push({ topic: "TECH", expires: state.tick + 300 });
-      }
-    }
-
-    // --- RENDER & UI ---
-    function logEvent(text) {
-      let log = document.getElementById("chat-log");
-      log.insertAdjacentHTML('afterbegin', `<div class="entry"><span class="time">Day ${state.day}</span> <span style="color:#fff">${text}</span></div>`);
-      if (log.children.length > 50) log.removeChild(log.lastChild);
-    }
-    
-    function logChat(name, text) {
-      let log = document.getElementById("chat-log");
-      log.insertAdjacentHTML('afterbegin', `<div class="entry"><span class="time">Day ${state.day}</span> <span class="name">${name}:</span> ${text}</div>`);
-      if (log.children.length > 50) log.removeChild(log.lastChild);
+    function addLog(html) {
+      let container = document.getElementById("log-list");
+      container.insertAdjacentHTML('afterbegin', `<div class="log-item"><span class="log-time">Day ${state.day}</span> ${html}</div>`);
+      if (container.children.length > 40) container.removeChild(container.lastChild);
     }
 
     function updateUI() {
-      document.getElementById("ui-day").innerText = `${state.day} (${String(state.hour).padStart(2,'0')}:00)`;
+      document.getElementById("ui-day").innerText = state.day;
       document.getElementById("ui-pop").innerText = state.agents.length;
       document.getElementById("ui-food").innerText = state.global.food;
-      document.getElementById("ui-wood").innerText = state.global.materials;
-      
-      let curEra = ERAS[state.currentEra];
-      document.getElementById("ui-era").innerText = curEra.name;
-      document.getElementById("ui-era").style.color = curEra.color;
+      document.getElementById("ui-wood").innerText = state.global.wood;
 
-      if (state.techIndex < TECH_TREE.length) {
-        document.getElementById("ui-insight-text").innerText = `${Math.floor(state.global.insight)} / ${state.global.nextInsightTarget}`;
-        document.getElementById("ui-insight-bar").style.width = `${(state.global.insight / state.global.nextInsightTarget) * 100}%`;
-      } else {
-        document.getElementById("ui-insight-text").innerText = "MAXIMUM TECH";
-        document.getElementById("ui-insight-bar").style.width = "100%";
-      }
+      let era = ERAS[state.currentEra];
+      document.getElementById("ui-era").innerText = era.name;
+      document.getElementById("ui-era").style.color = era.color;
+
+      document.getElementById("ui-insight-num").innerText = `${Math.floor(state.global.insight)} / ${era.reqInsight}`;
+      document.getElementById("ui-insight-bar").style.width = `${Math.min(100, (state.global.insight / era.reqInsight) * 100)}%`;
     }
 
     function draw() {
       let tw = canvas.width / MAP_W;
       let th = canvas.height / MAP_H;
 
-      // Draw Map & Paths
+      // Render Map Grid
       for (let y = 0; y < MAP_H; y++) {
         for (let x = 0; x < MAP_W; x++) {
           let t = state.map[y][x];
           if (t === TILE.GRASS) ctx.fillStyle = "#1b3320";
-          else if (t === TILE.FOREST) ctx.fillStyle = "#0c2111";
+          else if (t === TILE.FOREST) ctx.fillStyle = "#0d2412";
           else if (t === TILE.WATER) ctx.fillStyle = "#154360";
           else if (t === TILE.PATH) ctx.fillStyle = "#3e2723";
-          else if (t === TILE.ROAD) ctx.fillStyle = "#424242"; // Asphalt/Stone
-          
-          ctx.fillRect(x*tw, y*th, tw+0.5, th+0.5);
+          else if (t === TILE.ROAD) ctx.fillStyle = "#546e7a";
 
-          // Add simple procedural trees if forest
+          ctx.fillRect(x * tw, y * th, tw + 0.5, th + 0.5);
+
           if (t === TILE.FOREST) {
             ctx.fillStyle = "#2e7d32";
-            ctx.beginPath(); ctx.arc(x*tw + tw/2, y*th + th/2, tw*0.4, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath();
+            ctx.arc(x * tw + tw / 2, y * th + th / 2, tw * 0.35, 0, Math.PI * 2);
+            ctx.fill();
           }
         }
       }
 
-      // Draw Resources
+      // Draw Physical Resources
       state.resources.forEach(r => {
-        ctx.fillStyle = r.type === 'food' ? "#ff5252" : "#8d6e63";
-        ctx.fillRect(r.x*tw + tw*0.2, r.y*th + th*0.2, tw*0.6, th*0.6);
+        ctx.fillStyle = r.type === 'food' ? "#e53935" : "#8d6e63";
+        ctx.fillRect(r.x * tw + tw * 0.2, r.y * th + th * 0.2, tw * 0.6, th * 0.6);
       });
 
-      // Draw Buildings (Visual scales by level & era)
+      // Draw Spatial Buildings (Art shifts per era)
       state.buildings.forEach(b => {
-        ctx.fillStyle = ERAS[state.currentEra].color; // Color shifts by era
-        // Higher level buildings are visually larger/taller (represented top-down as layered outlines)
-        let size = tw * (0.6 + (b.level * 0.1)); 
-        let offset = (tw - size) / 2;
-        ctx.fillRect(b.x*tw + offset, b.y*th + offset, size, size);
-        
-        ctx.fillStyle = "rgba(0,0,0,0.5)";
-        ctx.fillRect(b.x*tw + offset + 2, b.y*th + offset + 2, size - 4, size - 4);
-        
-        // Level indicator text
-        ctx.fillStyle = "#fff"; ctx.font = "8px sans-serif";
-        ctx.fillText("L"+b.level, b.x*tw, b.y*th + th);
+        ctx.fillStyle = ERAS[state.currentEra].color;
+        let sz = tw * (0.7 + b.level * 0.05);
+        ctx.fillRect(b.x * tw, b.y * th, sz, sz);
+        ctx.strokeStyle = "#000"; ctx.strokeRect(b.x * tw, b.y * th, sz, sz);
       });
 
-      // Draw Agents
+      // Draw Physical Agents
       state.agents.forEach(a => {
-        ctx.fillStyle = a.energy < 30 ? "#ff5252" : (a.task === "idle" ? "#e0e0e0" : "#00e676");
-        ctx.beginPath(); ctx.arc(a.x*tw + tw/2, a.y*th + th/2, tw*0.35, 0, Math.PI*2); ctx.fill();
-        ctx.fillStyle = "#fff"; ctx.font = "8px sans-serif";
-        ctx.fillText(a.name.substr(0,1), a.x*tw + tw/3, a.y*th + th*0.7);
+        ctx.fillStyle = a.energy < 30 ? "#ff5252" : "#00e676";
+        ctx.beginPath();
+        ctx.arc(a.x * tw + tw / 2, a.y * th + th / 2, tw * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // Render Speech Bubbles Over Map Grid
+      state.speechBubbles.forEach(b => {
+        let px = b.x * tw;
+        let py = b.y * th - 8;
+
+        ctx.font = "10px sans-serif";
+        let textWidth = ctx.measureText(b.text).width;
+
+        ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
+        ctx.fillRect(px - 4, py - 12, textWidth + 8, 14);
+
+        ctx.fillStyle = "#fff";
+        ctx.fillText(b.text, px, py);
       });
     }
 
     let lastTime = 0;
     function loop(time) {
-      if (!state.running) return;
-      let delta = time - lastTime;
-      if (delta > (1000 / (60 * state.speedMult))) {
-        for(let i=0; i<state.speedMult; i++) update(); // Run multiple ticks for speed
-        draw();
-        lastTime = time;
+      if (state.running) {
+        let delta = time - lastTime;
+        if (delta > (1000 / (30 * state.speed))) {
+          update();
+          draw();
+          lastTime = time;
+        }
       }
       requestAnimationFrame(loop);
     }
 
-    // --- BINDINGS ---
-    document.getElementById("btn-toggle").onclick = (e) => {
+    document.getElementById("pause-btn").onclick = (e) => {
       state.running = !state.running;
       e.target.innerText = state.running ? "Pause" : "Resume";
-      if(state.running) requestAnimationFrame(loop);
+      if (state.running) requestAnimationFrame(loop);
     };
-    
-    document.getElementById("speed").onchange = (e) => {
-      state.speedMult = parseInt(e.target.value);
+
+    document.getElementById("speed-select").onchange = (e) => {
+      state.speed = parseInt(e.target.value);
     };
 
     init();
