@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <title>AI World — Autonomous Artificial Society</title>
+  <title>AI World — Autonomous Artificial Society & Evolution</title>
   <style>
 :root {
   --bg: #0f1419;
@@ -22,6 +22,8 @@
   --river: #29b6f6;
   --agent: #ffee58;
   --resource: #ff7043;
+  --workshop: #ab47bc;
+  --farm: #26a69a;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
@@ -30,7 +32,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
 .header-left { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .header h1 { font-size: 1.15rem; font-weight: 600; }
 .time-display { font-size: 0.9rem; color: var(--accent); font-variant-numeric: tabular-nums; }
-.weather-display { font-size: 0.85rem; color: var(--muted); }
+.era-display { font-size: 0.85rem; color: var(--warning); font-weight: 600; }
 .header-controls { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .btn { background: var(--border); color: var(--text); border: none; border-radius: 6px; padding: 7px 12px; font-size: 0.85rem; cursor: pointer; transition: background 0.15s; }
 .btn:hover:not(:disabled) { background: #3a4a63; }
@@ -44,13 +46,15 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
 .world-panel { grid-row: 1 / 3; }
 .panel-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .panel-header h2 { font-size: 0.95rem; font-weight: 500; }
-.world-stats { display: flex; gap: 12px; font-size: 0.8rem; color: var(--muted); }
+.world-stats { display: flex; gap: 10px; font-size: 0.8rem; color: var(--muted); }
 .map-container { flex: 1; display: flex; align-items: center; justify-content: center; padding: 8px; min-height: 0; overflow: hidden; }
 #world-canvas { max-width: 100%; max-height: 100%; border-radius: 4px; background: #0a0e14; image-rendering: pixelated; }
-.legend { display: flex; flex-wrap: wrap; gap: 10px; padding: 6px 12px; font-size: 0.75rem; color: var(--muted); border-top: 1px solid var(--border); flex-shrink: 0; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 12px; font-size: 0.72rem; color: var(--muted); border-top: 1px solid var(--border); flex-shrink: 0; }
 .legend-item { display: flex; align-items: center; gap: 4px; }
-.dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.dot { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
 .dot.house { background: var(--house); }
+.dot.workshop { background: var(--workshop); }
+.dot.farm { background: var(--farm); }
 .dot.forest { background: var(--forest); }
 .dot.river { background: var(--river); }
 .dot.agent { background: var(--agent); border-radius: 50%; }
@@ -72,13 +76,11 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
 .bar-fill { height: 100%; border-radius: 3px; }
 .bar-fill.energy { background: var(--success); }
 .bar-fill.mood { background: var(--warning); }
-.library-entry { background: rgba(79, 195, 247, 0.1); border-left: 2px solid var(--accent); padding: 6px 8px; margin-bottom: 6px; border-radius: 3px; font-size: 0.75rem; }
-.library-entry-title { color: var(--accent); font-weight: 600; }
-.library-entry-meta { color: var(--muted); font-size: 0.7rem; margin-top: 2px; }
-.rel-item, .mem-item, .pos-item { font-size: 0.8rem; padding: 3px 0; border-bottom: 1px solid rgba(45,58,79,0.4); }
-.rel-positive { color: var(--success); }
-.rel-negative { color: var(--danger); }
-.rel-neutral { color: var(--muted); }
+.library-entry, .tech-entry { background: rgba(79, 195, 247, 0.08); border-left: 2px solid var(--accent); padding: 6px 8px; margin-bottom: 6px; border-radius: 3px; font-size: 0.75rem; }
+.tech-entry { background: rgba(171, 71, 188, 0.1); border-left-color: var(--workshop); }
+.entry-title { color: var(--accent); font-weight: 600; }
+.tech-entry .entry-title { color: #ce93d8; }
+.entry-meta { color: var(--muted); font-size: 0.7rem; margin-top: 2px; }
   </style>
 </head>
 <body>
@@ -87,7 +89,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
       <div class="header-left">
         <h1>AI World</h1>
         <span id="time-display" class="time-display">Day 1 — 06:00</span>
-        <span id="weather-display" class="weather-display">Clear</span>
+        <span id="era-display" class="era-display">Era: Primitive</span>
       </div>
       <div class="header-controls">
         <button id="btn-run" class="btn primary">▶ Run</button>
@@ -107,7 +109,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
     <main class="main">
       <section class="panel world-panel">
         <div class="panel-header">
-          <h2>World</h2>
+          <h2>World & Evolution</h2>
           <div class="world-stats">
             <span id="pop-stat">Pop: 5</span>
             <span id="food-stat">Food: 0</span>
@@ -117,6 +119,8 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
         <div class="map-container"><canvas id="world-canvas" width="600" height="400"></canvas></div>
         <div class="legend">
           <span class="legend-item"><span class="dot house"></span> House</span>
+          <span class="legend-item"><span class="dot workshop"></span> Workshop</span>
+          <span class="legend-item"><span class="dot farm"></span> Farm</span>
           <span class="legend-item"><span class="dot forest"></span> Forest</span>
           <span class="legend-item"><span class="dot river"></span> River</span>
           <span class="legend-item"><span class="dot agent"></span> Agent</span>
@@ -131,7 +135,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
         <div id="event-log" class="event-log"></div>
       </section>
       <section class="panel">
-        <div class="panel-header"><h2>📚 Library</h2></div>
+        <div class="panel-header"><h2>💡 Inventions & Library</h2></div>
         <div id="library-panel" class="agent-list"></div>
       </section>
       <section class="panel">
@@ -145,55 +149,66 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
     </main>
   </div>
   <script>
-const TILE = { GRASS: 0, FOREST: 1, RIVER: 2, HOUSE: 3, PATH: 4 };
-const TILE_COLORS = { [TILE.GRASS]: '#1b3a1b', [TILE.FOREST]: '#0d4a1f', [TILE.RIVER]: '#0a3a5c', [TILE.HOUSE]: '#4a3728', [TILE.PATH]: '#2a2a20' };
+const TILE = { GRASS: 0, FOREST: 1, RIVER: 2, HOUSE: 3, PATH: 4, WORKSHOP: 5, FARM: 6 };
+const TILE_COLORS = {
+  [TILE.GRASS]: '#1b3a1b', [TILE.FOREST]: '#0d4a1f', [TILE.RIVER]: '#0a3a5c',
+  [TILE.HOUSE]: '#4a3728', [TILE.PATH]: '#2a2a20', [TILE.WORKSHOP]: '#5b2c6f', [TILE.FARM]: '#117a65'
+};
 const MAP_W = 30, MAP_H = 20;
 
-class Library {
+class SocietyEvolution {
   constructor() {
     this.entries = [];
-    this.trends = {};
+    this.inventions = [];
+    this.era = 'Primitive Age';
+    this.globalMultipliers = { gathering: 1.0, building: 1.0, energyEfficiency: 1.0 };
   }
   
   addKnowledge(title, category, value, discoveredBy, world) {
-    const entry = {
-      id: `lib_${this.entries.length}`,
-      title,
-      category,
-      value,
-      discoveredBy,
-      discovered: world.tick,
-      citations: 1
-    };
+    const entry = { id: `lib_${this.entries.length}`, title, category, value, discoveredBy, discovered: world.tick, citations: 1 };
     this.entries.push(entry);
     if (this.entries.length > 100) this.entries.shift();
-    this.updateTrends();
     return entry;
   }
-  
-  learnFromLibrary(agent) {
-    const entries = this.entries.filter(e => e.category && agent.skills[e.category] !== undefined);
-    if (entries.length > 0) {
-      const trending = entries.sort((a, b) => b.citations - a.citations).slice(0, 3);
-      trending.forEach(e => {
-        agent.skills[e.category] = Math.min(100, agent.skills[e.category] + e.value * 0.5);
-        e.citations++;
-      });
-      return trending.map(e => e.title);
+
+  tryInvent(agent, world) {
+    const techPool = [
+      { name: 'Stoneworking Tools', reqSkill: 'building', minVal: 25, effect: () => { this.globalMultipliers.building += 0.25; } },
+      { name: 'Systematic Agriculture', reqSkill: 'gathering', minVal: 30, effect: () => { this.globalMultipliers.gathering += 0.3; } },
+      { name: 'Advanced Architecture', reqSkill: 'building', minVal: 45, effect: () => { this.globalMultipliers.building += 0.4; } },
+      { name: 'Textile Weaving', reqSkill: 'gathering', minVal: 50, effect: () => { this.globalMultipliers.energyEfficiency += 0.2; } },
+      { name: 'Civil Engineering', reqSkill: 'building', minVal: 70, effect: () => { this.globalMultipliers.building += 0.6; } }
+    ];
+
+    const available = techPool.filter(t => agent.skills[t.reqSkill] >= t.minVal && !this.inventions.some(inv => inv.name === t.name));
+    if (available.length > 0 && Math.random() < 0.4) {
+      const tech = available[Math.floor(Math.random() * available.length)];
+      tech.effect();
+      this.inventions.push({ name: tech.name, discoveredBy: agent.name, day: world.day });
+      this.updateEra();
+      return tech.name;
     }
-    return [];
+    return null;
   }
-  
-  updateTrends() {
-    this.trends = {};
-    this.entries.forEach(e => {
-      if (!this.trends[e.category]) this.trends[e.category] = 0;
-      this.trends[e.category] += e.citations;
-    });
+
+  updateEra() {
+    const count = this.inventions.length;
+    if (count >= 4) this.era = 'Industrial Age';
+    else if (count >= 2) this.era = 'Expansion Era';
+    else if (count >= 1) this.era = 'Discovery Age';
+    else this.era = 'Primitive Age';
   }
-  
-  getTopEntries(limit = 8) {
-    return [...this.entries].sort((a, b) => b.citations - a.citations).slice(0, limit);
+
+  learnFromLibrary(agent) {
+    const entries = this.entries.filter(e => agent.skills[e.category] !== undefined);
+    if (entries.length > 0) {
+      const target = entries[Math.floor(Math.random() * entries.length)];
+      target.citations++;
+      agent.skills[target.category] = Math.min(100, agent.skills[target.category] + target.value);
+      if (!agent.knowledgeAcquired.includes(target.title)) agent.knowledgeAcquired.push(target.title);
+      return target.title;
+    }
+    return null;
   }
 }
 
@@ -206,46 +221,42 @@ function createMap() {
   for (let y = 0; y < MAP_H; y++) {
     for (let x = 0; x < 7; x++) { if (Math.random() > 0.25) map[y][x] = TILE.FOREST; }
   }
-  for (let y = 3; y < 12; y++) {
-    for (let x = 0; x < 5; x++) { map[y][x] = TILE.FOREST; }
-  }
   [[10, 8], [12, 7], [11, 10], [14, 9], [13, 11]].forEach(([x, y]) => { map[y][x] = TILE.HOUSE; });
   for (let x = 8; x < 18; x++) { map[9][x] = TILE.PATH; }
-  for (let y = 6; y < 13; y++) { map[y][12] = TILE.PATH; }
   return map;
 }
 
 function createResourceNodes() {
   return [
-    { id: 'wood_1', type: 'wood', x: 2, y: 4, amount: 60 },
-    { id: 'wood_2', type: 'wood', x: 4, y: 8, amount: 50 },
-    { id: 'wood_3', type: 'wood', x: 1, y: 14, amount: 45 },
-    { id: 'wood_4', type: 'wood', x: 5, y: 2, amount: 40 },
-    { id: 'food_1', type: 'food', x: 16, y: 5, amount: 50 },
-    { id: 'food_2', type: 'food', x: 18, y: 12, amount: 45 },
-    { id: 'food_3', type: 'food', x: 15, y: 15, amount: 40 },
-    { id: 'food_4', type: 'food', x: 8, y: 3, amount: 35 },
-    { id: 'food_5', type: 'food', x: 22, y: 8, amount: 30 },
+    { id: 'wood_1', type: 'wood', x: 2, y: 4, amount: 60, maxAmount: 60 },
+    { id: 'wood_2', type: 'wood', x: 4, y: 8, amount: 50, maxAmount: 50 },
+    { id: 'wood_3', type: 'wood', x: 1, y: 14, amount: 45, maxAmount: 45 },
+    { id: 'food_1', type: 'food', x: 16, y: 5, amount: 50, maxAmount: 50 },
+    { id: 'food_2', type: 'food', x: 18, y: 12, amount: 45, maxAmount: 45 },
+    { id: 'food_3', type: 'food', x: 15, y: 15, amount: 40, maxAmount: 40 },
   ];
 }
 
 function createBuildings() {
   return [
-    { id: 'house_1', type: 'house', x: 10, y: 8, ownerId: null, capacity: 2, residents: 0 },
-    { id: 'house_2', type: 'house', x: 12, y: 7, ownerId: null, capacity: 2, residents: 0 },
-    { id: 'house_3', type: 'house', x: 11, y: 10, ownerId: null, capacity: 2, residents: 0 },
-    { id: 'house_4', type: 'house', x: 14, y: 9, ownerId: null, capacity: 2, residents: 0 },
-    { id: 'house_5', type: 'house', x: 13, y: 11, ownerId: null, capacity: 2, residents: 0 },
+    { id: 'house_1', type: 'house', x: 10, y: 8, capacity: 3, residents: 0, level: 1 },
+    { id: 'house_2', type: 'house', x: 12, y: 7, capacity: 3, residents: 0, level: 1 },
+    { id: 'house_3', type: 'house', x: 11, y: 10, capacity: 3, residents: 0, level: 1 },
+    { id: 'house_4', type: 'house', x: 14, y: 9, capacity: 3, residents: 0, level: 1 },
+    { id: 'house_5', type: 'house', x: 13, y: 11, capacity: 3, residents: 0, level: 1 },
   ];
 }
 
 function createWorld() {
-  return {
-    version: 1, day: 1, hour: 6, minute: 0, weather: 'clear',
+  const evolution = new SocietyEvolution();
+  const w = {
+    version: 3, day: 1, hour: 6, minute: 0, weather: 'clear',
     map: createMap(), resources: createResourceNodes(), buildings: createBuildings(),
-    global: { food: 50, wood: 30, money: 100 }, agents: [], events: [], tick: 0, births: 0,
-    library: new Library()
+    global: { food: 50, wood: 30 }, agents: [], events: [], tick: 0, births: 0, deaths: 0,
+    evolution
   };
+  evolution.addKnowledge('Primitive Toolmaking', 'building', 2, 'Founders', w);
+  return w;
 }
 
 function formatTime(w) {
@@ -261,6 +272,10 @@ function advanceTime(w, mins) {
     w.weather = roll < 0.55 ? 'clear' : roll < 0.85 ? 'cloudy' : 'rain';
   }
   w.tick += mins;
+
+  if (w.tick % 120 === 0) {
+    w.resources.forEach(r => { if (r.amount < r.maxAmount) r.amount = Math.min(r.maxAmount, r.amount + 5); });
+  }
 }
 
 function isNight(w) { return w.hour < 6 || w.hour >= 20; }
@@ -278,10 +293,10 @@ function findNearestResource(w, agent, type) {
   return best;
 }
 
-function findNearestHouse(w, agent) {
+function findNearestBuilding(w, agent, type) {
   let best = null, bestD = Infinity;
   for (const b of w.buildings) {
-    if (b.type === 'house') {
+    if (b.type === type) {
       const d = dist(agent, b);
       if (d < bestD) { bestD = d; best = b; }
     }
@@ -306,15 +321,14 @@ const PERSONALITY_TRAITS = ['curious', 'cautious', 'generous', 'ambitious', 'sol
 function createAgent(id, name, x, y, parentIds = []) {
   const traits = [...PERSONALITY_TRAITS].sort(() => Math.random() - 0.5).slice(0, 2 + Math.floor(Math.random() * 2));
   return {
-    id, name, x, y, age: 0, parentIds,
-    energy: 80 + Math.floor(Math.random() * 20),
-    mood: 50 + Math.floor(Math.random() * 30),
-    traits, shortTerm: [], longTerm: [], relationships: {},
-    inventory: { food: 8 + Math.floor(Math.random() * 4), wood: 3 + Math.floor(Math.random() * 2) },
-    money: 10 + Math.floor(Math.random() * 15),
-    intention: 'explore', currentAction: null, homeId: null, history: [],
-    skills: { gathering: 15 + Math.random() * 20, hunting: 10 + Math.random() * 15, building: 5 + Math.random() * 10, farming: 5 + Math.random() * 10 },
-    foodCached: 0, reproductiveUrge: 20 + Math.random() * 10, partner: null, knowledgeAcquired: [], lastReproduction: -500
+    id, name, x, y, age: 0, parentIds, alive: true,
+    energy: 85 + Math.floor(Math.random() * 15),
+    mood: 55 + Math.floor(Math.random() * 25),
+    traits, shortTerm: [], relationships: {},
+    inventory: { food: 10, wood: 4 },
+    intention: 'explore', currentAction: null, homeId: null,
+    skills: { gathering: 20 + Math.random() * 20, building: 15 + Math.random() * 15 },
+    foodCached: 0, reproductiveUrge: 15 + Math.random() * 15, partner: null, knowledgeAcquired: [], lastReproduction: -500
   };
 }
 
@@ -323,160 +337,106 @@ function createInitialAgents() {
   return NAMES.slice(0, 5).map((name, i) => createAgent(`agent_${i + 1}`, name, starts[i][0], starts[i][1]));
 }
 
-function addShortMemory(agent, text, tick) {
-  agent.shortTerm.unshift({ text, tick });
-  if (agent.shortTerm.length > 15) agent.shortTerm.pop();
+function addShortMemory(agent, text) {
+  agent.shortTerm.unshift(text);
+  if (agent.shortTerm.length > 10) agent.shortTerm.pop();
 }
 
 function adjustRelationship(agent, otherId, delta, note, tick) {
-  if (!agent.relationships[otherId]) agent.relationships[otherId] = { score: 0, lastInteract: tick, notes: [], conversations: [] };
+  if (!agent.relationships[otherId]) agent.relationships[otherId] = { score: 0, notes: [] };
   const rel = agent.relationships[otherId];
   rel.score = Math.max(-100, Math.min(100, rel.score + delta));
-  rel.lastInteract = tick;
-  if (note) { rel.notes.unshift({ text: note, tick }); if (rel.notes.length > 8) rel.notes.pop(); }
+  if (note) rel.notes.unshift({ text: note, tick });
 }
 
 function getRelScore(agent, otherId) { return agent.relationships[otherId]?.score ?? 0; }
-function hasTrait(agent, trait) { return agent.traits.includes(trait); }
-
-function improveSkill(agent, skill, amount = 0.1) {
-  if (agent.skills[skill] !== undefined) agent.skills[skill] = Math.min(100, agent.skills[skill] + amount);
-}
-
-function getGatherBonus(agent) {
-  return 0.8 + (agent.skills.gathering / 100) * 1.5;
-}
-
-function observe(agent, world) {
-  const nearby = world.agents.filter(a => a.id !== agent.id && dist(agent, a) <= 3);
-  const tile = getTile(world, agent.x, agent.y);
-  const resHere = world.resources.find(r => r.x === agent.x && r.y === agent.y && r.amount > 0);
-  let obs = `At (${agent.x},${agent.y}). `;
-  if (tile === TILE.FOREST) obs += 'Forest. ';
-  else if (tile === TILE.RIVER) obs += 'River. ';
-  else if (tile === TILE.HOUSE) obs += 'Near a house. ';
-  if (resHere) obs += `${resHere.type} available (${resHere.amount}). `;
-  obs += nearby.length ? `Nearby: ${nearby.map(a => a.name).join(', ')}. ` : 'Alone. ';
-  return obs.trim();
-}
-
-function generateConversation(agent, other, world) {
-  const topics = ['weather', 'resources', 'relationships', 'survival', 'learning', 'future'];
-  const topic = topics[Math.floor(Math.random() * topics.length)];
-  const relScore = getRelScore(agent, other.id);
-  
-  let response = '';
-  if (topic === 'weather') {
-    response = `${agent.name}: "${world.weather === 'clear' ? 'Beautiful day!' : world.weather === 'rain' ? 'Good weather for gathering.' : 'Could be clearer...'}"\n`;
-    response += `${other.name}: "${world.weather === 'rain' ? 'Keeps bugs away!' : 'Wish it would rain...'}`;
-  } else if (topic === 'resources') {
-    response = `${agent.name}: "Found good ${agent.inventory.food > 5 ? 'food' : 'wood'} today."\n`;
-    response += `${other.name}: "We should explore together sometime."`;
-  } else if (topic === 'learning') {
-    const learned = world.library.learnFromLibrary(agent);
-    response = `${agent.name}: "Just learned: ${learned[0] || 'better techniques'}"\n`;
-    response += `${other.name}: "Our collective knowledge grows!"`;
-  } else if (topic === 'survival') {
-    response = `${agent.name}: "We need more resources."\n`;
-    response += `${other.name}: "Let's work together on it."`;
-  } else if (topic === 'relationships' && relScore > 20) {
-    response = `${agent.name}: "You've been a good friend."\n`;
-    response += `${other.name}: "Same here, ${agent.name}."`;
-  } else if (topic === 'future') {
-    response = `${agent.name}: "What do you think we should build next?"\n`;
-    response += `${other.name}: "A grain storage? We need stability."`;
-  }
-  
-  return response;
-}
 
 function decide(agent, world) {
-  const hungry = agent.energy < 45, veryHungry = agent.energy < 25, tired = agent.energy < 35 && isNight(world);
-  const nearby = world.agents.filter(a => a.id !== agent.id && dist(agent, a) <= 2);
+  const hungry = agent.energy < 50, veryHungry = agent.energy < 25, tired = agent.energy < 40 && isNight(world);
+  const nearby = world.agents.filter(a => a.alive && a.id !== agent.id && dist(agent, a) <= 2);
   
   agent.age += 1;
+  if (agent.age > 40) agent.reproductiveUrge = Math.min(100, agent.reproductiveUrge + 0.6);
   
-  if (agent.age > 50) {
-    agent.reproductiveUrge = Math.min(100, agent.reproductiveUrge + 0.8);
-  }
-  
-  if (Math.random() < 0.08 && agent.age % 30 === 0) {
-    const learned = world.library.learnFromLibrary(agent);
-    if (learned.length > 0) {
-      agent.knowledgeAcquired.push(...learned);
-      logEvent(world, `${agent.name} learned: ${learned.join(', ')}`, false, [agent.id]);
+  // Research and Inventions
+  if (Math.random() < 0.15 && agent.age % 20 === 0) {
+    world.evolution.learnFromLibrary(agent);
+    const newTech = world.evolution.tryInvent(agent, world);
+    if (newTech) {
+      logEvent(world, `⚡ BREAKTHROUGH! ${agent.name} invented "${newTech}", advancing society to the ${world.evolution.era}!`, true, [agent.id]);
     }
   }
   
-  if (veryHungry && agent.inventory.food > 0) return { intention: 'survive', action: 'eat', target: null, reason: 'Eating food.' };
-  if (veryHungry && agent.foodCached > 0) return { intention: 'survive', action: 'eat_cached', target: null, reason: 'Eating stored food.' };
+  if (veryHungry && agent.inventory.food > 0) return { intention: 'survive', action: 'eat', target: null };
+  if (veryHungry && agent.foodCached > 0) return { intention: 'survive', action: 'eat_cached', target: null };
   
   if (hungry || veryHungry) {
     const foodNode = findNearestResource(world, agent, 'food');
-    if (foodNode && dist(agent, foodNode) <= 10) {
-      if (dist(agent, foodNode) === 0) return { intention: 'gather_food', action: 'gather', target: { type: 'resource', id: foodNode.id }, reason: 'Gathering food.' };
-      return { intention: 'gather_food', action: 'move', target: { x: foodNode.x, y: foodNode.y }, reason: 'Moving to food.' };
-    }
-    if (nearby.length && (veryHungry || hasTrait(agent, 'sociable'))) {
-      return { intention: 'request_food', action: 'talk', target: { type: 'agent', id: nearby[0].id, topic: 'ask_food' }, reason: 'Asking for food.' };
+    if (foodNode && dist(agent, foodNode) <= 12) {
+      if (dist(agent, foodNode) === 0) return { intention: 'gather_food', action: 'gather', target: { id: foodNode.id } };
+      return { intention: 'gather_food', action: 'move', target: { x: foodNode.x, y: foodNode.y } };
     }
   }
 
-  if ((isNight(world) && agent.energy < 70) || tired) {
-    const house = agent.homeId ? world.buildings.find(b => b.id === agent.homeId) : findNearestHouse(world, agent);
+  // Construct Workshops or Farms if wood/skills are sufficient
+  if (agent.inventory.wood >= 8 && agent.skills.building >= 30 && Math.random() < 0.2) {
+    const buildType = Math.random() < 0.5 ? 'workshop' : 'farm';
+    const emptySpot = { x: Math.max(2, agent.x + (Math.random() > 0.5 ? 1 : -1)), y: Math.max(2, agent.y + (Math.random() > 0.5 ? 1 : -1)) };
+    if (getTile(world, emptySpot.x, emptySpot.y) === TILE.GRASS) {
+      return { intention: 'build_structure', action: 'construct', target: { type: buildType, x: emptySpot.x, y: emptySpot.y } };
+    }
+  }
+
+  if ((isNight(world) && agent.energy < 75) || tired) {
+    const house = agent.homeId ? world.buildings.find(b => b.id === agent.homeId) : findNearestBuilding(world, agent, 'house');
     if (house) {
-      if (dist(agent, house) === 0) return { intention: 'rest', action: 'rest', target: null, reason: 'Resting.' };
-      return { intention: 'rest', action: 'move', target: { x: house.x, y: house.y }, reason: 'Heading to rest.' };
+      if (dist(agent, house) === 0) return { intention: 'rest', action: 'rest', target: null };
+      return { intention: 'rest', action: 'move', target: { x: house.x, y: house.y } };
     }
   }
 
-  if (agent.reproductiveUrge > 40 && !agent.partner && nearby.length > 0 && world.tick - agent.lastReproduction > 200) {
-    const potential = nearby.find(a => getRelScore(agent, a.id) > 10 && !a.partner && a.reproductiveUrge > 35 && world.tick - a.lastReproduction > 200);
-    if (potential) return { intention: 'reproduce', action: 'mate', target: { type: 'agent', id: potential.id }, reason: 'Seeking partner.' };
-  }
-
-  if (nearby.length && (agent.mood < 35 || hasTrait(agent, 'sociable') || Math.random() < 0.3)) {
-    const other = nearby[Math.floor(Math.random() * nearby.length)];
-    return { intention: 'socialize', action: 'talk', target: { type: 'agent', id: other.id, topic: 'chat' }, reason: 'Talking.' };
+  if (agent.reproductiveUrge > 50 && !agent.partner && nearby.length > 0 && world.tick - agent.lastReproduction > 250) {
+    const potential = nearby.find(a => getRelScore(agent, a.id) > 10 && !a.partner);
+    if (potential) return { intention: 'reproduce', action: 'mate', target: { id: potential.id } };
   }
 
   if (!agent.homeId) {
     const freeHouse = world.buildings.find(b => b.type === 'house' && b.residents < b.capacity);
-    if (freeHouse && dist(agent, freeHouse) <= 8) {
-      if (dist(agent, freeHouse) === 0) return { intention: 'claim_home', action: 'claim_house', target: { type: 'building', id: freeHouse.id }, reason: 'Claiming home.' };
-      return { intention: 'claim_home', action: 'move', target: { x: freeHouse.x, y: freeHouse.y }, reason: 'Moving to house.' };
+    if (freeHouse) {
+      if (dist(agent, freeHouse) === 0) return { intention: 'claim_home', action: 'claim_house', target: { id: freeHouse.id } };
+      return { intention: 'claim_home', action: 'move', target: { x: freeHouse.x, y: freeHouse.y } };
     }
   }
 
-  if (!isNight(world) && agent.inventory.food > 5 && agent.energy > 60) {
-    return { intention: 'cache_food', action: 'cache', target: null, reason: 'Storing food for later.' };
+  if (nearby.length && Math.random() < 0.3) {
+    const other = nearby[Math.floor(Math.random() * nearby.length)];
+    return { intention: 'socialize', action: 'talk', target: { id: other.id } };
   }
 
   const dirs = [{x:0,y:-1},{x:0,y:1},{x:-1,y:0},{x:1,y:0}];
   const d = dirs[Math.floor(Math.random() * dirs.length)];
-  return { intention: 'explore', action: 'move', target: { x: Math.max(0, Math.min(MAP_W - 1, agent.x + d.x)), y: Math.max(0, Math.min(MAP_H - 1, agent.y + d.y)) }, reason: 'Exploring.' };
+  return { intention: 'explore', action: 'move', target: { x: Math.max(0, Math.min(MAP_W - 1, agent.x + d.x)), y: Math.max(0, Math.min(MAP_H - 1, agent.y + d.y)) } };
 }
-
-const ACTION_COSTS = { move: 0.8, gather: 2, eat: 0, rest: -10, talk: 0.5, claim_house: 1, mate: 2, cache: 0.5 };
 
 function simulationStep(world, minutesPerStep = 20) {
   advanceTime(world, minutesPerStep);
   const night = isNight(world);
-  for (const agent of world.agents) {
-    let drain = night ? 0.9 : 0.5;
-    if (world.weather === 'rain') drain += 0.2;
-    agent.energy = Math.max(0, agent.energy - drain);
-    if (agent.mood > 55) agent.mood -= 0.2; else if (agent.mood < 45) agent.mood += 0.15;
-  }
 
-  const proposals = world.agents.filter(a => a.energy > 0).map(agent => {
-    addShortMemory(agent, observe(agent, world), world.tick);
-    return { agentId: agent.id, decision: decide(agent, world) };
+  world.agents.forEach(agent => {
+    if (!agent.alive) return;
+    let drain = (night ? 0.7 : 0.4) / world.evolution.globalMultipliers.energyEfficiency;
+    agent.energy = Math.max(0, agent.energy - drain);
+    if (agent.energy <= 0) {
+      agent.alive = false;
+      world.deaths++;
+      logEvent(world, `💀 ${agent.name} has passed away.`, true, [agent.id]);
+    }
   });
 
-  proposals.sort(() => Math.random() - 0.5).forEach(({ agentId, decision }) => {
-    const agent = world.agents.find(a => a.id === agentId);
-    if (agent && agent.energy > 0) executeAction(world, agent, decision);
+  const activeAgents = world.agents.filter(a => a.alive);
+  activeAgents.sort(() => Math.random() - 0.5).forEach(agent => {
+    addShortMemory(agent, `At (${agent.x},${agent.y})`);
+    executeAction(world, agent, decide(agent, world));
   });
 }
 
@@ -484,119 +444,68 @@ function executeAction(world, agent, decision) {
   const { action, target } = decision;
   if (action === 'move') {
     if (!target) return;
-    const dx = Math.sign(target.x - agent.x), dy = Math.sign(target.y - agent.y);
-    const nx = agent.x + dx, ny = agent.y + dy;
-    if (agent.energy >= ACTION_COSTS.move) { agent.x = nx; agent.y = ny; agent.energy -= ACTION_COSTS.move; }
+    const nx = agent.x + Math.sign(target.x - agent.x), ny = agent.y + Math.sign(target.y - agent.y);
+    agent.x = nx; agent.y = ny; agent.energy -= 0.5;
   } else if (action === 'gather') {
     const node = world.resources.find(r => r.id === target.id);
-    if (node && node.amount > 0 && dist(agent, node) === 0 && agent.energy >= ACTION_COSTS.gather) {
-      const bonus = getGatherBonus(agent);
-      const take = Math.min(Math.floor(2 * bonus), node.amount);
+    if (node && node.amount > 0 && dist(agent, node) === 0) {
+      const take = Math.min(Math.floor(3 * (agent.skills.gathering / 50) * world.evolution.globalMultipliers.gathering), node.amount);
       node.amount -= take;
-      agent.inventory[node.type] = (agent.inventory[node.type] || 0) + take;
-      agent.energy -= ACTION_COSTS.gather;
-      improveSkill(agent, 'gathering', 0.5);
-      
-      if (Math.random() < 0.25) {
-        const techniques = [
-          `${agent.name}'s efficient ${node.type} method`,
-          `Best ${node.type} gathering locations`,
-          `Sustainable harvesting for ${node.type}`,
-          `${node.type} abundance patterns`,
-          `Peak ${node.type} season techniques`
-        ];
-        const discovery = techniques[Math.floor(Math.random() * techniques.length)];
-        world.library.addKnowledge(discovery, 'gathering', 3, agent.name, world);
-        logEvent(world, `📖 ${agent.name} documented: "${discovery}"`, true, [agent.id]);
+      agent.inventory[node.type] += take;
+      agent.skills.gathering = Math.min(100, agent.skills.gathering + 0.4);
+      if (Math.random() < 0.15) {
+        world.evolution.addKnowledge(`Efficient ${node.type} harvesting`, 'gathering', 2, agent.name, world);
       }
-      
-      logEvent(world, `${agent.name} gathered ${take} ${node.type}.`, false, [agent.id]);
     }
   } else if (action === 'eat') {
-    if (agent.inventory.food > 0) {
-      agent.inventory.food -= 1;
-      agent.energy = Math.min(100, agent.energy + 35);
-      logEvent(world, `${agent.name} ate some food.`, false, [agent.id]);
-    }
+    if (agent.inventory.food > 0) { agent.inventory.food -= 1; agent.energy = Math.min(100, agent.energy + 40); }
   } else if (action === 'eat_cached') {
-    if (agent.foodCached > 0) {
-      agent.foodCached -= 1;
-      agent.energy = Math.min(100, agent.energy + 25);
-      logEvent(world, `${agent.name} ate stored food.`, false, [agent.id]);
-    }
+    if (agent.foodCached > 0) { agent.foodCached -= 1; agent.energy = Math.min(100, agent.energy + 30); }
   } else if (action === 'rest') {
-    agent.energy = Math.min(100, agent.energy + (isNight(world) ? 15 : 8));
-  } else if (action === 'cache') {
-    if (agent.inventory.food > 0) {
-      agent.inventory.food -= 1;
-      agent.foodCached += 1;
-      logEvent(world, `${agent.name} stored food. (${agent.foodCached} total)`, false, [agent.id]);
+    agent.energy = Math.min(100, agent.energy + (isNight(world) ? 18 : 10));
+  } else if (action === 'construct') {
+    if (agent.inventory.wood >= 8) {
+      agent.inventory.wood -= 8;
+      world.map[target.y][target.x] = target.type === 'workshop' ? TILE.WORKSHOP : TILE.FARM;
+      world.buildings.push({ id: `${target.type}_${world.buildings.length}`, type: target.type, x: target.x, y: target.y, capacity: 2, residents: 0, level: 1 });
+      logEvent(world, `🏗️ ${agent.name} constructed a new ${target.type} building!`, true, [agent.id]);
     }
   } else if (action === 'talk') {
-    const other = world.agents.find(a => a.id === target.id);
+    const other = world.agents.find(a => a.alive && a.id === target.id);
     if (other && dist(agent, other) <= 2) {
-      agent.energy -= ACTION_COSTS.talk;
-      const conversation = generateConversation(agent, other, world);
-      
-      if (target.topic === 'ask_food' && other.inventory.food > 1) {
-        other.inventory.food -= 1; agent.inventory.food = (agent.inventory.food || 0) + 1;
-        adjustRelationship(agent, other.id, 8, 'Shared food', world.tick);
-        adjustRelationship(other, agent.id, 8, 'Shared food', world.tick);
-        logEvent(world, `${agent.name} asked ${other.name} for food. ${other.name} shared some.`, true, [agent.id, other.id]);
-      } else {
-        adjustRelationship(agent, other.id, 4, target.topic || 'chat', world.tick);
-        adjustRelationship(other, agent.id, 4, target.topic || 'chat', world.tick);
-        logEvent(world, `💬 ${conversation}`, false, [agent.id, other.id]);
-      }
+      adjustRelationship(agent, other.id, 5, 'Chat', world.tick);
+      adjustRelationship(other, agent.id, 5, 'Chat', world.tick);
     }
   } else if (action === 'mate') {
-    const other = world.agents.find(a => a.id === target.id);
+    const other = world.agents.find(a => a.alive && a.id === target.id);
     if (other && dist(agent, other) <= 2) {
-      agent.energy -= ACTION_COSTS.mate;
-      agent.partner = other.id;
-      other.partner = agent.id;
-      agent.reproductiveUrge = 0;
-      other.reproductiveUrge = 0;
-      agent.lastReproduction = world.tick;
-      other.lastReproduction = world.tick;
-      
+      agent.partner = other.id; other.partner = agent.id;
+      agent.reproductiveUrge = 0; other.reproductiveUrge = 0;
+      agent.lastReproduction = world.tick; other.lastReproduction = world.tick;
       const childName = NAMES.find(n => !world.agents.some(a => a.name === n));
-      if (childName && world.agents.length < 50) {
-        const child = createAgent(`agent_${Math.max(...world.agents.map(a => parseInt(a.id.split('_')[1]) || 0)) + 1}`, childName, agent.x, agent.y, [agent.id, other.id]);
-        
-        Object.keys(child.skills).forEach(skill => {
-          child.skills[skill] = (agent.skills[skill] + other.skills[skill]) / 2 + 10;
-        });
-        
+      if (childName && world.agents.filter(a => a.alive).length < 50) {
+        const child = createAgent(`agent_${world.agents.length + 1}`, childName, agent.x, agent.y, [agent.id, other.id]);
         world.agents.push(child);
         world.births++;
-        adjustRelationship(agent, other.id, 25, 'Mated together', world.tick);
-        adjustRelationship(other, agent.id, 25, 'Mated together', world.tick);
-        logEvent(world, `🎉 ${agent.name} and ${other.name} had a child: ${childName}!`, true, [agent.id, other.id, child.id]);
+        logEvent(world, `👶 Society grows! ${agent.name} and ${other.name} welcomed child: ${childName}.`, true, [agent.id, other.id]);
       }
     }
   } else if (action === 'claim_house') {
     const building = world.buildings.find(b => b.id === target.id);
-    if (building && dist(agent, building) === 0) {
-      building.residents = (building.residents || 0) + 1;
-      agent.homeId = building.id;
-      logEvent(world, `${agent.name} moved into a house.`, true, [agent.id]);
+    if (building && building.residents < building.capacity) {
+      building.residents += 1; agent.homeId = building.id;
     }
   }
 }
 
-let selectedAgentId = null, canvas, ctx, world = null, running = false, speed = 5, loopTimer = null;
+let selectedAgentId = null, canvas, ctx, world = null, running = false, speed = 5;
 
 function initUI() {
   canvas = document.getElementById('world-canvas');
   ctx = canvas.getContext('2d');
-  
   ctx.imageSmoothingEnabled = false;
   
-  document.getElementById('speed-select').addEventListener('change', (e) => {
-    speed = parseInt(e.target.value);
-  });
-  
+  document.getElementById('speed-select').addEventListener('change', (e) => { speed = parseInt(e.target.value); });
   document.getElementById('agent-list').onclick = (e) => {
     const card = e.target.closest('.agent-card');
     if (card) { selectedAgentId = card.dataset.id; showAgentDetail(selectedAgentId); }
@@ -610,36 +519,21 @@ function initUI() {
   document.getElementById('btn-clear-log').onclick = () => { world.events = []; renderEventLog(world); };
   document.getElementById('btn-hour').onclick = () => { simulationStep(world, 60); renderAll(world); };
   document.getElementById('btn-day').onclick = () => { simulationStep(world, 1440); renderAll(world); };
-  
-  document.getElementById('btn-run').onclick = () => {
-    running = true;
-    document.getElementById('btn-run').disabled = true;
-    document.getElementById('btn-pause').disabled = false;
-  };
-  document.getElementById('btn-pause').onclick = () => {
-    running = false;
-    document.getElementById('btn-run').disabled = false;
-    document.getElementById('btn-pause').disabled = true;
-  };
-  document.getElementById('btn-reset').onclick = () => {
-    running = false;
-    world = createWorld();
-    world.agents = createInitialAgents();
-    document.getElementById('btn-run').disabled = false;
-    document.getElementById('btn-pause').disabled = true;
-    renderAll(world);
-  };
+  document.getElementById('btn-run').onclick = () => { running = true; document.getElementById('btn-run').disabled = true; document.getElementById('btn-pause').disabled = false; };
+  document.getElementById('btn-pause').onclick = () => { running = false; document.getElementById('btn-run').disabled = false; document.getElementById('btn-pause').disabled = true; };
+  document.getElementById('btn-reset').onclick = () => { running = false; world = createWorld(); world.agents = createInitialAgents(); document.getElementById('btn-run').disabled = false; document.getElementById('btn-pause').disabled = true; renderAll(world); };
 }
 
 function renderAll(w) {
   renderMap(w); renderStats(w); renderEventLog(w); renderAgentList(w); renderLibrary(w);
   if (selectedAgentId) showAgentDetail(selectedAgentId);
   document.getElementById('time-display').textContent = formatTime(w);
-  document.getElementById('weather-display').textContent = w.weather.charAt(0).toUpperCase() + w.weather.slice(1);
+  document.getElementById('era-display').textContent = `Era: ${w.evolution.era}`;
 }
 
 function renderStats(w) {
-  document.getElementById('pop-stat').textContent = `Pop: ${w.agents.length} (↑${w.births})`;
+  const aliveCount = w.agents.filter(a => a.alive).length;
+  document.getElementById('pop-stat').textContent = `Pop: ${aliveCount} (Births: ${w.births})`;
   document.getElementById('food-stat').textContent = `Food: ${totalResourceLeft(w, 'food') + w.global.food}`;
   document.getElementById('wood-stat').textContent = `Wood: ${totalResourceLeft(w, 'wood') + w.global.wood}`;
 }
@@ -658,8 +552,9 @@ function renderMap(w) {
     ctx.beginPath(); ctx.arc((r.x + 0.5) * tw, (r.y + 0.5) * th, Math.min(tw, th) * 0.28, 0, Math.PI * 2); ctx.fill();
   });
   w.agents.forEach(a => {
+    if (!a.alive) return;
     const cx = (a.x + 0.5) * tw, cy = (a.y + 0.5) * th;
-    ctx.fillStyle = a.energy < 15 ? '#ef5350' : '#ffee58';
+    ctx.fillStyle = a.energy < 20 ? '#ef5350' : '#ffee58';
     ctx.beginPath(); ctx.arc(cx, cy, Math.min(tw, th) * 0.32, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#e7ecf3'; ctx.font = `${Math.max(9, tw * 0.55)}px sans-serif`; ctx.textAlign = 'center';
     ctx.fillText(a.name.slice(0, 4), cx, cy - th * 0.4);
@@ -676,24 +571,25 @@ function renderEventLog(w) {
 }
 
 function renderLibrary(w) {
-  const topEntries = w.library.getTopEntries(8);
-  document.getElementById('library-panel').innerHTML = topEntries.length > 0 
-    ? topEntries.map(e => `
-      <div class="library-entry">
-        <div class="library-entry-title">${e.title}</div>
-        <div class="library-entry-meta">Category: ${e.category} | Citations: ${e.citations} | By: ${e.discoveredBy}</div>
-      </div>
-    `).join('')
-    : '<div style="color: var(--muted); padding: 8px; font-size: 0.8rem; font-style: italic;">Waiting for discoveries...</div>';
+  let html = '';
+  w.evolution.inventions.forEach(inv => {
+    html += `<div class="tech-entry"><div class="entry-title">💡 Invention: ${inv.name}</div><div class="entry-meta">Discovered by ${inv.discoveredBy} (Day ${inv.day})</div></div>`;
+  });
+  const topEntries = w.evolution.entries.slice(-5).reverse();
+  topEntries.forEach(e => {
+    html += `<div class="library-entry"><div class="entry-title">${e.title}</div><div class="entry-meta">Category: ${e.category} | By: ${e.discoveredBy}</div></div>`;
+  });
+  document.getElementById('library-panel').innerHTML = html || '<div style="color: var(--muted); padding: 8px; font-size: 0.8rem;">Waiting for scientific discoveries...</div>';
 }
 
 function renderAgentList(w) {
   if (selectedAgentId) return;
-  document.getElementById('agent-list').innerHTML = w.agents.map(a => `
+  const aliveAgents = w.agents.filter(a => a.alive);
+  document.getElementById('agent-list').innerHTML = aliveAgents.map(a => `
     <div class="agent-card" data-id="${a.id}">
       <div class="agent-card-name">${a.name}</div>
-      <div class="agent-card-meta">${a.traits.join(', ')} · ⚡${Math.round(a.energy)} · 😊${Math.round(a.mood)}</div>
-      <div class="agent-card-status">${a.currentAction || a.intention || '…'}</div>
+      <div class="agent-card-meta">${a.traits.join(', ')} · ⚡${Math.round(a.energy)}</div>
+      <div class="agent-card-status">${a.intention}</div>
     </div>
   `).join('');
 }
@@ -705,39 +601,21 @@ function showAgentDetail(agentId) {
   const detail = document.getElementById('agent-detail');
   detail.classList.remove('hidden');
   
-  const parentInfo = a.parentIds && a.parentIds.length > 0 
-    ? a.parentIds.map(pid => world.agents.find(ag => ag.id === pid)?.name || '?').join(' + ')
-    : 'Founder';
-  
   document.getElementById('agent-info').innerHTML = `
     <h3>${a.name}</h3>
     <div class="agent-card-meta">${a.traits.join(' · ')}</div>
     <div style="margin-top:6px;font-size:0.85rem">Location: (${a.x}, ${a.y})</div>
     <div style="font-size:0.85rem">Intention: <strong>${a.intention}</strong></div>
-    <div style="font-size:0.85rem">Age: ${Math.floor(a.age / 100)} · Parents: ${parentInfo}</div>
-    <div style="font-size:0.85rem">Food Cached: ${a.foodCached}</div>
     <div class="section">
       <div class="section-title">Skills</div>
       <div style="font-size:0.8rem">
         <div>Gathering: ${Math.round(a.skills.gathering)}%</div>
-        <div>Hunting: ${Math.round(a.skills.hunting)}%</div>
         <div>Building: ${Math.round(a.skills.building)}%</div>
-        <div>Farming: ${Math.round(a.skills.farming)}%</div>
-      </div>
-    </div>
-    <div class="section">
-      <div class="section-title">Knowledge Acquired</div>
-      <div style="font-size:0.75rem; color: var(--accent);">
-        ${a.knowledgeAcquired.slice(0, 3).map(k => `• ${k}`).join('<br>')}
       </div>
     </div>
     <div class="section">
       <div class="section-title">Energy</div>
-      <div class="bar"><div class="bar-fill energy" style="width:${a.energy}%"></div></div>
-    </div>
-    <div class="section">
-      <div class="section-title">Mood</div>
-      <div class="bar"><div class="bar-fill mood" style="width:${a.mood}%"></div></div>
+      <div class="bar"><div class="bar-fill energy" style="width:${Math.max(0, a.energy)}%"></div></div>
     </div>
   `;
 }
@@ -756,7 +634,7 @@ function loop() {
     simulationStep(world, 20);
     renderAll(world);
   }
-  loopTimer = setTimeout(loop, Math.max(30, 1000 / speed));
+  setTimeout(loop, Math.max(30, 1000 / speed));
 }
 
 document.addEventListener('DOMContentLoaded', start);
