@@ -201,4 +201,3 @@ node tools/perf.mjs                       # ticks per second
 - **Nothing is unlocked.** If they never figure out how to hold heat, they never
   get an age of fire.
 
-MIT licensed. Built with vanilla JS and no dependencies.
