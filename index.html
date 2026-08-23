@@ -596,6 +596,13 @@ function initUI() {
   canvas = document.getElementById('world-canvas');
   ctx = canvas.getContext('2d');
   
+  // Disable canvas image smoothing for crisp pixel rendering
+  ctx.imageSmoothingEnabled = false;
+  ctx.mozImageSmoothingEnabled = false;
+  ctx.oImageSmoothingEnabled = false;
+  ctx.webkitImageSmoothingEnabled = false;
+  ctx.msImageSmoothingEnabled = false;
+  
   document.getElementById('speed-select').addEventListener('change', (e) => {
     speed = parseInt(e.target.value);
   });
