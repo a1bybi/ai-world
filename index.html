@@ -171,31 +171,31 @@ class SocietyEvolution {
     return entry;
   }
 
-  tryInvent(agent, world) {
-    const techPool = [
-      { name: 'Stoneworking & Quarrying', reqSkill: 'building', minVal: 20, effect: () => { this.globalMultipliers.building += 0.25; } },
-      { name: 'Systematic Crop Rotation', reqSkill: 'gathering', minVal: 25, effect: () => { this.globalMultipliers.gathering += 0.3; } },
-      { name: 'Advanced Timber Architecture', reqSkill: 'building', minVal: 40, effect: () => { this.globalMultipliers.building += 0.4; } },
-      { name: 'Hydraulic Irrigation Networks', reqSkill: 'gathering', minVal: 50, effect: () => { this.globalMultipliers.gathering += 0.4; } },
-      { name: 'Mechanical Pulley & Crafting Systems', reqSkill: 'building', minVal: 65, effect: () => { this.globalMultipliers.building += 0.6; } }
-    ];
+  tryProceduralInvent(agent, world) {
+    const totalSkill = agent.skills.gathering + agent.skills.building;
+    if (totalSkill < 45 || Math.random() > 0.12) return null;
 
-    const available = techPool.filter(t => agent.skills[t.reqSkill] >= t.minVal && !this.inventions.some(inv => inv.name === t.name));
-    if (available.length > 0 && Math.random() < 0.45) {
-      const tech = available[Math.floor(Math.random() * available.length)];
-      tech.effect();
-      this.inventions.push({ name: tech.name, discoveredBy: agent.name, day: world.day });
-      this.updateEra();
-      return tech.name;
-    }
-    return null;
+    const prefixes = ['Advanced', 'Refined', 'Systematic', 'Experimental', 'Obsidian', 'Acoustic', 'Thermal', 'Kinetic', 'Hollow', 'Polished'];
+    const roots = ['Masonry', 'Cultivation', 'Fluid Dynamics', 'Weaving', 'Metallurgy', 'Geometry', 'Fermentation', 'Mechanics', 'Carpentry', 'Toolmaking'];
+    const suffixes = ['Analysis', 'Framework', 'Synthesis', 'Application', 'Optimization', 'Methodology', 'Principles'];
+
+    const name = `${prefixes[Math.floor(Math.random() * prefixes.length)]} ${roots[Math.floor(Math.random() * roots.length)]} ${suffixes[Math.floor(Math.random() * suffixes.length)]}`;
+    
+    if (this.inventions.some(inv => inv.name === name)) return null;
+
+    this.globalMultipliers.gathering += 0.08;
+    this.globalMultipliers.building += 0.08;
+
+    this.inventions.push({ name, discoveredBy: agent.name, day: world.day });
+    this.updateEra(world);
+    return name;
   }
 
-  updateEra() {
+  updateEra(world) {
     const count = this.inventions.length;
-    if (count >= 4) this.era = 'Industrial Age';
-    else if (count >= 2) this.era = 'Expansion Era';
-    else if (count >= 1) this.era = 'Discovery Age';
+    if (count >= 10 && world.day >= 25) this.era = 'Industrial Age';
+    else if (count >= 5 && world.day >= 12) this.era = 'Expansion Era';
+    else if (count >= 2 && world.day >= 5) this.era = 'Discovery Age';
     else this.era = 'Primitive Age';
   }
 
@@ -250,7 +250,7 @@ function createBuildings() {
 function createWorld() {
   const evolution = new SocietyEvolution();
   const w = {
-    version: 4, day: 1, hour: 6, minute: 0, weather: 'clear',
+    version: 5, day: 1, hour: 6, minute: 0, weather: 'clear',
     map: createMap(), resources: createResourceNodes(), buildings: createBuildings(),
     global: { food: 60, wood: 40 }, agents: [], events: [], tick: 0, births: 0, deaths: 0,
     evolution
@@ -359,15 +359,14 @@ function decide(agent, world) {
   agent.age += 1;
   if (agent.age > 30) agent.reproductiveUrge = Math.min(100, agent.reproductiveUrge + 0.8);
   
-  // Research, Learning, and Inventions
-  if (Math.random() < 0.18 && agent.age % 15 === 0) {
+  if (Math.random() < 0.15 && agent.age % 15 === 0) {
     const learned = world.evolution.learnFromLibrary(agent);
     if (learned) {
       addShortMemory(agent, `Studied library knowledge: ${learned}`);
     }
-    const newTech = world.evolution.tryInvent(agent, world);
+    const newTech = world.evolution.tryProceduralInvent(agent, world);
     if (newTech) {
-      logEvent(world, `⚡ BREAKTHROUGH! ${agent.name} invented "${newTech}", lifting society into the ${world.evolution.era}!`, true, [agent.id]);
+      logEvent(world, `⚡ BREAKTHROUGH! ${agent.name} procedurally discovered "${newTech}", lifting society toward the ${world.evolution.era}!`, true, [agent.id]);
     }
   }
   
@@ -381,7 +380,6 @@ function decide(agent, world) {
     }
   }
 
-  // Construct Specialized Workshops or Farms if wood and skills allow
   if (agent.inventory.wood >= 6 && agent.skills.building >= 25 && Math.random() < 0.25) {
     const buildType = Math.random() < 0.5 ? 'workshop' : 'farm';
     const emptySpot = { x: Math.max(2, agent.x + (Math.random() > 0.5 ? 1 : -1)), y: Math.max(2, agent.y + (Math.random() > 0.5 ? 1 : -1)) };
@@ -459,7 +457,7 @@ function executeAction(world, agent, decision) {
       agent.skills.gathering = Math.min(100, agent.skills.gathering + 0.5);
       
       if (Math.random() < 0.2) {
-        const title = node.type === 'food' ? `Botanical Survey of Local Flora (${agent.name})` : `Timber Yield Optimization (${agent.name})`;
+        const title = node.type === 'food' ? `Botanical Notes on Local Shrubs (${agent.name})` : `Timber Yield Methodology (${agent.name})`;
         world.evolution.addKnowledge(title, node.type === 'food' ? 'gathering' : 'building', 3, agent.name, world);
       }
     }
@@ -474,13 +472,25 @@ function executeAction(world, agent, decision) {
       world.map[target.y][target.x] = tileType;
       world.buildings.push({ id: `${target.type}_${world.buildings.length}`, type: target.type, x: target.x, y: target.y, capacity: 3, residents: 0, level: 1 });
       logEvent(world, `🏗️ ${agent.name} constructed a new specialized ${target.type} at (${target.x}, ${target.y})!`, true, [agent.id]);
-      world.evolution.addKnowledge(`Engineering blueprint for ${target.type}`, 'building', 4, agent.name, world);
+      world.evolution.addKnowledge(`Blueprint principles for ${target.type}`, 'building', 4, agent.name, world);
     }
   } else if (action === 'talk') {
     const other = world.agents.find(a => a.alive && a.id === target.id);
     if (other && dist(agent, other) <= 2) {
       adjustRelationship(agent, other.id, 4, 'Friendly chat', world.tick);
       adjustRelationship(other, agent.id, 4, 'Friendly chat', world.tick);
+      
+      if (Math.random() < 0.4) {
+        const topics = [
+          'the scarcity of nearby timber resources', 
+          'dreams of expanding the settlement boundaries', 
+          'memories from the early founding days', 
+          'better techniques for tracking edible vegetation',
+          'weather patterns and shifting seasons'
+        ];
+        const topic = topics[Math.floor(Math.random() * topics.length)];
+        logEvent(world, `💬 ${agent.name} and ${other.name} stopped to chat about ${topic}.`, false, [agent.id, other.id]);
+      }
     }
   } else if (action === 'mate') {
     const other = world.agents.find(a => a.alive && a.id === target.id);
@@ -552,7 +562,6 @@ function renderMap(w) {
       ctx.fillRect(x * tw, y * th, tw + 0.5, th + 0.5);
     }
   }
-  // Render Buildings explicitly
   w.buildings.forEach(b => {
     ctx.fillStyle = b.type === 'workshop' ? '#ab47bc' : b.type === 'farm' ? '#26a69a' : '#a1887f';
     ctx.fillRect(b.x * tw + 2, b.y * th + 2, tw - 4, th - 4);
