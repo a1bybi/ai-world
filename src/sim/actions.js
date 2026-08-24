@@ -391,82 +391,94 @@ export const ACTIONS = {
   foundSettlement: {
     category: 'work',
     propose(a, ctx) {
-      if (a.isChild(ctx.tick)) return [];
-      const nearest = ctx.sim.nearestSettlement(a);
-      if (!nearest) return [];
+      try {
+        if (a.isChild(ctx.tick)) return [];
+        if (!ctx.sim.settlements || !ctx.sim.settlements.length) return [];
 
-      const localPop = ctx.sim.living.filter(x => {
-        const ns = ctx.sim.nearestSettlement(x);
-        return ns && ns.id === nearest.id;
-      }).length;
+        const nearest = ctx.sim.nearestSettlement(a);
+        if (!nearest) return [];
 
-      // Much more reachable thresholds
-      const crowding = localPop / 40;
-      if (crowding < 0.40) return [];
+        const localPop = ctx.sim.living.filter(x => {
+          const ns = ctx.sim.nearestSettlement(x);
+          return ns && ns.id === nearest.id;
+        }).length;
 
-      const candidates = [];
-      for (const key of a.memory.knownKeys('place')) {
-        const b = a.memory.belief(key);
-        if (!b?.payload) continue;
-        const pos = b.payload;
-        const farEnough = ctx.sim.settlements.every(s =>
-          (s.x - pos.x) ** 2 + (s.y - pos.y) ** 2 > 28 * 28
-        );
-        if (farEnough) {
-          candidates.push({ pos, conf: b.confidence || 0.3, key });
+        const crowding = localPop / 40;
+        if (crowding < 0.40) return [];
+
+        const candidates = [];
+        for (const key of a.memory.knownKeys('place')) {
+          const b = a.memory.belief(key);
+          if (!b || !b.payload || b.payload.x == null || b.payload.y == null) continue;
+          const pos = b.payload;
+          const farEnough = ctx.sim.settlements.every(s =>
+            (s.x - pos.x) ** 2 + (s.y - pos.y) ** 2 > 28 * 28
+          );
+          if (farEnough) {
+            candidates.push({ pos, conf: b.confidence || 0.3 });
+          }
         }
-      }
 
-      // Fallback: invent a plausible spot when the cluster is already dense
-      if (!candidates.length && crowding > 0.55 && a.genome.curiosity > 0.4) {
-        const angle = ctx.rng.float(0, Math.PI * 2);
-        const d = 26 + ctx.rng.int(0, 16);
-        const px = clamp(Math.round(nearest.x + Math.cos(angle) * d), 2, ctx.world.w - 3);
-        const py = clamp(Math.round(nearest.y + Math.sin(angle) * d), 2, ctx.world.h - 3);
-        if (ctx.world.walkable(px, py)) {
-          candidates.push({ pos: { x: px, y: py }, conf: 0.22, key: 'scouted' });
+        // Fallback scout spot when the cluster is already dense
+        if (!candidates.length && crowding > 0.55 && a.genome.curiosity > 0.4) {
+          const angle = ctx.rng.float(0, Math.PI * 2);
+          const d = 26 + ctx.rng.int(0, 16);
+          const px = clamp(Math.round(nearest.x + Math.cos(angle) * d), 2, ctx.world.w - 3);
+          const py = clamp(Math.round(nearest.y + Math.sin(angle) * d), 2, ctx.world.h - 3);
+          if (ctx.world.walkable(px, py)) {
+            candidates.push({ pos: { x: px, y: py }, conf: 0.22 });
+          }
         }
+
+        if (!candidates.length) return [];
+
+        candidates.sort((x, y) => y.conf - x.conf);
+        const best = candidates[0];
+
+        const u = (0.70 + crowding * 0.85 + best.conf * 0.35) *
+                  (0.65 + a.genome.curiosity * 0.7 + a.genome.industry * 0.45) *
+                  (1 - a.body.hunger * 0.30) *
+                  (1 - a.body.thirst * 0.20);
+
+        return [{
+          kind: 'foundSettlement',
+          u: Math.max(0.01, u),
+          target: { x: best.pos.x, y: best.pos.y },
+          site: best.pos,
+          dur: 12,
+        }];
+      } catch (e) {
+        console.warn('foundSettlement.propose error', e);
+        return [];
       }
-
-      if (!candidates.length) return [];
-
-      candidates.sort((x, y) => y.conf - x.conf);
-      const best = candidates[0];
-
-      // Higher utility so it can actually win against ordinary work
-      const u = (0.70 + crowding * 0.85 + best.conf * 0.35) *
-                (0.65 + a.genome.curiosity * 0.7 + a.genome.industry * 0.45) *
-                (1 - a.body.hunger * 0.30) *
-                (1 - a.body.thirst * 0.20);
-
-      return [{
-        kind: 'foundSettlement',
-        u,
-        target: T(best.pos.x, best.pos.y),
-        site: best.pos,
-        dur: 12,
-      }];
     },
     run(a, ctx, act) {
-      if (dist(a, act.target) > 2.8) {
-        stepToward(a, ctx.world, act.target);
-        a.body.energy = clamp(a.body.energy - 0.012, 0, 1);
-        return 'continue';
+      try {
+        if (!act.target) return 'abort';
+        if (dist(a, act.target) > 2.8) {
+          stepToward(a, ctx.world, act.target);
+          a.body.energy = clamp(a.body.energy - 0.012, 0, 1);
+          return 'continue';
+        }
+        const ok = ctx.sim.foundSettlement(a, act.site || act.target);
+        if (ok) {
+          appraise(a, {
+            goalCongruence: 0.92,
+            agency: 'self',
+            intensity: 0.9,
+            kind: 'first',
+            novelty: 0.85,
+          });
+          return 'done';
+        }
+        return 'abort';
+      } catch (e) {
+        console.warn('foundSettlement.run error', e);
+        return 'abort';
       }
-      const ok = ctx.sim.foundSettlement(a, act.site || act.target);
-      if (ok) {
-        appraise(a, {
-          goalCongruence: 0.92,
-          agency: 'self',
-          intensity: 0.9,
-          kind: 'first',
-          novelty: 0.85,
-        });
-        return 'done';
-      }
-      return 'abort';
     },
-  }, {
+  },
+  {
     category: 'work',
     propose(a, ctx) {
       const fields = ctx.world.structuresOfKind('field');
