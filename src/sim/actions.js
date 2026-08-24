@@ -395,64 +395,78 @@ export const ACTIONS = {
       const nearest = ctx.sim.nearestSettlement(a);
       if (!nearest) return [];
 
-      // Local population pressure
       const localPop = ctx.sim.living.filter(x => {
         const ns = ctx.sim.nearestSettlement(x);
         return ns && ns.id === nearest.id;
       }).length;
-      const crowding = localPop / 70;          // tune: ~0.7+ starts looking attractive
-      if (crowding < 0.55) return [];
 
-      // Remembered places that are far from every existing settlement
+      // Much more reachable thresholds
+      const crowding = localPop / 40;
+      if (crowding < 0.40) return [];
+
       const candidates = [];
       for (const key of a.memory.knownKeys('place')) {
         const b = a.memory.belief(key);
         if (!b?.payload) continue;
         const pos = b.payload;
         const farEnough = ctx.sim.settlements.every(s =>
-          (s.x - pos.x) ** 2 + (s.y - pos.y) ** 2 > 40 * 40
+          (s.x - pos.x) ** 2 + (s.y - pos.y) ** 2 > 28 * 28
         );
         if (farEnough) {
           candidates.push({ pos, conf: b.confidence || 0.3, key });
         }
       }
+
+      // Fallback: invent a plausible spot when the cluster is already dense
+      if (!candidates.length && crowding > 0.55 && a.genome.curiosity > 0.4) {
+        const angle = ctx.rng.float(0, Math.PI * 2);
+        const d = 26 + ctx.rng.int(0, 16);
+        const px = clamp(Math.round(nearest.x + Math.cos(angle) * d), 2, ctx.world.w - 3);
+        const py = clamp(Math.round(nearest.y + Math.sin(angle) * d), 2, ctx.world.h - 3);
+        if (ctx.world.walkable(px, py)) {
+          candidates.push({ pos: { x: px, y: py }, conf: 0.22, key: 'scouted' });
+        }
+      }
+
       if (!candidates.length) return [];
 
-      // Prefer higher-confidence memories
       candidates.sort((x, y) => y.conf - x.conf);
       const best = candidates[0];
 
-      const u = (0.45 + crowding * 0.55 + best.conf * 0.25) *
-                (0.5 + a.genome.curiosity * 0.6 + a.genome.industry * 0.4) *
-                (1 - a.body.hunger * 0.4);
+      // Higher utility so it can actually win against ordinary work
+      const u = (0.70 + crowding * 0.85 + best.conf * 0.35) *
+                (0.65 + a.genome.curiosity * 0.7 + a.genome.industry * 0.45) *
+                (1 - a.body.hunger * 0.30) *
+                (1 - a.body.thirst * 0.20);
 
       return [{
         kind: 'foundSettlement',
         u,
         target: T(best.pos.x, best.pos.y),
         site: best.pos,
-        dur: 8,
+        dur: 12,
       }];
     },
     run(a, ctx, act) {
-      if (dist(a, act.target) > 2.5) {
+      if (dist(a, act.target) > 2.8) {
         stepToward(a, ctx.world, act.target);
-        a.body.energy = clamp(a.body.energy - 0.015, 0, 1);
+        a.body.energy = clamp(a.body.energy - 0.012, 0, 1);
         return 'continue';
       }
-      // Close enough — try to found
       const ok = ctx.sim.foundSettlement(a, act.site || act.target);
       if (ok) {
-        appraise(a, { goalCongruence: 0.9, agency: 'self', intensity: 0.9, kind: 'first', novelty: 0.8 });
-        // Clear or weaken the memory so they don't immediately found again on the same spot
-        // (optional – the distance check already prevents re-founding nearby)
+        appraise(a, {
+          goalCongruence: 0.92,
+          agency: 'self',
+          intensity: 0.9,
+          kind: 'first',
+          novelty: 0.85,
+        });
         return 'done';
       }
       return 'abort';
     },
-  },
-
-  farm: {
+  }, {
     category: 'work',
     propose(a, ctx) {
       const fields = ctx.world.structuresOfKind('field');
