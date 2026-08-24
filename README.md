@@ -10,6 +10,8 @@ tech tree, and no outcome is guaranteed. Some worlds flourish. Some starve.
 
 You watch. When you pause, you get a chronicle of what happened and why.
 
+explore it here: https://a1bybi.github.io/ai-world/
+
 ![Aurorae](docs/screenshot.png)
 
 ## Controls
