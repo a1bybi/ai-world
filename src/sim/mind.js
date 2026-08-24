@@ -105,7 +105,7 @@ export function think(a, ctx) {
     for (const p of props) {
       if (!p.kind) p.kind = name;
       // Children are not capable of everything, and know it.
-      if (a.isChild(world.tick) && ['build', 'trade', 'court', 'fight', 'hunt', 'foundSettlement'].includes(p.kind)) p.u *= 0.15;
+      if (a.isChild(world.tick) && ['build', 'trade', 'court', 'fight', 'hunt'].includes(p.kind)) p.u *= 0.15;
       if (a.isElder(world.tick) && ['hunt', 'fight', 'build'].includes(p.kind)) p.u *= 0.5;
       if (a.isElder(world.tick) && ['teach', 'ritual', 'makeArt'].includes(p.kind)) p.u *= 1.6;
       if (a.frustration > 2 && p.kind === a.lastAction) p.u *= 0.5;
@@ -134,7 +134,7 @@ export function think(a, ctx) {
 const SKILL_FOR = {
   gather: 'forage', hunt: 'hunt', craft: 'craft', build: 'build', farm: 'farm',
   converse: 'speak', teach: 'teach', trade: 'trade', fight: 'fight', care: 'heal',
-  makeArt: 'art', experiment: 'craft', foundSettlement: 'build',
+  makeArt: 'art', experiment: 'craft',
 };
 
 function reasonFor(a, c, ctx) {
@@ -149,7 +149,6 @@ function reasonFor(a, c, ctx) {
     case 'craft': return `knows how to make ${ctx.ont.get(c.payload)?.word || c.payload}`;
     case 'experiment': return 'has a hunch about what these might become';
     case 'build': return `the settlement lacks ${c.payload.structure}`;
-    case 'foundSettlement': return 'crowding is high; remembers a place worth claiming';
     case 'farm': return 'the field needs hands';
     case 'store': return 'winter is a fact';
     case 'converse': return `curious about ${ctx.sim.byId(c.targetId)?.name}`;
@@ -174,7 +173,6 @@ function describeGoal(a, c, ctx) {
     case 'gather': return `gathering ${ctx.ont.get(c.payload)?.word || c.payload}`;
     case 'craft': return `making ${ctx.ont.get(c.payload)?.word || c.payload}`;
     case 'build': return `building ${c.payload.structure}`;
-    case 'foundSettlement': return 'founding a new settlement';
     case 'experiment': return 'experimenting';
     case 'converse': return `talking with ${name(c.targetId)}`;
     case 'teach': return `teaching ${name(c.targetId)}`;
