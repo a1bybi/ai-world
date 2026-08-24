@@ -72,7 +72,23 @@ export class Simulation {
     }
     this.origin = { x: cx, y: cy };
     this.settlementName = this.lang.placeName(rng);
-    world.sites.push({ kind: 'settlement', name: this.settlementName, x: cx, y: cy, foundedTick: 0 });
+
+    // Multi-settlement support: start with one founding settlement
+    this.settlements = [{
+      id: 0,
+      name: this.settlementName,
+      x: cx,
+      y: cy,
+      foundedTick: 0,
+    }];
+    world.sites.push({
+      kind: 'settlement',
+      name: this.settlementName,
+      x: cx,
+      y: cy,
+      foundedTick: 0,
+      settlementId: 0,
+    });
 
     for (let i = 0; i < n; i++) {
       let x = cx, y = cy, tries = 0;
@@ -126,6 +142,62 @@ export class Simulation {
       for (const o of cell) if (o !== a && dist(a, o) <= radius) out.push(o);
     }
     return out;
+  }
+
+  /** Nearest settlement to a position (or agent). */
+  nearestSettlement(pos) {
+    if (!this.settlements?.length) return null;
+    let best = this.settlements[0];
+    let bestD = Infinity;
+    const px = pos.x ?? pos.pos?.x ?? 0;
+    const py = pos.y ?? pos.pos?.y ?? 0;
+    for (const s of this.settlements) {
+      const d = (s.x - px) ** 2 + (s.y - py) ** 2;
+      if (d < bestD) {
+        bestD = d;
+        best = s;
+      }
+    }
+    return best;
+  }
+
+  /** Found a new settlement at the given spot. Returns true on success. */
+  foundSettlement(founder, spot) {
+    if (!spot) return false;
+    const tooClose = this.settlements.some(s =>
+      (s.x - spot.x) ** 2 + (s.y - spot.y) ** 2 < 22 * 22
+    );
+    if (tooClose) return false;
+
+    const id = this.settlements.length;
+    const name = this.lang.placeName(this.rng);
+    const entry = {
+      id,
+      name,
+      x: Math.round(spot.x),
+      y: Math.round(spot.y),
+      foundedTick: this.world.tick,
+    };
+    this.settlements.push(entry);
+
+    this.world.sites.push({
+      kind: 'settlement',
+      name,
+      x: entry.x,
+      y: entry.y,
+      foundedTick: entry.foundedTick,
+      settlementId: id,
+    });
+
+    if (founder) {
+      founder.homeSettlementId = id;
+      if (!founder.titles.includes('founder')) founder.titles.push('founder');
+    }
+
+    this.record(founder, 'first',
+      `${founder ? founder.name : 'They'} founded ${name}`,
+      { valence: 0.85, intensity: 0.95, landmark: true });
+    return true;
   }
 
   // ── the tick ──────────────────────────────────────────────────────────────
@@ -483,7 +555,16 @@ export class Simulation {
   birth(mother) {
     const father = this.byId(mother.body.pregnant.otherId);
     mother.body.pregnant = null;
-    if (mother.body.health < 0.25 || this.living.length > 220) return;
+    if (mother.body.health < 0.25) return;
+
+    // Soft global + local pressure (encourages expansion instead of hard stop)
+    const nearest = this.nearestSettlement(mother);
+    const localPop = nearest
+      ? this.living.filter(a => this.nearestSettlement(a)?.id === nearest.id).length
+      : this.living.length;
+    if (this.living.length > 320) return;   // hard global safety net
+    if (localPop > 90) return;              // local crowding → expand instead
+
     const g = father ? inherit(this.rng, mother.genome, father.genome) : randomGenome(this.rng);
     const child = new Agent({
       name: this.lang.personName(this.rng), genome: g,
@@ -647,7 +728,7 @@ export class Simulation {
   /** What the settlement is short of, expressed as raw materials people crave. */
   updateWants() {
     const want = new Map();
-    const s = this.settlementNeeds();
+    const s = this.settlementNeeds(); // global fallback still works
     for (const [kind, def] of Object.entries(STRUCTURE_KINDS)) {
       const need = def.need(s);
       if (need <= 0.05) continue;
@@ -662,21 +743,41 @@ export class Simulation {
     this.wantedMaterials = want;
   }
 
-  settlementNeeds() {
+  /**
+   * Settlement needs. Pass a settlement object for local needs;
+   * omit (or pass null) for the old global behaviour.
+   */
+  settlementNeeds(settlement = null) {
     const w = this.world;
-    const pop = Math.max(1, this.living.length);
-    const count = (k) => w.structuresOfKind(k).length;
+    let pop, structures;
+
+    if (settlement) {
+      const local = this.living.filter(a => {
+        const ns = this.nearestSettlement(a);
+        return ns && ns.id === settlement.id;
+      });
+      pop = Math.max(1, local.length);
+      const R = 18;
+      structures = (kind) =>
+        w.structuresOfKind(kind).filter(s =>
+          (s.x - settlement.x) ** 2 + (s.y - settlement.y) ** 2 < R * R
+        ).length;
+    } else {
+      pop = Math.max(1, this.living.length);
+      structures = (kind) => w.structuresOfKind(kind).length;
+    }
+
     const need = (have, per) => clamp((pop / per - have) / Math.max(1, pop / per));
     return {
-      shelterDeficit: need(count('shelter'), 2.2),
-      hearthDeficit: need(count('hearth'), 6) * (w.temperature < 0.5 ? 1.6 : 0.7),
-      storeDeficit: need(count('store'), 10) * (w.season === 'autumn' ? 1.7 : 1),
-      workshopDeficit: need(count('workshop'), 8) * (this.ont.bestScoreFor('cutting') > 0.2 ? 1.4 : 0.4),
-      fieldDeficit: need(count('field'), 5) * (this.ont.bestScoreFor('cutting') > 0.25 ? 1.3 : 0.3),
-      wellDeficit: need(count('well'), 14) * (this.ont.bestScoreFor('vessel') > 0.3 ? 1.2 : 0.2),
-      shrineDeficit: need(count('shrine'), 16) * clamp(this.ritualPull),
-      wallDeficit: need(count('wall'), 26) * clamp(mean(this.living, (x) => x.affect.e.fear) * 2),
-      hallDeficit: pop > 18 && count('hall') < 1 ? 0.9 : 0,
+      shelterDeficit: need(structures('shelter'), 2.2),
+      hearthDeficit:  need(structures('hearth'), 6) * (w.temperature < 0.5 ? 1.6 : 0.7),
+      storeDeficit:   need(structures('store'), 10) * (w.season === 'autumn' ? 1.7 : 1),
+      workshopDeficit: need(structures('workshop'), 8) * (this.ont.bestScoreFor('cutting') > 0.2 ? 1.4 : 0.4),
+      fieldDeficit:   need(structures('field'), 5) * (this.ont.bestScoreFor('cutting') > 0.25 ? 1.3 : 0.3),
+      wellDeficit:    need(structures('well'), 14) * (this.ont.bestScoreFor('vessel') > 0.3 ? 1.2 : 0.2),
+      shrineDeficit:  need(structures('shrine'), 16) * clamp(this.ritualPull),
+      wallDeficit:    need(structures('wall'), 26) * clamp(mean(this.living, (x) => x.affect.e.fear) * 2),
+      hallDeficit:    pop > 18 && structures('hall') < 1 ? 0.9 : 0,
     };
   }
 
@@ -694,14 +795,29 @@ export class Simulation {
 
   pickBuildSite(a, kind) {
     const w = this.world;
+    const settlement = this.nearestSettlement(a) || this.settlements[0];
     const anchor = kind === 'field'
-      ? topN([...Array(40)].map(() => ({ x: clamp(this.origin.x + this.rng.int(-10, 10), 1, w.w - 2), y: clamp(this.origin.y + this.rng.int(-10, 10), 1, w.h - 2) })), 1, (p) => (w.walkable(p.x, p.y) ? w.fertility[w.idx(p.x, p.y)] : -1))[0]
-      : this.origin;
+      ? topN(
+          [...Array(40)].map(() => ({
+            x: clamp(settlement.x + this.rng.int(-10, 10), 1, w.w - 2),
+            y: clamp(settlement.y + this.rng.int(-10, 10), 1, w.h - 2),
+          })),
+          1,
+          (p) => (w.walkable(p.x, p.y) ? w.fertility[w.idx(p.x, p.y)] : -1)
+        )[0]
+      : { x: settlement.x, y: settlement.y };
+
     for (let r = 1; r < 16; r++) {
       for (let i = 0; i < 14; i++) {
         const x = clamp(anchor.x + this.rng.int(-r, r), 1, w.w - 2);
         const y = clamp(anchor.y + this.rng.int(-r, r), 1, w.h - 2);
         if (!w.walkable(x, y) || w.structureAt(x, y)) continue;
+        // Prefer not to build right on top of another settlement’s core
+        const other = this.settlements.find(s =>
+          s.id !== settlement.id &&
+          (s.x - x) ** 2 + (s.y - y) ** 2 < 12 * 12
+        );
+        if (other) continue;
         return { x, y };
       }
     }
