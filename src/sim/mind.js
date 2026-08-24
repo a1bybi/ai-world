@@ -2,10 +2,6 @@
 // The agent's own reasoning is kept on `agent.reasoning` so an observer can open
 // anybody's head and see exactly why they did what they did.
 
-// One mind, one tick. Perceive → feel → weigh every option → act.
-// The agent's own reasoning is kept on `agent.reasoning` so an observer can open
-// anybody's head and see exactly why they did what they did.
-
 import { clamp, softmaxPick, topN } from '../core/util.js';
 import { ACTIONS } from './actions.js';
 import { decayAffect, emotionalBias, appraise, dominantEmotion } from './emotion.js';
