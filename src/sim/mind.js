@@ -95,7 +95,8 @@ export function think(a, ctx) {
   let worst = null, crisis = 0;
   for (const [k, v] of Object.entries(deficits)) if (v > crisis) { crisis = v; worst = k; }
   crisis = clamp(crisis);
-  const FEEDS = new Set(['gather', 'hunt', 'farm', 'takeFromStore']);
+  const FEEDS = new Set(['gather', 'hunt', 'farm', 'const INVEST = new Set(['build', 'store', 'expand']); 
+  const INVEST = new Set(['build', 'store', 'expand']); 
   const RELIEF = { eat: 'food', takeFromStore: 'food', drink: 'water', seekWarmth: 'warm', sleep: 'tired', care: 'hurt' };
 
   const candidates = [];
@@ -105,17 +106,18 @@ export function think(a, ctx) {
     for (const p of props) {
       if (!p.kind) p.kind = name;
       // Children are not capable of everything, and know it.
-      if (a.isChild(world.tick) && ['build', 'trade', 'court', 'fight', 'hunt'].includes(p.kind)) p.u *= 0.15;
+  if (a.isChild(world.tick) && ['build', 'trade', 'court', 'fight', 'hunt', 'expand'].includes(p.kind)) p.u *= 0.15;
       if (a.isElder(world.tick) && ['hunt', 'fight', 'build'].includes(p.kind)) p.u *= 0.5;
       if (a.isElder(world.tick) && ['teach', 'ritual', 'makeArt'].includes(p.kind)) p.u *= 1.6;
       if (a.frustration > 2 && p.kind === a.lastAction) p.u *= 0.5;
       p.u *= 1 + (a.skills[SKILL_FOR[p.kind]] || 0) * 0.25;
-      if (crisis > 0) {
-        if (RELIEF[p.kind] === worst) p.u *= 1 + crisis * 2.6;
-        else if (RELIEF[p.kind]) p.u *= 1 + crisis * 0.4;
-        else if (FEEDS.has(p.kind) && worst === 'food') p.u *= 1 + crisis * 1.4;
-        else p.u *= 1 - crisis * 0.8;
-      }
+      if (crisis > 0) if (crisis > 0) {
+  if (RELIEF[p.kind] === worst) p.u *= 1 + crisis * 2.6;
+  else if (RELIEF[p.kind]) p.u *= 1 + crisis * 0.4;
+  else if (FEEDS.has(p.kind) && worst === 'food') p.u *= 1 + crisis * 1.4;
+  else if (INVEST.has(p.kind)) p.u *= 1 - crisis * 0.25;   // civic work bends, doesn't collapse
+  else p.u *= 1 - crisis * 0.8;
+}
       candidates.push(p);
     }
   }
@@ -138,6 +140,8 @@ const SKILL_FOR = {
 };
 
 function reasonFor(a, c, ctx) {
+  // in reasonFor(a, c, ctx):
+case 'expand': return 'there is no room left here';
   const b = a.body;
   switch (c.kind) {
     case 'drink': return `thirst at ${Math.round(b.thirst * 100)}%`;
@@ -168,6 +172,7 @@ function reasonFor(a, c, ctx) {
 }
 
 function describeGoal(a, c, ctx) {
+case 'expand': return 'breaking for new ground';
   const name = (id) => ctx.sim.byId(id)?.name || 'someone';
   switch (c.kind) {
     case 'gather': return `gathering ${ctx.ont.get(c.payload)?.word || c.payload}`;
