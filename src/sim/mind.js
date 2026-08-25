@@ -53,7 +53,7 @@ export function think(a, ctx) {
   computeClothing(a, ctx.ont);
   updateBody(a, world);
   decayAffect(a);
-  if ((world.tick + a.seq) % 8 === 0) a.memory.fade(0.012);
+  if ((world.tick + a.seq) % 8 === 0) { a.memory.fade(0.012); a.memory.fadeBeliefs(); }
 
   // Perception: who is near, and what that does to us.
   const near = ctx.nearby(a, 7).filter((o) => o.id !== a.id);
@@ -96,8 +96,10 @@ export function think(a, ctx) {
   for (const [k, v] of Object.entries(deficits)) if (v > crisis) { crisis = v; worst = k; }
   crisis = clamp(crisis);
   const FEEDS = new Set(['gather', 'hunt', 'farm', 'takeFromStore']);
-  // Civic / long-horizon investment work: bends under a routine crisis, doesn't collapse.
-  const INVEST = new Set(['build', 'store', 'expand']);
+  // Civic / long-horizon investment work: bends under a routine crisis, doesn't
+  // collapse. Courting and caring for the sick belong here too — a society that
+  // can never afford to court or tend anyone while mildly hungry never grows.
+  const INVEST = new Set(['build', 'store', 'expand', 'court', 'care']);
   const RELIEF = { eat: 'food', takeFromStore: 'food', drink: 'water', seekWarmth: 'warm', sleep: 'tired', care: 'hurt' };
 
   const candidates = [];
