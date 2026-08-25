@@ -51,13 +51,13 @@ export class Simulation {
     this.record(null, 'era', `${this.lang.name} wakes on an unnamed shore`, { valence: 0.3, intensity: 1, landmark: true });
   }
 
-  // ââ settlement compatibility shims âââââââââââââââââââââââââââââââââââââââ
+  // ── settlement compatibility shims ───────────────────────────────────────
   // `this.settlements[0]` is the original founding settlement. Anything that
   // used to read `sim.origin` / `sim.settlementName` keeps working unchanged.
   get origin() { return this.settlements[0]; }
   get settlementName() { return this.settlements[0]?.name; }
 
-  // ââ setup âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ── setup ─────────────────────────────────────────────────────────────────
   seedPopulation(n) {
     const { world, rng } = this;
     let cx = Math.floor(world.w / 2), cy = Math.floor(world.h / 2);
@@ -113,7 +113,7 @@ export class Simulation {
   get dead() { return this.agents.filter((a) => !a.alive); }
   byId(id) { return this.index.get(id); }
 
-  // ââ spatial âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ── spatial ───────────────────────────────────────────────────────────────
   rebuildGrid() {
     this.grid.clear();
     for (const a of this.living) {
@@ -134,7 +134,7 @@ export class Simulation {
     return out;
   }
 
-  // ââ the tick ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ── the tick ──────────────────────────────────────────────────────────────
   step() {
     const w = this.world;
     w.step(1);
@@ -154,6 +154,7 @@ export class Simulation {
 
     this.lifecycleTick();
     this.fieldsTick();
+    this.grievanceTick();
     this.normsTick();
     this.corpseTick();
     if (w.tick % 24 === 0) this.spoilTick();
@@ -193,7 +194,7 @@ export class Simulation {
     return 'failing health';
   }
 
-  // ââ recording âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ── recording ─────────────────────────────────────────────────────────────
   record(agent, kind, text, opts = {}) {
     const ev = {
       tick: this.world.tick, day: this.world.dayNumber, kind, text,
@@ -211,7 +212,7 @@ export class Simulation {
       const a = this.byId(id);
       if (a) a.memory.remember(ev);
     }
-    // Witnesses remember too, at lower intensity â this is how reputation spreads.
+    // Witnesses remember too, at lower intensity — this is how reputation spreads.
     if (agent && (opts.intensity ?? 0) > 0.45) {
       for (const o of this.nearby(agent, 6)) {
         if (ev.actors.includes(o.id)) continue;
@@ -221,13 +222,13 @@ export class Simulation {
     return ev;
   }
 
-  // ââ dialogue & knowledge flow âââââââââââââââââââââââââââââââââââââââââââââ
+  // ── dialogue & knowledge flow ─────────────────────────────────────────────
   converse(a, o) {
     const rng = this.rng;
     a.gainSkill('speak', 0.012); o.gainSkill('speak', 0.012);
     a.adjustRel(o, { familiarity: 0.05, trust: 0.012 });
     o.adjustRel(a, { familiarity: 0.05, trust: 0.012 });
-    // Emotional contagion â moods are catching.
+    // Emotional contagion — moods are catching.
     const pull = 0.06 * (a.genome.empathy + 0.3);
     o.affect.mood = clamp(o.affect.mood + (a.affect.mood - o.affect.mood) * pull, -1, 1);
     a.affect.mood = clamp(a.affect.mood + (o.affect.mood - a.affect.mood) * pull * 0.7, -1, 1);
@@ -294,9 +295,9 @@ export class Simulation {
         const key = topic.key.replace('where:', '');
         const b = a.memory.belief(topic.key);
         const p = b?.payload;
-        return `${o.name}. ${W(key)} â ${p ? `${p.x > a.x ? 'east' : 'west'} of here, ${p.y > a.y ? 'downstream' : 'upstream'}` : 'I have seen it somewhere'}.`;
+        return `${o.name}. ${W(key)} — ${p ? `${p.x > a.x ? 'east' : 'west'} of here, ${p.y > a.y ? 'downstream' : 'upstream'}` : 'I have seen it somewhere'}.`;
       }
-      case 'recipe': return `${o.name}, listen. ${W(topic.key)} â it is made, not found. I will show you.`;
+      case 'recipe': return `${o.name}, listen. ${W(topic.key)} — it is made, not found. I will show you.`;
       case 'matter': return `There is ${W(topic.key)} in this country. I did not know that either, once.`;
       case 'memory': return `I still think of it. ${topic.memory.text}.`;
       case 'gossip': {
@@ -305,7 +306,7 @@ export class Simulation {
         return r.affection > 0 ? `${s.name} is sound. ${r.debt > 0 ? 'I owe them.' : 'I would stand beside them.'}` : `Be careful with ${s.name}. ${r.conflicts ? 'We have had words.' : 'Something is not right there.'}`;
       }
       case 'grief': return `I keep turning to speak and there is no one there.`;
-      case 'awe': return `Does it not strike you â that any of this holds together at all?`;
+      case 'awe': return `Does it not strike you — that any of this holds together at all?`;
       case 'hunger': return `${o.name}, I have not eaten. Is there anything in the ${this.world.structuresOfKind('store')[0]?.word || 'stores'}?`;
       default: return `${o.name}.`;
     }
@@ -354,7 +355,7 @@ export class Simulation {
     this.reputationDelta(a, 0.03);
   }
 
-  // ââ economy âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ── economy ───────────────────────────────────────────────────────────────
   findDeal(a, o) {
     let bestGive = null, bestGet = null;
     for (const [k, v] of a.inventory) {
@@ -441,7 +442,7 @@ export class Simulation {
     o.adjustRel(a, { affection: -0.3, trust: -0.25 });
     winner.adjustRel(loser, { respect: -0.1 });
     loser.adjustRel(winner, { respect: 0.06 });
-    this.record(a, 'violence', `${a.name} and ${o.name} came to blows â ${winner.name} stood, ${loser.name} did not`, { actors: [a.id, o.id], valence: -0.8, intensity: 0.85, landmark: true });
+    this.record(a, 'violence', `${a.name} and ${o.name} came to blows — ${winner.name} stood, ${loser.name} did not`, { actors: [a.id, o.id], valence: -0.8, intensity: 0.85, landmark: true });
     appraise(loser, { goalCongruence: -0.8, agency: 'other', intensity: 0.85, kind: 'violence', norm: -1, social: winner.id });
     appraise(winner, { goalCongruence: 0.2, agency: 'self', intensity: 0.7, kind: 'violence', norm: -this.normStrength('violence'), social: loser.id });
     this.violateNorm('violence', 0.06);
@@ -453,7 +454,7 @@ export class Simulation {
     }
   }
 
-  // ââ bonds, birth, death âââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ── bonds, birth, death ───────────────────────────────────────────────────
   tryBond(a, o) {
     const r = a.rel(o), r2 = o.rel(a);
     if (r.affection < 0.28 || r2.affection < 0.24) return;
@@ -467,6 +468,19 @@ export class Simulation {
     a.adjustRel(o, { affection: 0.4, trust: 0.3, kin: 0.8 });
     o.adjustRel(a, { affection: 0.4, trust: 0.3, kin: 0.8 });
     this.ritualPull = clamp(this.ritualPull + 0.3, 0, 2);
+
+    // Whoever else was courting either of them, recently, notices they lost.
+    // This is one of the very few sources of anger in the whole simulation
+    // that isn't theft or violence — ordinary romantic disappointment.
+    for (const riv of this.living) {
+      if (riv === a || riv === o) continue;
+      const target = riv.lastCourtTarget;
+      if (!target || this.world.tick - target.tick > 200) continue;
+      if (target.id !== a.id && target.id !== o.id) continue;
+      const other = target.id === a.id ? a : o;
+      appraise(riv, { goalCongruence: -0.5, agency: 'other', intensity: 0.5 + riv.genome.aggression * 0.2, kind: 'spurned', social: other.id });
+      riv.adjustRel(other, { affection: -0.15, trust: -0.1 });
+    }
   }
 
   lifecycleTick() {
@@ -563,7 +577,7 @@ export class Simulation {
       if (!stillKnown) {
         const c = this.ont.get(key);
         this.lostKnowledge.push({ key, word: c?.word || key, tick: this.world.tick, lastKeeper: a.name, fn: c?.bestFn });
-        this.record(a, 'loss', `How to make ${c?.word || key} was lost â ${a.name} was the last who knew`, { actors: [a.id], valence: -0.7, intensity: 0.8, landmark: true, concept: key });
+        this.record(a, 'loss', `How to make ${c?.word || key} was lost — ${a.name} was the last who knew`, { actors: [a.id], valence: -0.7, intensity: 0.8, landmark: true, concept: key });
       }
     }
 
@@ -625,7 +639,7 @@ export class Simulation {
     a.affect.mood = clamp(a.affect.mood + 0.08, -1, 1);
     a.affect.e.grief = clamp(a.affect.e.grief * 0.85);
     a.titles.includes('maker of images') || (a.stats.crafted > 3 && a.skills.art > 0.4 && a.titles.push('maker of images'));
-    this.record(a, 'art', `${a.name} made ${name}, ${work.medium === 'earth and hands' ? 'from earth and hands' : `in ${work.medium}`} â about ${work.about}`, { valence: 0.5, intensity: 0.6, landmark: true });
+    this.record(a, 'art', `${a.name} made ${name}, ${work.medium === 'earth and hands' ? 'from earth and hands' : `in ${work.medium}`} — about ${work.about}`, { valence: 0.5, intensity: 0.6, landmark: true });
     appraise(a, { goalCongruence: 0.6, agency: 'self', intensity: 0.6, kind: 'first', novelty: 0.5 });
     if (mediumKey) a.take(mediumKey, 0.5);
   }
@@ -634,7 +648,7 @@ export class Simulation {
     this.inventionTicks.set(record.key, this.world.tick);
     const fnWord = record.fn;
     const text = record.advance
-      ? `${a.name} made ${concept.word} â nothing they had served ${fnWord} so well`
+      ? `${a.name} made ${concept.word} — nothing they had served ${fnWord} so well`
       : `${a.name} made ${concept.word}, a ${fnWord} of sorts, no better than what they had`;
     this.record(a, 'invention', text, { valence: record.advance ? 0.9 : 0.3, intensity: record.advance ? 0.95 : 0.4, landmark: record.advance, concept: concept.key, advance: record.advance, quiet: !record.advance && !this.rng.bool(0.12) });
     if (record.advance) {
@@ -652,8 +666,8 @@ export class Simulation {
     }
   }
 
-  // ââ settlement & building âââââââââââââââââââââââââââââââââââââââââââââââââ
-  /** Nearest settlement to a point â used to make build/needs/pressure local. */
+  // ── settlement & building ─────────────────────────────────────────────────
+  /** Nearest settlement to a point — used to make build/needs/pressure local. */
   nearestSettlement(x, y) {
     let best = this.settlements[0], bd = Infinity;
     for (const s of this.settlements) {
@@ -759,7 +773,7 @@ export class Simulation {
     const existing = this.world.structuresOfKind(kind).length;
     const first = existing === 1;
     this.record(a, first ? 'first' : 'build', first
-      ? `${a.name} raised the first ${word} of ${settlement.name} â ${kind}, out of ${this.ont.get(materialKey)?.word || materialKey}`
+      ? `${a.name} raised the first ${word} of ${settlement.name} — ${kind}, out of ${this.ont.get(materialKey)?.word || materialKey}`
       : `${a.name} raised a ${word}`,
     { valence: 0.7, intensity: first ? 0.95 : 0.5, landmark: first });
     if (kind === 'shelter') {
@@ -789,6 +803,37 @@ export class Simulation {
     }
   }
 
+  /**
+   * Everyday grievance the seeded norms never touch: someone hungry, near
+   * someone visibly sitting on food surplus, who isn't kin or a friend and
+   * doesn't share. This is the only routine (non-theft, non-violence) source
+   * of anger in the simulation, and it's also how a wholly new norm — one
+   * nobody authored — can be born straight out of repeated lived experience.
+   */
+  grievanceTick() {
+    if (this.world.tick % 6) return;
+    for (const a of this.living) {
+      if (a.isChild(this.world.tick) || a.body.hunger < 0.55) continue;
+      for (const o of this.nearby(a, 6)) {
+        if (o.isChild(this.world.tick)) continue;
+        const r = a.rel(o);
+        if (r.kin > 0.3 || r.affection > 0.2) continue;   // family and friends get slack
+        if (this.world.tick - (r.lastNeglect || -999) < 60) continue;
+        let surplus = 0;
+        for (const [k, v] of o.inventory) {
+          const c = this.ont.get(k);
+          if (c?.functions.sustenance && v > 3) surplus += v - 3;
+        }
+        if (surplus < 2) continue;
+        r.lastNeglect = this.world.tick;
+        appraise(a, { goalCongruence: -0.4, agency: 'other', intensity: 0.4 + a.body.hunger * 0.3, kind: 'neglect', social: o.id });
+        a.adjustRel(o, { affection: -0.08, trust: -0.06 });
+        this.spawnOrStrengthenNorm('neglect', 'the hungry are not left to watch the fed', -1, 0.02);
+        break;   // one grievance per tick is enough for anyone
+      }
+    }
+  }
+
   /** Norms are not decreed. They drift with how people actually feel and behave. */
   normsTick() {
     if (this.world.tick % 24) return;
@@ -802,7 +847,7 @@ export class Simulation {
     }
   }
 
-  // ââ norms & reputation ââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ── norms & reputation ────────────────────────────────────────────────────
   normStrength(key) { return this.norms.find((n) => n.key === key)?.strength || 0; }
   violateNorm(key, weight) {
     const n = this.norms.find((x) => x.key === key);
@@ -824,6 +869,24 @@ export class Simulation {
       n.becameLaw = this.world.tick;
       this.record(null, 'law', `It became a rule among them: ${n.label}`, { valence: 0.4, intensity: 0.9, landmark: true });
     }
+  }
+  /**
+   * The only way a norm not in NORM_SEEDS can come to exist. Called from
+   * wherever a recurring situation calls for a rule nobody wrote — the first
+   * call coins it (via the world's own language) and records its birth as an
+   * event; every call after that just strengthens or weakens it through the
+   * same machinery seeded norms already use, so it can decay, become law, or
+   * fade exactly like any of the founding six.
+   */
+  spawnOrStrengthenNorm(key, label, polarity, weight) {
+    let n = this.norms.find((x) => x.key === key);
+    if (!n) {
+      n = { key, label, polarity, strength: 0.04, violations: 0, upholdings: 0, becameLaw: null, emergent: true };
+      this.norms.push(n);
+      this.record(null, 'custom', `Something new began to be felt among them: ${label}`, { valence: polarity > 0 ? 0.2 : -0.2, intensity: 0.5, landmark: true });
+    }
+    if (polarity < 0) this.violateNorm(key, weight); else this.upholdNorm(key, weight);
+    return n;
   }
   reputationDelta(a, d) { a.reputation = clamp(a.reputation + d, 0, 1); }
   respectFor(a) { return mean(this.living.filter((o) => o !== a), (o) => o.relationships.get(a.id)?.respect || 0); }
