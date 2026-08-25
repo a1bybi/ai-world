@@ -77,8 +77,9 @@ export class Simulation {
       if (score > best) { best = score; cx = x; cy = y; }
     }
     const firstName = this.lang.placeName(rng);
-    this.settlements = [{ name: firstName, x: cx, y: cy, foundedTick: 0 }];
-    world.sites.push({ kind: 'settlement', name: firstName, x: cx, y: cy, foundedTick: 0 });
+const founding = { kind: 'settlement', name: firstName, x: cx, y: cy, foundedTick: 0, color: hueFor(0), tier: 'camp' };
+this.settlements = [founding];
+world.sites.push(founding);   // same object — name/colour/tier stay in sync automatically
 
     for (let i = 0; i < n; i++) {
       let x = cx, y = cy, tries = 0;
