@@ -10,7 +10,7 @@ import { Agent, YEAR_TICKS, SKILLS } from './agent.js';
 import { randomGenome, inherit, genomeDistance } from './genome.js';
 import { think } from './mind.js';
 import { appraise, dominantEmotion, moodWord } from './emotion.js';
-import { clamp, dist, mean, topN } from '../core/util.js';
+import { clamp, dist, mean, topN, hueFor } from '../core/util.js';
 import { STRUCTURE_KINDS } from './actions.js';
 
 const NORM_SEEDS = [
