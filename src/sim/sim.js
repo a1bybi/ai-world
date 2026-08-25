@@ -51,7 +51,13 @@ export class Simulation {
     this.record(null, 'era', `${this.lang.name} wakes on an unnamed shore`, { valence: 0.3, intensity: 1, landmark: true });
   }
 
-  // ── setup ─────────────────────────────────────────────────────────────────
+  // ââ settlement compatibility shims âââââââââââââââââââââââââââââââââââââââ
+  // `this.settlements[0]` is the original founding settlement. Anything that
+  // used to read `sim.origin` / `sim.settlementName` keeps working unchanged.
+  get origin() { return this.settlements[0]; }
+  get settlementName() { return this.settlements[0]?.name; }
+
+  // ââ setup âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
   seedPopulation(n) {
     const { world, rng } = this;
     let cx = Math.floor(world.w / 2), cy = Math.floor(world.h / 2);
@@ -70,9 +76,9 @@ export class Simulation {
       }
       if (score > best) { best = score; cx = x; cy = y; }
     }
-    this.origin = { x: cx, y: cy };
-    this.settlementName = this.lang.placeName(rng);
-    world.sites.push({ kind: 'settlement', name: this.settlementName, x: cx, y: cy, foundedTick: 0 });
+    const firstName = this.lang.placeName(rng);
+    this.settlements = [{ name: firstName, x: cx, y: cy, foundedTick: 0 }];
+    world.sites.push({ kind: 'settlement', name: firstName, x: cx, y: cy, foundedTick: 0 });
 
     for (let i = 0; i < n; i++) {
       let x = cx, y = cy, tries = 0;
@@ -107,7 +113,7 @@ export class Simulation {
   get dead() { return this.agents.filter((a) => !a.alive); }
   byId(id) { return this.index.get(id); }
 
-  // ── spatial ───────────────────────────────────────────────────────────────
+  // ââ spatial âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
   rebuildGrid() {
     this.grid.clear();
     for (const a of this.living) {
@@ -128,7 +134,7 @@ export class Simulation {
     return out;
   }
 
-  // ── the tick ──────────────────────────────────────────────────────────────
+  // ââ the tick ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
   step() {
     const w = this.world;
     w.step(1);
@@ -187,7 +193,7 @@ export class Simulation {
     return 'failing health';
   }
 
-  // ── recording ─────────────────────────────────────────────────────────────
+  // ââ recording âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
   record(agent, kind, text, opts = {}) {
     const ev = {
       tick: this.world.tick, day: this.world.dayNumber, kind, text,
@@ -205,7 +211,7 @@ export class Simulation {
       const a = this.byId(id);
       if (a) a.memory.remember(ev);
     }
-    // Witnesses remember too, at lower intensity — this is how reputation spreads.
+    // Witnesses remember too, at lower intensity â this is how reputation spreads.
     if (agent && (opts.intensity ?? 0) > 0.45) {
       for (const o of this.nearby(agent, 6)) {
         if (ev.actors.includes(o.id)) continue;
@@ -215,13 +221,13 @@ export class Simulation {
     return ev;
   }
 
-  // ── dialogue & knowledge flow ─────────────────────────────────────────────
+  // ââ dialogue & knowledge flow âââââââââââââââââââââââââââââââââââââââââââââ
   converse(a, o) {
     const rng = this.rng;
     a.gainSkill('speak', 0.012); o.gainSkill('speak', 0.012);
     a.adjustRel(o, { familiarity: 0.05, trust: 0.012 });
     o.adjustRel(a, { familiarity: 0.05, trust: 0.012 });
-    // Emotional contagion — moods are catching.
+    // Emotional contagion â moods are catching.
     const pull = 0.06 * (a.genome.empathy + 0.3);
     o.affect.mood = clamp(o.affect.mood + (a.affect.mood - o.affect.mood) * pull, -1, 1);
     a.affect.mood = clamp(a.affect.mood + (o.affect.mood - a.affect.mood) * pull * 0.7, -1, 1);
@@ -288,9 +294,9 @@ export class Simulation {
         const key = topic.key.replace('where:', '');
         const b = a.memory.belief(topic.key);
         const p = b?.payload;
-        return `${o.name}. ${W(key)} — ${p ? `${p.x > a.x ? 'east' : 'west'} of here, ${p.y > a.y ? 'downstream' : 'upstream'}` : 'I have seen it somewhere'}.`;
+        return `${o.name}. ${W(key)} â ${p ? `${p.x > a.x ? 'east' : 'west'} of here, ${p.y > a.y ? 'downstream' : 'upstream'}` : 'I have seen it somewhere'}.`;
       }
-      case 'recipe': return `${o.name}, listen. ${W(topic.key)} — it is made, not found. I will show you.`;
+      case 'recipe': return `${o.name}, listen. ${W(topic.key)} â it is made, not found. I will show you.`;
       case 'matter': return `There is ${W(topic.key)} in this country. I did not know that either, once.`;
       case 'memory': return `I still think of it. ${topic.memory.text}.`;
       case 'gossip': {
@@ -299,7 +305,7 @@ export class Simulation {
         return r.affection > 0 ? `${s.name} is sound. ${r.debt > 0 ? 'I owe them.' : 'I would stand beside them.'}` : `Be careful with ${s.name}. ${r.conflicts ? 'We have had words.' : 'Something is not right there.'}`;
       }
       case 'grief': return `I keep turning to speak and there is no one there.`;
-      case 'awe': return `Does it not strike you — that any of this holds together at all?`;
+      case 'awe': return `Does it not strike you â that any of this holds together at all?`;
       case 'hunger': return `${o.name}, I have not eaten. Is there anything in the ${this.world.structuresOfKind('store')[0]?.word || 'stores'}?`;
       default: return `${o.name}.`;
     }
@@ -312,6 +318,7 @@ export class Simulation {
       gather: [`Enough of this and we last the week.`, `Hands first. Thinking after.`],
       hunt: [`Quiet now.`, `We eat tonight or we do not.`],
       build: [`It should stand longer than I will.`, `Straight. It has to be straight.`],
+      expand: [`This ground is too crowded for what we are becoming.`, `There is room past here. I mean to see it settled.`],
       teach: [`It dies with me otherwise.`],
       ritual: [`Say the words. Say them properly.`],
       makeArt: [`There. That is what it felt like.`],
@@ -347,7 +354,7 @@ export class Simulation {
     this.reputationDelta(a, 0.03);
   }
 
-  // ── economy ───────────────────────────────────────────────────────────────
+  // ââ economy âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
   findDeal(a, o) {
     let bestGive = null, bestGet = null;
     for (const [k, v] of a.inventory) {
@@ -434,7 +441,7 @@ export class Simulation {
     o.adjustRel(a, { affection: -0.3, trust: -0.25 });
     winner.adjustRel(loser, { respect: -0.1 });
     loser.adjustRel(winner, { respect: 0.06 });
-    this.record(a, 'violence', `${a.name} and ${o.name} came to blows — ${winner.name} stood, ${loser.name} did not`, { actors: [a.id, o.id], valence: -0.8, intensity: 0.85, landmark: true });
+    this.record(a, 'violence', `${a.name} and ${o.name} came to blows â ${winner.name} stood, ${loser.name} did not`, { actors: [a.id, o.id], valence: -0.8, intensity: 0.85, landmark: true });
     appraise(loser, { goalCongruence: -0.8, agency: 'other', intensity: 0.85, kind: 'violence', norm: -1, social: winner.id });
     appraise(winner, { goalCongruence: 0.2, agency: 'self', intensity: 0.7, kind: 'violence', norm: -this.normStrength('violence'), social: loser.id });
     this.violateNorm('violence', 0.06);
@@ -446,7 +453,7 @@ export class Simulation {
     }
   }
 
-  // ── bonds, birth, death ───────────────────────────────────────────────────
+  // ââ bonds, birth, death âââââââââââââââââââââââââââââââââââââââââââââââââââ
   tryBond(a, o) {
     const r = a.rel(o), r2 = o.rel(a);
     if (r.affection < 0.28 || r2.affection < 0.24) return;
@@ -483,7 +490,9 @@ export class Simulation {
   birth(mother) {
     const father = this.byId(mother.body.pregnant.otherId);
     mother.body.pregnant = null;
-    if (mother.body.health < 0.25 || this.living.length > 220) return;
+    // The ceiling scales with how many settlements exist, so founding new
+    // ground actually relieves the pressure that caused it in the first place.
+    if (mother.body.health < 0.25 || this.living.length > 90 * this.settlements.length) return;
     const g = father ? inherit(this.rng, mother.genome, father.genome) : randomGenome(this.rng);
     const child = new Agent({
       name: this.lang.personName(this.rng), genome: g,
@@ -554,7 +563,7 @@ export class Simulation {
       if (!stillKnown) {
         const c = this.ont.get(key);
         this.lostKnowledge.push({ key, word: c?.word || key, tick: this.world.tick, lastKeeper: a.name, fn: c?.bestFn });
-        this.record(a, 'loss', `How to make ${c?.word || key} was lost — ${a.name} was the last who knew`, { actors: [a.id], valence: -0.7, intensity: 0.8, landmark: true, concept: key });
+        this.record(a, 'loss', `How to make ${c?.word || key} was lost â ${a.name} was the last who knew`, { actors: [a.id], valence: -0.7, intensity: 0.8, landmark: true, concept: key });
       }
     }
 
@@ -616,7 +625,7 @@ export class Simulation {
     a.affect.mood = clamp(a.affect.mood + 0.08, -1, 1);
     a.affect.e.grief = clamp(a.affect.e.grief * 0.85);
     a.titles.includes('maker of images') || (a.stats.crafted > 3 && a.skills.art > 0.4 && a.titles.push('maker of images'));
-    this.record(a, 'art', `${a.name} made ${name}, ${work.medium === 'earth and hands' ? 'from earth and hands' : `in ${work.medium}`} — about ${work.about}`, { valence: 0.5, intensity: 0.6, landmark: true });
+    this.record(a, 'art', `${a.name} made ${name}, ${work.medium === 'earth and hands' ? 'from earth and hands' : `in ${work.medium}`} â about ${work.about}`, { valence: 0.5, intensity: 0.6, landmark: true });
     appraise(a, { goalCongruence: 0.6, agency: 'self', intensity: 0.6, kind: 'first', novelty: 0.5 });
     if (mediumKey) a.take(mediumKey, 0.5);
   }
@@ -625,7 +634,7 @@ export class Simulation {
     this.inventionTicks.set(record.key, this.world.tick);
     const fnWord = record.fn;
     const text = record.advance
-      ? `${a.name} made ${concept.word} — nothing they had served ${fnWord} so well`
+      ? `${a.name} made ${concept.word} â nothing they had served ${fnWord} so well`
       : `${a.name} made ${concept.word}, a ${fnWord} of sorts, no better than what they had`;
     this.record(a, 'invention', text, { valence: record.advance ? 0.9 : 0.3, intensity: record.advance ? 0.95 : 0.4, landmark: record.advance, concept: concept.key, advance: record.advance, quiet: !record.advance && !this.rng.bool(0.12) });
     if (record.advance) {
@@ -643,29 +652,47 @@ export class Simulation {
     }
   }
 
-  // ── settlement & building ─────────────────────────────────────────────────
-  /** What the settlement is short of, expressed as raw materials people crave. */
+  // ââ settlement & building âââââââââââââââââââââââââââââââââââââââââââââââââ
+  /** Nearest settlement to a point â used to make build/needs/pressure local. */
+  nearestSettlement(x, y) {
+    let best = this.settlements[0], bd = Infinity;
+    for (const s of this.settlements) {
+      const d = (s.x - x) ** 2 + (s.y - y) ** 2;
+      if (d < bd) { bd = d; best = s; }
+    }
+    return best;
+  }
+
+  /** Crowding, 0..1, for whoever is deciding whether it's time to break off and found anew. */
+  settlementPressure(settlement, radius = 22) {
+    const pop = this.living.filter((a) => dist(a, settlement) < radius).length;
+    return clamp((pop - 16) / 12, 0, 1);
+  }
+
+  /** What a given settlement is short of, expressed as raw materials people crave. */
   updateWants() {
     const want = new Map();
-    const s = this.settlementNeeds();
-    for (const [kind, def] of Object.entries(STRUCTURE_KINDS)) {
-      const need = def.need(s);
-      if (need <= 0.05) continue;
-      let bk = null, bs = 0;
-      for (const c of this.ont.all()) {
-        if (c.kind !== 'matter') continue;
-        const sc = Math.max(c.serves(def.fn), c.props.durable * 0.5 + c.props.hard * 0.4);
-        if (sc > bs) { bs = sc; bk = c.key; }
+    for (const settlement of this.settlements) {
+      const s = this.settlementNeeds(settlement);
+      for (const [kind, def] of Object.entries(STRUCTURE_KINDS)) {
+        const need = def.need(s);
+        if (need <= 0.05) continue;
+        let bk = null, bs = 0;
+        for (const c of this.ont.all()) {
+          if (c.kind !== 'matter') continue;
+          const sc = Math.max(c.serves(def.fn), c.props.durable * 0.5 + c.props.hard * 0.4);
+          if (sc > bs) { bs = sc; bk = c.key; }
+        }
+        if (bk) want.set(bk, Math.max(want.get(bk) || 0, need));
       }
-      if (bk) want.set(bk, Math.max(want.get(bk) || 0, need));
     }
     this.wantedMaterials = want;
   }
 
-  settlementNeeds() {
+  settlementNeeds(settlement, radius = 22) {
     const w = this.world;
-    const pop = Math.max(1, this.living.length);
-    const count = (k) => w.structuresOfKind(k).length;
+    const pop = Math.max(1, this.living.filter((a) => dist(a, settlement) < radius).length);
+    const count = (k) => w.structuresOfKind(k).filter((s) => dist(s, settlement) < radius).length;
     const need = (have, per) => clamp((pop / per - have) / Math.max(1, pop / per));
     return {
       shelterDeficit: need(count('shelter'), 2.2),
@@ -692,11 +719,11 @@ export class Simulation {
     return best;
   }
 
-  pickBuildSite(a, kind) {
+  pickBuildSite(a, kind, settlement = this.nearestSettlement(a.x, a.y)) {
     const w = this.world;
     const anchor = kind === 'field'
-      ? topN([...Array(40)].map(() => ({ x: clamp(this.origin.x + this.rng.int(-10, 10), 1, w.w - 2), y: clamp(this.origin.y + this.rng.int(-10, 10), 1, w.h - 2) })), 1, (p) => (w.walkable(p.x, p.y) ? w.fertility[w.idx(p.x, p.y)] : -1))[0]
-      : this.origin;
+      ? topN([...Array(40)].map(() => ({ x: clamp(settlement.x + this.rng.int(-10, 10), 1, w.w - 2), y: clamp(settlement.y + this.rng.int(-10, 10), 1, w.h - 2) })), 1, (p) => (w.walkable(p.x, p.y) ? w.fertility[w.idx(p.x, p.y)] : -1))[0]
+      : settlement;
     for (let r = 1; r < 16; r++) {
       for (let i = 0; i < 14; i++) {
         const x = clamp(anchor.x + this.rng.int(-r, r), 1, w.w - 2);
@@ -708,7 +735,20 @@ export class Simulation {
     return null;
   }
 
+  /** A person breaks off from the crowd and founds a new settlement on remembered ground. */
+  foundSettlement(a, spot) {
+    const name = this.lang.placeName(this.rng);
+    const settlement = { name, x: spot.x, y: spot.y, foundedTick: this.world.tick };
+    this.settlements.push(settlement);
+    this.world.sites.push({ kind: 'settlement', name, x: spot.x, y: spot.y, foundedTick: this.world.tick });
+    this.record(a, 'first', `${a.name} broke off from the rest and raised ${name} on new ground`, { valence: 0.6, intensity: 0.9, landmark: true });
+    appraise(a, { goalCongruence: 0.7, agency: 'self', intensity: 0.8, kind: 'first', novelty: 1 });
+    this.reputationDelta(a, 0.06);
+    return settlement;
+  }
+
   raiseStructure(a, kind, spot, materialKey) {
+    const settlement = this.nearestSettlement(spot.x, spot.y);
     const word = `${this.lang.word(`struct:${kind}`)}`;
     const s = {
       kind, x: spot.x, y: spot.y, word, builtBy: a.name, builtTick: this.world.tick,
@@ -719,7 +759,7 @@ export class Simulation {
     const existing = this.world.structuresOfKind(kind).length;
     const first = existing === 1;
     this.record(a, first ? 'first' : 'build', first
-      ? `${a.name} raised the first ${word} of ${this.settlementName} — ${kind}, out of ${this.ont.get(materialKey)?.word || materialKey}`
+      ? `${a.name} raised the first ${word} of ${settlement.name} â ${kind}, out of ${this.ont.get(materialKey)?.word || materialKey}`
       : `${a.name} raised a ${word}`,
     { valence: 0.7, intensity: first ? 0.95 : 0.5, landmark: first });
     if (kind === 'shelter') {
@@ -762,7 +802,7 @@ export class Simulation {
     }
   }
 
-  // ── norms & reputation ────────────────────────────────────────────────────
+  // ââ norms & reputation ââââââââââââââââââââââââââââââââââââââââââââââââââââ
   normStrength(key) { return this.norms.find((n) => n.key === key)?.strength || 0; }
   violateNorm(key, weight) {
     const n = this.norms.find((x) => x.key === key);
