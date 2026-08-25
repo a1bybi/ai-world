@@ -49,3 +49,6 @@ export function idFactory(prefix) {
   let n = 0;
   return () => `${prefix}${++n}`;
 }
+export function hueFor(i) {
+  return `hsl(${(i * 137.5) % 360}, 65%, 55%)`;
+}
