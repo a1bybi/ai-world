@@ -67,6 +67,20 @@ export class MemoryStore {
     }
   }
 
+  /**
+   * Slow forgetting for BELIEFS, not just episodes. Without this, semantic
+   * confidence — once learned — never revisits itself unless something
+   * explicitly relearns that exact key, so stale beliefs sit unchanged
+   * forever even after the world has moved on. Lessons (hard-won reflective
+   * beliefs) are exempt; ordinary factual/place/recipe beliefs are not.
+   */
+  fadeBeliefs(rate = 0.0008) {
+    for (const b of this.semantic.values()) {
+      if (b.kind === 'lesson') continue;
+      b.confidence = clamp(b.confidence - rate * (1 - Math.abs(b.valence)), 0, 1);
+    }
+  }
+
   recall(filter, n = 6) {
     const hits = [];
     for (const m of this.core) if (filter(m)) hits.push(m);
@@ -80,10 +94,21 @@ export class MemoryStore {
   aboutConcept(key, n = 4) { return this.recall((m) => m.concept === key, n); }
 
   // ── Semantic layer ────────────────────────────────────────────────────────
+  /**
+   * Learn or update a belief. Confidence is no longer a one-way ratchet: a
+   * disconfirming observation (low confidence paired with negative valence —
+   * e.g. "I went to where I thought the berries were, and there were none")
+   * can pull existing confidence DOWN, not just slow its climb. Without this,
+   * a belief that reality keeps contradicting only ever gets more certain and
+   * sadder, which is the opposite of learning.
+   */
   learn(key, { kind = 'fact', confidence = 0.4, valence = 0, source = 'experience', payload = null } = {}) {
     const cur = this.semantic.get(key);
     if (cur) {
-      cur.confidence = clamp(cur.confidence + (1 - cur.confidence) * confidence, 0, 1);
+      const disconfirming = valence < 0;
+      const target = disconfirming ? confidence * 0.5 : confidence;
+      const pull = disconfirming ? 0.35 : (1 - cur.confidence);
+      cur.confidence = clamp(cur.confidence + (target - cur.confidence) * pull, 0, 1);
       cur.valence = cur.valence * 0.7 + valence * 0.3;
       cur.reinforced++;
       if (payload) cur.payload = { ...(cur.payload || {}), ...payload };
