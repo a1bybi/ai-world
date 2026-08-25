@@ -347,7 +347,8 @@ export const ACTIONS = {
     category: 'work',
     propose(a, ctx) {
       if (a.isChild(ctx.tick)) return [];
-      const s = ctx.sim.settlementNeeds();
+      const settlement = ctx.sim.nearestSettlement(a.x, a.y);
+      const s = ctx.sim.settlementNeeds(settlement);
       const out = [];
       for (const [kind, def] of Object.entries(STRUCTURE_KINDS)) {
         const need = def.need(s);
@@ -364,13 +365,15 @@ export const ACTIONS = {
           }
           continue;
         }
-        const u = need * 1.5 * ctx.bias.work * (0.4 + a.skills.build) * (0.5 + a.genome.industry);
-        out.push({ kind: 'build', u, payload: { structure: kind, material: material.key, cost, fn: def.fn }, dur: 4 + Math.round(def.cost / 3) });
+        // Skill 0 no longer near-disqualifies the first building — 0.65 base
+        // instead of 0.4, with skill still adding on top as it grows.
+        const u = need * 1.5 * ctx.bias.work * (0.65 + a.skills.build * 0.5) * (0.5 + a.genome.industry);
+        out.push({ kind: 'build', u, payload: { structure: kind, material: material.key, cost, fn: def.fn, settlement }, dur: 4 + Math.round(def.cost / 3) });
       }
       return topN(out, 2, (o) => o.u);
     },
     run(a, ctx, act) {
-      if (!act.spot) act.spot = ctx.sim.pickBuildSite(a, act.payload.structure);
+      if (!act.spot) act.spot = ctx.sim.pickBuildSite(a, act.payload.structure, act.payload.settlement);
       if (!act.spot) return 'abort';
       if (dist(a, act.spot) > 1.2) { stepToward(a, ctx.world, act.spot); return 'continue'; }
       a.body.energy = clamp(a.body.energy - 0.05, 0, 1);
@@ -381,6 +384,37 @@ export const ACTIONS = {
       a.gainSkill('build', 0.07);
       appraise(a, { goalCongruence: 0.8, agency: 'self', intensity: 0.7, kind: 'first' });
       if (!a.home && (act.payload.structure === 'shelter')) a.home = st;
+      return 'done';
+    },
+  },
+
+  // A settlement that has outgrown itself, plus somewhere remembered worth
+  // going, is reason enough to break off and start again.
+  expand: {
+    category: 'work',
+    propose(a, ctx) {
+      if (a.isChild(ctx.tick) || a.ageAt(ctx.tick) < 16) return [];
+      const home = ctx.sim.nearestSettlement(a.x, a.y);
+      const pressure = ctx.sim.settlementPressure(home);
+      if (pressure < 0.35) return [];
+      // A remembered spot, far enough from any settlement to count as new ground.
+      const known = a.memory.knownKeys('place').map((k) => a.memory.belief(k)).filter((b) => b?.payload);
+      let best = null, bestScore = 0;
+      for (const belief of known) {
+        const p = belief.payload;
+        const nearestD = Math.min(...ctx.sim.settlements.map((s) => dist(p, s)));
+        if (nearestD < 24) continue;
+        const score = clamp(belief.confidence) * (0.4 + clamp(belief.valence, 0, 1)) * Math.min(1, nearestD * 0.02);
+        if (score > bestScore) { bestScore = score; best = p; }
+      }
+      if (!best) return [];
+      const u = pressure * (0.4 + a.genome.risk + a.genome.industry * 0.5) * ctx.bias.work * (0.3 + bestScore);
+      if (u < 0.4) return [];
+      return [{ kind: 'expand', u, target: T(best.x, best.y), dur: 1 }];
+    },
+    run(a, ctx, act) {
+      if (dist(a, act.target) > 1.4) { stepToward(a, ctx.world, act.target); return 'continue'; }
+      ctx.sim.foundSettlement(a, act.target);
       return 'done';
     },
   },
