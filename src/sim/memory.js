@@ -2,13 +2,42 @@
 // (what I believe about the world). Episodes decay unless they mattered —
 // landmark experiences are flagged permanent and are never pruned. Every event
 // also goes into the world Chronicle, which forgets nothing, ever.
+//
+// Norms are ordinary beliefs with kind === 'norm'. They are formed from
+// repeated lived patterns (reflection), transferred in talk/teaching, and
+// can fade unless reinforced — nothing is law because it was seeded.
 
 import { clamp, topN } from '../core/util.js';
 
 const LANDMARK_KINDS = new Set([
   'birth', 'death', 'bond', 'betrayal', 'invention', 'first', 'violence',
   'rescue', 'gift', 'exile', 'law', 'ritual', 'teach', 'famine', 'migration',
+  'theft', 'neglect', 'witness',
 ]);
+
+/** Episode kinds that, when repeated with negative valence, suggest a prohibition. */
+const NORM_NEGATIVE_KINDS = new Set([
+  'neglect', 'betrayal', 'theft', 'violence', 'witness', 'injury',
+]);
+
+/** Episode kinds that, when repeated with positive valence, suggest a duty/virtue. */
+const NORM_POSITIVE_KINDS = new Set([
+  'gift', 'teach', 'rescue', 'ritual', 'burial', 'bond',
+]);
+
+/** Default human-readable labels when none was stored on the belief payload. */
+const NORM_LABELS = {
+  theft: 'what is not given must not be taken',
+  violence: 'hands are not raised against our own',
+  neglect: 'the hungry are not left to watch the fed',
+  sharing: 'the hungry are fed from what we have',
+  burial: 'the dead are put into the ground with words',
+  teaching: 'what one knows, all may learn',
+  craft: 'a thing well made is owed respect',
+  gift: 'what one can spare, one may give',
+  rescue: 'the hurt are tended',
+  betrayal: 'trust broken is not quickly mended',
+};
 
 export class MemoryStore {
   /**
@@ -17,15 +46,14 @@ export class MemoryStore {
    * @param {Iterable<string>} [opts.landmarkKinds] Extra kinds treated as permanent.
    */
   constructor(capacity = 320, opts = {}) {
-    this.episodes = [];        // ordinary recollections — fade and can be lost
-    this.core = [];            // life-defining memories — never pruned
+    this.episodes = [];
+    this.core = [];
     this.capacity = capacity;
-    this.semantic = new Map(); // key -> belief
-    this.edges = new Map();    // `${a}|${rel}|${b}` -> weight
+    this.semantic = new Map();
+    this.edges = new Map();
     this.pruned = 0;
     this._nextId = 0;
 
-    // Optional extension of landmark kinds
     this._landmarks = opts.landmarkKinds
       ? new Set([...LANDMARK_KINDS, ...opts.landmarkKinds])
       : LANDMARK_KINDS;
@@ -33,11 +61,6 @@ export class MemoryStore {
 
   // ── Episodic layer ────────────────────────────────────────────────────────
 
-  /**
-   * Record an event. High-salience or landmark events become permanent (core).
-   * @param {object} ev
-   * @returns {object} the stored memory record
-   */
   remember(ev) {
     const isLandmark = this._landmarks.has(ev.kind);
     const salience = clamp(
@@ -71,54 +94,32 @@ export class MemoryStore {
     return m;
   }
 
-  /**
-   * Forgetting the ordinary. Core memories are exempt.
-   * Keeps the strongest ~80 % of capacity (minimum 40).
-   */
   prune() {
     const room = Math.max(40, Math.round(this.capacity * 0.8));
     if (this.episodes.length <= room) return;
 
-    // Rank by current strength × salience, keep the top `room`
     this.episodes.sort(
       (a, b) =>
         b.strength * (0.5 + b.salience) - a.strength * (0.5 + a.salience),
     );
     this.pruned += this.episodes.length - room;
     this.episodes.length = room;
-
-    // Restore chronological order for later slicing / consolidation
     this.episodes.sort((a, b) => a.tick - b.tick);
   }
 
-  /**
-   * Slow forgetting of unimportant episodes.
-   * Higher-salience memories decay more slowly.
-   * @param {number} [rate=0.0015]
-   */
   fade(rate = 0.0015) {
     for (const m of this.episodes) {
       m.strength = clamp(m.strength - rate * (1 - m.salience), 0, 1);
     }
   }
 
-  /**
-   * Retrieve memories matching a predicate, ranked by strength, salience and
-   * mild recency. Successful recall strengthens the memory (rehearsal).
-   * @param {(m: object) => boolean} filter
-   * @param {number} [n=6]
-   */
   recall(filter, n = 6) {
     const hits = [];
     for (const m of this.core) if (filter(m)) hits.push(m);
     for (const m of this.episodes) if (filter(m)) hits.push(m);
 
-    // Prefer strength + salience; add a soft recency term that stays bounded
-    const score = (m) => {
-      const ageBias = 1 / (1 + Math.max(0, (Date.now() / 1000 - m.tick) * 1e-6)); // optional; or use pure tick
-      // Pure tick-based soft bias (works when tick is a simulation counter):
-      return m.strength * (0.6 + m.salience) + m.tick * 1e-9;
-    };
+    const score = (m) =>
+      m.strength * (0.6 + m.salience) + m.tick * 1e-9;
 
     const out = topN(hits, n, score);
     for (const m of out) {
@@ -140,17 +141,10 @@ export class MemoryStore {
 
   /**
    * Learn or update a belief.
-   * Confidence is bidirectional: disconfirming evidence (negative valence)
-   * can lower existing confidence instead of only ratcheting upward.
+   * Confidence is bidirectional: disconfirming evidence (negative valence
+   * against a positive belief, or the reverse) can pull confidence down.
    *
-   * @param {string} key
-   * @param {object} [opts]
-   * @param {string}  [opts.kind='fact']
-   * @param {number}  [opts.confidence=0.4]
-   * @param {number}  [opts.valence=0]
-   * @param {string}  [opts.source='experience']
-   * @param {object|null} [opts.payload=null]
-   * @param {number|null} [opts.tick=null]  simulation tick when learned
+   * For kind === 'norm', payload is merged and evidence counts accumulate.
    */
   learn(
     key,
@@ -164,13 +158,18 @@ export class MemoryStore {
     } = {},
   ) {
     const cur = this.semantic.get(key);
+    const now = tick ?? Date.now();
 
     if (cur) {
-      const disconfirming = valence < 0;
-      // Incoming confidence is tempered when disconfirming
+      // Same-sign valence reinforces; opposite-sign is treated as disconfirming
+      const sameSign =
+        (cur.valence >= 0 && valence >= 0) ||
+        (cur.valence < 0 && valence < 0);
+      const disconfirming = !sameSign && Math.abs(valence) > 0.05;
+
       const target = disconfirming ? confidence * 0.55 : confidence;
-      // Pull strength: fixed modest pull on disconfirm, confidence-gap on confirm
       const pull = disconfirming ? 0.32 : 1 - cur.confidence;
+
       cur.confidence = clamp(
         cur.confidence + (target - cur.confidence) * pull,
         0,
@@ -178,9 +177,17 @@ export class MemoryStore {
       );
       cur.valence = cur.valence * 0.7 + valence * 0.3;
       cur.reinforced++;
-      cur.lastUpdated = tick ?? Date.now();
+      cur.lastUpdated = now;
+
       if (payload) {
-        cur.payload = { ...(cur.payload || {}), ...payload };
+        const prev = cur.payload || {};
+        cur.payload = {
+          ...prev,
+          ...payload,
+          evidence:
+            (prev.evidence || 0) +
+            (payload.evidence != null ? payload.evidence : 1),
+        };
       }
       return cur;
     }
@@ -191,28 +198,35 @@ export class MemoryStore {
       confidence: clamp(confidence, 0, 1),
       valence,
       source,
-      payload,
+      payload: payload
+        ? {
+            ...payload,
+            evidence: payload.evidence != null ? payload.evidence : 1,
+          }
+        : null,
       reinforced: 0,
-      learnedAt: tick ?? Date.now(),
-      lastUpdated: tick ?? Date.now(),
+      learnedAt: now,
+      lastUpdated: now,
     };
     this.semantic.set(key, b);
     return b;
   }
 
   /**
-   * Slow decay of ordinary beliefs. Lessons (hard-won reflective beliefs)
-   * are exempt so they remain stable personality anchors.
-   * @param {number} [rate=0.0008]
+   * Slow decay of ordinary beliefs.
+   * Lessons are exempt (personality anchors).
+   * Norms decay more slowly — social rules linger, but still fade without use.
    */
   fadeBeliefs(rate = 0.0008) {
     for (const b of this.semantic.values()) {
       if (b.kind === 'lesson') continue;
+      const factor = b.kind === 'norm' ? 0.45 : 1;
       b.confidence = clamp(
-        b.confidence - rate * (1 - Math.abs(b.valence)),
+        b.confidence - rate * factor * (1 - Math.abs(b.valence || 0)),
         0,
         1,
       );
+      if (b.confidence < 0.008) b.confidence = 0;
     }
   }
 
@@ -232,21 +246,24 @@ export class MemoryStore {
     return out;
   }
 
+  /** All normative beliefs above threshold, strongest first. */
+  knownNorms(threshold = 0.12) {
+    return [...this.semantic.values()]
+      .filter((b) => b.kind === 'norm' && b.confidence >= threshold)
+      .sort(
+        (a, b) =>
+          Math.abs(b.confidence * b.valence) -
+          Math.abs(a.confidence * a.valence),
+      );
+  }
+
   // ── Relational graph ──────────────────────────────────────────────────────
 
-  /**
-   * Strengthen (or create) a directed relation a --rel--> b.
-   * Weights are clamped to [0, 1].
-   */
   link(a, rel, b, weight = 0.3) {
     const k = `${a}|${rel}|${b}`;
     this.edges.set(k, clamp((this.edges.get(k) || 0) + weight, 0, 1));
   }
 
-  /**
-   * Return outgoing relations from `a`. Optional filter by relation type.
-   * Results are sorted by weight descending.
-   */
   related(a, rel = null) {
     const out = [];
     for (const [k, w] of this.edges) {
@@ -259,10 +276,6 @@ export class MemoryStore {
     return out;
   }
 
-  /**
-   * Optional: prune very weak edges to keep the graph bounded.
-   * @param {number} [minWeight=0.05]
-   */
   pruneEdges(minWeight = 0.05) {
     for (const [k, w] of this.edges) {
       if (w < minWeight) this.edges.delete(k);
@@ -272,46 +285,126 @@ export class MemoryStore {
   // ── Consolidation ─────────────────────────────────────────────────────────
 
   /**
-   * Sleep consolidation: repeated recent episodes harden into semantic beliefs.
-   * High-salience core events can crystallize into permanent “lesson” beliefs.
-   * @param {object} [agent] optional agent reference (unused in base impl)
+   * Sleep consolidation:
+   *  - repeated concepts → semantic matter/concept beliefs
+   *  - repeated social hurts/helps → personal normative beliefs
+   *  - strongest core events → lasting lessons
+   *
+   * @param {object} [agent] optional; unused in base impl but kept for call sites
    */
   consolidate(agent) {
-    const counts = new Map();
-
-    // Recent ordinary + recent core
     const candidates = this.episodes.slice(-40).concat(this.core.slice(-20));
+
+    // 1. Concept hardening
+    const conceptCounts = new Map();
     for (const m of candidates) {
       if (!m.concept) continue;
-      const c = counts.get(m.concept) || { n: 0, v: 0 };
+      const c = conceptCounts.get(m.concept) || { n: 0, v: 0 };
       c.n++;
       c.v += m.valence;
-      counts.set(m.concept, c);
+      conceptCounts.set(m.concept, c);
     }
-
-    for (const [key, c] of counts) {
+    for (const [key, c] of conceptCounts) {
       if (c.n >= 3) {
         this.learn(key, {
           kind: 'concept',
           confidence: 0.1 + c.n * 0.03,
           valence: c.v / c.n,
           source: 'reflection',
+          tick: candidates[candidates.length - 1]?.tick,
         });
       }
     }
 
-    // Strongest permanent memory can leave a lasting lesson
+    // 2. Normative hypotheses from repeated social patterns
+    this._consolidateNorms(candidates);
+
+    // 3. Lesson from strongest permanent memory
     const pool = this.core.length ? this.core : this.episodes;
     const strongest = topN(pool, 1, (m) => m.salience)[0];
     if (strongest && strongest.salience > 0.8) {
       const lessonKey = `lesson:${strongest.kind}`;
       const existing = this.belief(lessonKey);
-      // Only create or gently reinforce; avoid overwriting with low confidence
       this.learn(lessonKey, {
         kind: 'lesson',
-        confidence: existing ? Math.max(existing.confidence, 0.35) : 0.35,
+        confidence: existing
+          ? Math.max(existing.confidence, 0.35)
+          : 0.35,
         valence: strongest.valence,
         source: 'reflection',
+        tick: strongest.tick,
+      });
+    }
+  }
+
+  /**
+   * Turn repeated appraisal/episode patterns into personal norm:* beliefs.
+   * No authored society rule is required — only lived statistics.
+   */
+  _consolidateNorms(candidates) {
+    const buckets = new Map(); // normKey -> { n, v, kind }
+
+    for (const m of candidates) {
+      let normKey = null;
+      let polarityHint = 0;
+
+      if (NORM_NEGATIVE_KINDS.has(m.kind) && m.valence < -0.15) {
+        // Map episode kind → norm key
+        const map = {
+          neglect: 'neglect',
+          betrayal: 'theft', // often theft-shaped; witness/theft also map below
+          theft: 'theft',
+          violence: 'violence',
+          witness: null, // resolved via text/concept if present
+          injury: 'violence',
+        };
+        normKey = map[m.kind];
+        if (m.kind === 'witness') {
+          if (m.concept === 'theft' || /thief|took|stole/i.test(m.text || ''))
+            normKey = 'theft';
+          else if (/blow|fight|struck|violence/i.test(m.text || ''))
+            normKey = 'violence';
+          else normKey = 'neglect';
+        }
+        polarityHint = -1;
+      } else if (NORM_POSITIVE_KINDS.has(m.kind) && m.valence > 0.15) {
+        const map = {
+          gift: 'sharing',
+          teach: 'teaching',
+          rescue: 'rescue',
+          ritual: 'burial',
+          burial: 'burial',
+          bond: 'sharing',
+        };
+        normKey = map[m.kind] || m.kind;
+        polarityHint = 1;
+      }
+
+      if (!normKey) continue;
+      const b = buckets.get(normKey) || { n: 0, v: 0, polarity: polarityHint };
+      b.n++;
+      b.v += m.valence;
+      buckets.set(normKey, b);
+    }
+
+    for (const [normKey, c] of buckets) {
+      if (c.n < 3) continue;
+      const avgV = c.v / c.n;
+      const key = `norm:${normKey}`;
+      const label = NORM_LABELS[normKey] || normKey;
+
+      this.learn(key, {
+        kind: 'norm',
+        confidence: 0.12 + c.n * 0.045,
+        valence: avgV,
+        source: 'reflection',
+        payload: {
+          situation: normKey,
+          polarity: avgV < 0 ? -1 : 1,
+          label,
+          evidence: c.n,
+        },
+        tick: candidates[candidates.length - 1]?.tick,
       });
     }
   }
@@ -319,13 +412,19 @@ export class MemoryStore {
   // ── Introspection ─────────────────────────────────────────────────────────
 
   stats() {
+    const norms = [...this.semantic.values()].filter(
+      (b) => b.kind === 'norm' && b.confidence > 0.12,
+    ).length;
     return {
       episodes: this.episodes.length + this.core.length,
       ordinary: this.episodes.length,
       permanent: this.core.length,
       pruned: this.pruned,
       beliefs: this.semantic.size,
+      norms,
       links: this.edges.size,
     };
   }
 }
+
+export { LANDMARK_KINDS, NORM_LABELS, NORM_NEGATIVE_KINDS, NORM_POSITIVE_KINDS };
