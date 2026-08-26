@@ -1,5 +1,8 @@
 // The society layer: who knows whom, who owes whom, what is held to be wrong,
 // who is buried where, and what the whole thing adds up to.
+//
+// Norms are not decrees. They are statistical shadows of what minds have learned.
+// Language is native-first; plain + gloss layers exist so an observer can follow.
 
 import { RNG } from '../core/rng.js';
 import { Language } from '../core/language.js';
@@ -13,35 +16,36 @@ import { appraise, dominantEmotion, moodWord } from './emotion.js';
 import { clamp, dist, mean, topN, hueFor } from '../core/util.js';
 import { STRUCTURE_KINDS } from './actions.js';
 
-// ── Balance / rates (tune here) ─────────────────────────────────────────────
+// ── Balance / rates ─────────────────────────────────────────────────────────
 
 const BALANCE = {
-  conceptionChance: 0.032,       // per eligible pair per tick
-  pregnancyTerm: 0.7,            // fraction of a year
+  conceptionChance: 0.032,
+  pregnancyTerm: 0.7,
   birthHealthCost: 0.12,
   grievanceInterval: 6,
   normsInterval: 24,
   spoilInterval: 24,
   rolesInterval: 12,
   chronicleInterval: 24,
-  corpseDesiccation: 24 * 12,    // ticks before an unburied body is “taken by the ground”
+  corpseDesiccation: 24 * 12,
   tradeCooldown: 30,
   fightCooldown: 60,
   neglectCooldown: 60,
   maxLogBuffer: 400,
-  maxArtworks: 800,              // soft archive cap
+  maxArtworks: 800,
   maxRituals: 200,
   maxBeliefs: 120,
   maxLostKnowledge: 300,
 };
 
+/** Initial normative *beliefs* some founders start with — not eternal laws. */
 const NORM_SEEDS = [
-  { key: 'theft',    label: 'what is not given must not be taken',           polarity: -1 },
-  { key: 'violence', label: 'hands are not raised against our own',          polarity: -1 },
-  { key: 'sharing',  label: 'the hungry are fed from what we have',          polarity:  1 },
-  { key: 'burial',   label: 'the dead are put into the ground with words',   polarity:  1 },
-  { key: 'teaching', label: 'what one knows, all may learn',                 polarity:  1 },
-  { key: 'craft',    label: 'a thing well made is owed respect',             polarity:  1 },
+  { key: 'theft',    label: 'what is not given must not be taken',         polarity: -1 },
+  { key: 'violence', label: 'hands are not raised against our own',        polarity: -1 },
+  { key: 'sharing',  label: 'the hungry are fed from what we have',        polarity:  1 },
+  { key: 'burial',   label: 'the dead are put into the ground with words', polarity:  1 },
+  { key: 'teaching', label: 'what one knows, all may learn',               polarity:  1 },
+  { key: 'craft',    label: 'a thing well made is owed respect',           polarity:  1 },
 ];
 
 export class Simulation {
@@ -58,15 +62,8 @@ export class Simulation {
     this.grid = new Map();
     this.logBuffer = [];
 
-    this.norms = NORM_SEEDS.map((n) => ({
-      ...n,
-      strength: 0.04,
-      violations: 0,
-      upholdings: 0,
-      becameLaw: null,
-      emergent: false,
-    }));
-
+    // Derived report of population norms (not the source of truth — minds are).
+    this.norms = [];
     this.households = [];
     this.rituals = [];
     this.artworks = [];
@@ -75,6 +72,9 @@ export class Simulation {
     this.lostKnowledge = [];
     this.inventionTicks = new Map();
     this.wantedMaterials = new Map();
+
+    /** surface form → { gloss, kind, firstTick, referentId? } */
+    this.lexicon = new Map();
 
     this.generation = 1;
     this.ritualPull = 0;
@@ -96,7 +96,6 @@ export class Simulation {
     });
   }
 
-  // ── Settlement compatibility shims ──────────────────────────────────────
   get origin() {
     return this.settlements[0];
   }
@@ -104,12 +103,93 @@ export class Simulation {
     return this.settlements[0]?.name;
   }
 
+  // ── Lexicon & readability ───────────────────────────────────────────────
+
+  /**
+   * Register an invented surface form so observers can gloss it later.
+   * Safe to call repeatedly; first registration wins.
+   */
+  registerLex(surface, gloss, kind = 'concept', referentId = null) {
+    if (!surface || this.lexicon.has(surface)) return;
+    this.lexicon.set(surface, {
+      gloss,
+      kind,
+      firstTick: this.world?.tick ?? 0,
+      referentId,
+    });
+  }
+
+  /** Replace known native words with "native (gloss)" for readable logs. */
+  gloss(text) {
+    if (!text) return text;
+    let out = String(text);
+    // Longer surfaces first so partial replaces are less likely
+    const entries = [...this.lexicon.entries()].sort(
+      (a, b) => b[0].length - a[0].length,
+    );
+    for (const [surface, meta] of entries) {
+      if (out.includes(surface)) {
+        out = out.split(surface).join(`${surface} (${meta.gloss})`);
+      }
+    }
+    return out;
+  }
+
+  plainSummary(ev) {
+    const names = (ev.actors || [])
+      .map((id) => this.byId(id)?.name)
+      .filter(Boolean)
+      .join(', ');
+    switch (ev.kind) {
+      case 'birth':
+        return `Birth: ${names}`;
+      case 'death': {
+        const cause = ev.text?.match(/died of (.+) at/)?.[1] || '?';
+        return `Death: ${names} (${cause})`;
+      }
+      case 'bond':
+        return `Bond: ${names}`;
+      case 'trade':
+        return `Trade: ${names}`;
+      case 'theft':
+        return `Theft: ${names}`;
+      case 'violence':
+        return `Fight: ${names}`;
+      case 'invention':
+        return `Invention: ${ev.concept || names}`;
+      case 'teach':
+        return `Teaching: ${names}${ev.concept ? ` (${ev.concept})` : ''}`;
+      case 'gather':
+        return `Gather: ${names}${ev.concept ? ` → ${ev.concept}` : ''}`;
+      case 'build':
+      case 'first':
+        return `Build/first: ${(ev.text || '').slice(0, 90)}`;
+      case 'speech':
+        return `Said: ${ev.voice || names}: ${(ev.text || '').slice(0, 80)}`;
+      case 'thought':
+        return `Thought: ${ev.voice || names}: ${(ev.text || '').slice(0, 80)}`;
+      case 'gift':
+        return `Gift: ${names}`;
+      case 'ritual':
+        return `Ritual: ${names || 'collective'}`;
+      case 'law':
+      case 'custom':
+        return `${ev.kind}: ${(ev.text || '').slice(0, 90)}`;
+      case 'loss':
+        return `Loss: ${(ev.text || '').slice(0, 90)}`;
+      case 'era':
+      case 'language':
+        return `${ev.kind}: ${(ev.text || '').slice(0, 90)}`;
+      default:
+        return `${ev.kind}: ${(ev.text || '').slice(0, 100)}`;
+    }
+  }
+
   // ── Setup ───────────────────────────────────────────────────────────────
 
   seedPopulation(n) {
     const { world, rng } = this;
 
-    // Find a hospitable founding site
     let cx = Math.floor(world.w / 2);
     let cy = Math.floor(world.h / 2);
     let best = -1;
@@ -136,6 +216,7 @@ export class Simulation {
     }
 
     const firstName = this.lang.placeName(rng);
+    this.registerLex(firstName, 'founding shore-camp', 'place');
     const founding = {
       kind: 'settlement',
       name: firstName,
@@ -146,7 +227,7 @@ export class Simulation {
       tier: 'camp',
     };
     this.settlements = [founding];
-    world.sites.push(founding); // same object — name/colour/tier stay in sync
+    world.sites.push(founding);
 
     for (let i = 0; i < n; i++) {
       let x = cx;
@@ -159,8 +240,11 @@ export class Simulation {
       } while (!world.walkable(x, y) && tries < 40);
 
       const g = randomGenome(rng);
+      const personName = this.lang.personName(rng);
+      this.registerLex(personName, 'founder', 'person');
+
       const a = new Agent({
-        name: this.lang.personName(rng),
+        name: personName,
         genome: g,
         x,
         y,
@@ -170,7 +254,7 @@ export class Simulation {
       });
       a.bornTick = -rng.int(16, 34) * YEAR_TICKS;
 
-      // The first people know only what they can see with their own eyes.
+      // Matter knowledge from upbringing
       for (const c of this.ont.all()) {
         if (c.kind !== 'matter') continue;
         if (rng.bool(0.35 + g.curiosity * 0.3)) {
@@ -190,6 +274,25 @@ export class Simulation {
           source: 'upbringing',
         });
       }
+
+      // Seed normative *beliefs* (initial conditions only — evidence owns them after this)
+      for (const seed of NORM_SEEDS) {
+        if (rng.bool(0.55 + g.empathy * 0.25)) {
+          a.memory.learn(`norm:${seed.key}`, {
+            kind: 'norm',
+            confidence: rng.float(0.2, 0.45),
+            valence: seed.polarity > 0 ? 0.4 : -0.45,
+            source: 'upbringing',
+            payload: {
+              situation: seed.key,
+              polarity: seed.polarity,
+              label: seed.label,
+              evidence: 1,
+            },
+          });
+        }
+      }
+
       a.add('water', 1);
       a.add(rng.pick(['berry', 'root']), rng.int(1, 3));
       this.addAgent(a);
@@ -201,18 +304,19 @@ export class Simulation {
     this.index.set(a.id, a);
     a.worldTick = this.world.tick;
     this.livingCache = null;
+    if (a.name) this.registerLex(a.name, a.role || 'person', 'person', a.id);
     return a;
   }
 
   get living() {
     if (!this.livingCache) {
-      this.livingCache = this.agents.filter((a) => a.alive);
+      this.livingCache = this.agents.filter((x) => x.alive);
     }
     return this.livingCache;
   }
 
   get dead() {
-    return this.agents.filter((a) => !a.alive);
+    return this.agents.filter((x) => !x.alive);
   }
 
   byId(id) {
@@ -301,7 +405,6 @@ export class Simulation {
     this.ritualPull = clamp(this.ritualPull - 0.004, 0, 2);
   }
 
-  /** Nothing keeps forever. Surplus rots — that is why storing and preserving matter. */
   spoilTick() {
     const rot = (map) => {
       for (const [k, v] of map) {
@@ -354,6 +457,9 @@ export class Simulation {
       voice: opts.voice || null,
     };
 
+    ev.plain = this.plainSummary(ev);
+    ev.glossed = this.gloss(ev.text);
+
     this.chronicle.add(ev);
 
     if (!opts.quiet || opts.landmark) {
@@ -363,14 +469,11 @@ export class Simulation {
       }
     }
 
-    // Actors remember (quiet events still reach personal memory so the mind
-    // can learn; only the public log is suppressed).
     for (const id of ev.actors) {
       const a = this.byId(id);
       if (a) a.memory.remember(ev);
     }
 
-    // Witnesses remember too, at lower intensity — this is how reputation spreads.
     if (agent && (opts.intensity ?? 0) > 0.45) {
       for (const o of this.nearby(agent, 6)) {
         if (ev.actors.includes(o.id)) continue;
@@ -394,7 +497,6 @@ export class Simulation {
     a.adjustRel(o, { familiarity: 0.05, trust: 0.012 });
     o.adjustRel(a, { familiarity: 0.05, trust: 0.012 });
 
-    // Emotional contagion — moods are catching.
     const pull = 0.06 * (a.genome.empathy + 0.3);
     o.affect.mood = clamp(
       o.affect.mood + (a.affect.mood - o.affect.mood) * pull,
@@ -407,7 +509,6 @@ export class Simulation {
       1,
     );
 
-    // Liking grows out of time spent well: shared good mood, similar temperament.
     const rapport = (x, y) =>
       clamp(
         0.02 +
@@ -522,6 +623,21 @@ export class Simulation {
       });
     }
 
+    // Normative beliefs transfer like any other knowledge
+    const norms = a.memory
+      .knownKeys('norm')
+      .filter((k) => !o.memory.knows(k, 0.35));
+    if (norms.length && a.genome.empathy > 0.3) {
+      const k = rng.pick(norms);
+      options.push({
+        type: 'norm',
+        key: k,
+        transfer: k,
+        concept: k,
+        valence: a.memory.belief(k)?.valence ?? 0,
+      });
+    }
+
     const strongMem = a.memory.recall((m) => m.salience > 0.5, 3)[0];
     if (strongMem) {
       options.push({
@@ -574,6 +690,14 @@ export class Simulation {
         return `${o.name}, listen. ${W(topic.key)} — it is made, not found. I will show you.`;
       case 'matter':
         return `There is ${W(topic.key)} in this country. I did not know that either, once.`;
+      case 'norm': {
+        const b = a.memory.belief(topic.key);
+        const label =
+          b?.payload?.label || topic.key.replace(/^norm:/, '');
+        return (b?.valence ?? 0) < 0
+          ? `${o.name}, this is not to be done — ${label}. I have seen what follows.`
+          : `${o.name}, this is how we hold together — ${label}.`;
+      }
       case 'memory':
         return `I still think of it. ${topic.memory.text}.`;
       case 'gossip': {
@@ -584,7 +708,9 @@ export class Simulation {
               r.debt > 0 ? 'I owe them.' : 'I would stand beside them.'
             }`
           : `Be careful with ${s.name}. ${
-              r.conflicts ? 'We have had words.' : 'Something is not right there.'
+              r.conflicts
+                ? 'We have had words.'
+                : 'Something is not right there.'
             }`;
       }
       case 'grief':
@@ -608,7 +734,10 @@ export class Simulation {
       ],
       gather: [`Enough of this and we last the week.`, `Hands first. Thinking after.`],
       hunt: [`Quiet now.`, `We eat tonight or we do not.`],
-      build: [`It should stand longer than I will.`, `Straight. It has to be straight.`],
+      build: [
+        `It should stand longer than I will.`,
+        `Straight. It has to be straight.`,
+      ],
       expand: [
         `This ground is too crowded for what we are becoming.`,
         `There is room past here. I mean to see it settled.`,
@@ -717,7 +846,7 @@ export class Simulation {
 
     if (!a.take(deal.give, 1)) return;
     if (!o.take(deal.get, 1)) {
-      a.add(deal.give, 1); // rollback
+      a.add(deal.give, 1);
       return;
     }
     o.add(deal.give, 1);
@@ -733,7 +862,6 @@ export class Simulation {
     a.adjustRel(o, { trust: 0.07, familiarity: 0.05 });
     o.adjustRel(a, { trust: 0.07, familiarity: 0.05 });
 
-    // Both sides update what they think things are worth. This is where prices come from.
     a.updateValue(deal.get, a.valueOf(deal.get, this.ont) * 0.96);
     o.updateValue(deal.give, o.valueOf(deal.give, this.ont) * 0.96);
 
@@ -789,7 +917,7 @@ export class Simulation {
       goalCongruence: 0.4,
       agency: 'self',
       intensity: 0.6,
-      norm: -this.normStrength('theft'),
+      norm: this.personalNorm(a, 'theft'),
       kind: 'betrayal',
       social: o.id,
     });
@@ -801,13 +929,34 @@ export class Simulation {
       kind: 'betrayal',
       social: a.id,
     });
+    // Agents learn from the event; society aggregate updates on normsTick
+    a.memory.learn('norm:theft', {
+      kind: 'norm',
+      confidence: 0.25,
+      valence: -0.35,
+      source: 'experience',
+      payload: { situation: 'theft', polarity: -1, evidence: 1 },
+    });
+    o.memory.learn('norm:theft', {
+      kind: 'norm',
+      confidence: 0.45,
+      valence: -0.75,
+      source: 'suffering',
+      payload: { situation: 'theft', polarity: -1, evidence: 1 },
+    });
     this.violateNorm('theft', 0.05);
     this.reputationDelta(a, -0.09);
 
-    // Witnesses turn against the thief. Reputation is a real force here.
     for (const w of this.nearby(a, 6)) {
       if (w === a || w === o) continue;
       w.adjustRel(a, { trust: -0.2, respect: -0.1, affection: -0.15 });
+      w.memory.learn('norm:theft', {
+        kind: 'norm',
+        confidence: 0.2,
+        valence: -0.5,
+        source: 'witness',
+        payload: { situation: 'theft', polarity: -1, evidence: 1 },
+      });
       appraise(w, {
         goalCongruence: -0.2,
         agency: 'other',
@@ -878,9 +1027,19 @@ export class Simulation {
       agency: 'self',
       intensity: 0.7,
       kind: 'violence',
-      norm: -this.normStrength('violence'),
+      norm: this.personalNorm(winner, 'violence'),
       social: loser.id,
     });
+
+    for (const person of [a, o]) {
+      person.memory.learn('norm:violence', {
+        kind: 'norm',
+        confidence: 0.3,
+        valence: -0.6,
+        source: 'experience',
+        payload: { situation: 'violence', polarity: -1, evidence: 1 },
+      });
+    }
     this.violateNorm('violence', 0.06);
     this.reputationDelta(winner, -0.05);
 
@@ -894,6 +1053,13 @@ export class Simulation {
         kind: 'witness',
       });
       w.adjustRel(winner, { trust: -0.12 });
+      w.memory.learn('norm:violence', {
+        kind: 'norm',
+        confidence: 0.2,
+        valence: -0.55,
+        source: 'witness',
+        payload: { situation: 'violence', polarity: -1, evidence: 1 },
+      });
     }
   }
 
@@ -945,7 +1111,6 @@ export class Simulation {
     o.adjustRel(a, { affection: 0.4, trust: 0.3, kin: 0.8 });
     this.ritualPull = clamp(this.ritualPull + 0.3, 0, 2);
 
-    // Whoever else was courting either of them, recently, notices they lost.
     for (const riv of this.living) {
       if (riv === a || riv === o) continue;
       const target = riv.lastCourtTarget;
@@ -966,9 +1131,8 @@ export class Simulation {
   lifecycleTick() {
     const w = this.world;
     for (const a of this.living) {
-      // Conception requires a bond, proximity, and a body with something to spare.
-      // No hard population ceiling — the only limits are health, hunger, age,
-      // and the soft pressure of settlement crowding (which drives expansion).
+      // Sex-blind conception. No population ceiling.
+      // Carrier chosen by relative fertility (not by id).
       if (
         !a.body.pregnant &&
         a.partner &&
@@ -979,14 +1143,25 @@ export class Simulation {
         if (
           p &&
           p.alive &&
+          !p.body.pregnant &&
           dist(a, p) < 7 &&
           a.body.health > 0.55 &&
           a.body.hunger < 0.78 &&
-          this.rng.bool(BALANCE.conceptionChance * a.genome.fertility)
+          p.body.health > 0.55 &&
+          p.body.hunger < 0.78 &&
+          this.rng.bool(
+            BALANCE.conceptionChance *
+              ((a.genome.fertility + p.genome.fertility) / 2),
+          )
         ) {
-          // Deterministic parent assignment so both partners don't conceive the same tick
+          const aChance =
+            a.genome.fertility /
+            Math.max(0.01, a.genome.fertility + p.genome.fertility);
+          const carrier = this.rng.next() < aChance ? a : p;
+          const other = carrier === a ? p : a;
+          // Only process from the lower-id agent to avoid double conception same tick
           if (a.id < p.id) {
-            a.body.pregnant = { since: w.tick, otherId: p.id };
+            carrier.body.pregnant = { since: w.tick, otherId: other.id };
           }
         }
       }
@@ -1003,17 +1178,18 @@ export class Simulation {
     const father = this.byId(mother.body.pregnant.otherId);
     mother.body.pregnant = null;
 
-    // Only abort if the mother is too weak to survive the birth.
-    // There is deliberately no population ceiling — if the simulation
-    // stops, it will be because of starvation, disease, or cold, not a cap.
+    // Only maternal health can stop a birth — no population cap.
     if (mother.body.health < 0.25) return;
 
     const g = father
       ? inherit(this.rng, mother.genome, father.genome)
       : randomGenome(this.rng);
 
+    const childName = this.lang.personName(this.rng);
+    this.registerLex(childName, `child of ${mother.name}`, 'person');
+
     const child = new Agent({
-      name: this.lang.personName(this.rng),
+      name: childName,
       genome: g,
       x: mother.x,
       y: mother.y,
@@ -1024,6 +1200,22 @@ export class Simulation {
     });
     child.home = mother.home;
     this.addAgent(child);
+
+    // Mild inheritance of parental normative beliefs
+    for (const parent of [mother, father].filter(Boolean)) {
+      for (const b of parent.memory.semantic.values()) {
+        if (b.kind !== 'norm' || b.confidence < 0.25) continue;
+        if (this.rng.bool(0.4 + child.genome.learning * 0.3)) {
+          child.memory.learn(b.key, {
+            kind: 'norm',
+            confidence: b.confidence * 0.35,
+            valence: b.valence * 0.8,
+            source: `upbringing:${parent.name}`,
+            payload: b.payload,
+          });
+        }
+      }
+    }
 
     mother.children.push(child.id);
     if (father) father.children.push(child.id);
@@ -1148,7 +1340,6 @@ export class Simulation {
       2,
     );
 
-    // Inheritance: goods to kin nearby. Remainders go to the first heir.
     const heirs = a.children
       .map((id) => this.byId(id))
       .filter((c) => c && c.alive);
@@ -1175,7 +1366,6 @@ export class Simulation {
     }
     a.inventory.clear();
 
-    // Knowledge dies with people unless it was taught. Dark ages are possible.
     for (const key of a.memory.knownKeys('recipe')) {
       const stillKnown = this.living.some((o) => o.memory.knows(key, 0.25));
       if (!stillKnown) {
@@ -1187,7 +1377,6 @@ export class Simulation {
           lastKeeper: a.name,
           fn: c?.bestFn,
         });
-        // Soft archive
         if (this.lostKnowledge.length > BALANCE.maxLostKnowledge) {
           this.lostKnowledge.splice(
             0,
@@ -1227,9 +1416,11 @@ export class Simulation {
 
     let field = this.world.sites.find((s) => s.kind === 'graves');
     if (!field) {
+      const fieldName = `${this.lang.coinRaw(2)} Field`;
+      this.registerLex(fieldName, 'first burial ground', 'place');
       field = {
         kind: 'graves',
-        name: `${this.lang.coinRaw(2)} Field`,
+        name: fieldName,
         x: corpse.x,
         y: corpse.y,
         foundedTick: this.world.tick,
@@ -1245,6 +1436,13 @@ export class Simulation {
     }
     field.graves = (field.graves || 0) + 1;
     a.stats.buried++;
+    a.memory.learn('norm:burial', {
+      kind: 'norm',
+      confidence: 0.35,
+      valence: 0.55,
+      source: 'experience',
+      payload: { situation: 'burial', polarity: 1, evidence: 1 },
+    });
     this.upholdNorm('burial', 0.05);
     this.record(
       a,
@@ -1280,11 +1478,12 @@ export class Simulation {
       o.adjustRel(a, { familiarity: 0.03, respect: 0.03 });
     }
 
-    // Rituals accrete into named practices, and practices become belief.
     let rit = this.rituals.find((r) => r.site === (site.name || site.word));
     if (!rit) {
+      const ritName = `the ${this.lang.coinRaw(2)}`;
+      this.registerLex(ritName, 'named ritual practice', 'ritual');
       rit = {
-        name: `the ${this.lang.coinRaw(2)}`,
+        name: ritName,
         site: site.name || site.word,
         foundedTick: this.world.tick,
         observances: 0,
@@ -1323,6 +1522,7 @@ export class Simulation {
     this.counters.artworks++;
     const subject = a.memory.recall((m) => m.salience > 0.45, 1)[0];
     const name = this.lang.coinRaw(2);
+    this.registerLex(name, 'artwork', 'concept');
     const work = {
       name,
       by: a.name,
@@ -1371,6 +1571,13 @@ export class Simulation {
 
   onInvention(a, record, concept) {
     this.inventionTicks.set(record.key, this.world.tick);
+    if (concept?.word) {
+      this.registerLex(
+        concept.word,
+        record.advance ? `new ${record.fn}` : `variant ${record.fn}`,
+        'concept',
+      );
+    }
     const fnWord = record.fn;
     const text = record.advance
       ? `${a.name} made ${concept.word} — nothing they had served ${fnWord} so well`
@@ -1387,6 +1594,13 @@ export class Simulation {
     if (record.advance) {
       if (!a.titles.includes('maker')) a.titles.push('maker');
       this.reputationDelta(a, 0.08);
+      a.memory.learn('norm:craft', {
+        kind: 'norm',
+        confidence: 0.3,
+        valence: 0.5,
+        source: 'experience',
+        payload: { situation: 'craft', polarity: 1, evidence: 1 },
+      });
       for (const o of this.nearby(a, 8)) {
         o.adjustRel(a, { respect: 0.12 });
         appraise(o, {
@@ -1413,7 +1627,6 @@ export class Simulation {
 
   // ── Settlement & building ───────────────────────────────────────────────
 
-  /** Nearest settlement to a point — used to make build/needs/pressure local. */
   nearestSettlement(x, y) {
     let best = this.settlements[0];
     let bd = Infinity;
@@ -1427,13 +1640,11 @@ export class Simulation {
     return best;
   }
 
-  /** Crowding, 0..1 — the soft signal that drives expansion, not a hard cap. */
   settlementPressure(settlement, radius = 22) {
     const pop = this.living.filter((a) => dist(a, settlement) < radius).length;
     return clamp((pop - 16) / 12, 0, 1);
   }
 
-  /** What a given settlement is short of, expressed as raw materials people crave. */
   updateWants() {
     const want = new Map();
     for (const settlement of this.settlements) {
@@ -1515,16 +1726,8 @@ export class Simulation {
       kind === 'field'
         ? topN(
             [...Array(40)].map(() => ({
-              x: clamp(
-                settlement.x + this.rng.int(-10, 10),
-                1,
-                w.w - 2,
-              ),
-              y: clamp(
-                settlement.y + this.rng.int(-10, 10),
-                1,
-                w.h - 2,
-              ),
+              x: clamp(settlement.x + this.rng.int(-10, 10), 1, w.w - 2),
+              y: clamp(settlement.y + this.rng.int(-10, 10), 1, w.h - 2),
             })),
             1,
             (p) =>
@@ -1543,9 +1746,9 @@ export class Simulation {
     return null;
   }
 
-  /** A person breaks off from the crowd and founds a new settlement on remembered ground. */
   foundSettlement(a, spot) {
     const name = this.lang.placeName(this.rng);
+    this.registerLex(name, `settlement founded by ${a.name}`, 'place');
     const settlement = {
       kind: 'settlement',
       name,
@@ -1556,7 +1759,7 @@ export class Simulation {
       tier: 'camp',
     };
     this.settlements.push(settlement);
-    this.world.sites.push(settlement); // same object
+    this.world.sites.push(settlement);
     this.record(
       a,
       'first',
@@ -1577,6 +1780,7 @@ export class Simulation {
   raiseStructure(a, kind, spot, materialKey) {
     const settlement = this.nearestSettlement(spot.x, spot.y);
     const word = this.lang.word(`struct:${kind}`);
+    this.registerLex(word, kind, 'structure');
     const s = {
       kind,
       x: spot.x,
@@ -1656,13 +1860,6 @@ export class Simulation {
     }
   }
 
-  /**
-   * Everyday grievance the seeded norms never touch: someone hungry, near
-   * someone visibly sitting on food surplus, who isn't kin or a friend and
-   * doesn't share. This is the only routine (non-theft, non-violence) source
-   * of anger in the simulation, and it's also how a wholly new norm — one
-   * nobody authored — can be born straight out of repeated lived experience.
-   */
   grievanceTick() {
     if (this.world.tick % BALANCE.grievanceInterval) return;
     for (const a of this.living) {
@@ -1671,7 +1868,10 @@ export class Simulation {
         if (o.isChild(this.world.tick)) continue;
         const r = a.rel(o);
         if (r.kin > 0.3 || r.affection > 0.2) continue;
-        if (this.world.tick - (r.lastNeglect || -999) < BALANCE.neglectCooldown)
+        if (
+          this.world.tick - (r.lastNeglect || -999) <
+          BALANCE.neglectCooldown
+        )
           continue;
 
         let surplus = 0;
@@ -1690,28 +1890,121 @@ export class Simulation {
           social: o.id,
         });
         a.adjustRel(o, { affection: -0.08, trust: -0.06 });
-        this.spawnOrStrengthenNorm(
-          'neglect',
-          'the hungry are not left to watch the fed',
-          -1,
-          0.02,
-        );
-        break; // one grievance per tick is enough for anyone
+
+        // Personal normative learning — not a hand-authored society rule
+        a.memory.learn('norm:neglect', {
+          kind: 'norm',
+          confidence: 0.22,
+          valence: -0.55,
+          source: 'experience',
+          payload: {
+            situation: 'surplus-while-hungry',
+            polarity: -1,
+            label: 'the hungry are not left to watch the fed',
+            evidence: 1,
+          },
+        });
+        break;
       }
     }
   }
 
-  /** Norms are not decreed. They drift with how people actually feel and behave. */
+  // ── Norms: personal beliefs are truth; this.norms is a derived report ───
+
+  /** Personal norm signal in [-1, 1] (valence × confidence). */
+  personalNorm(a, key) {
+    const b = a.memory.belief(`norm:${key}`);
+    if (!b || b.confidence < 0.12) return 0;
+    return b.valence * b.confidence;
+  }
+
+  /**
+   * Blend personal conviction with population climate.
+   * Use this in action utilities (steal, fight, give, bury, …).
+   */
+  effectiveNorm(a, key) {
+    const personal = this.personalNorm(a, key);
+    const social = this.normStrength(key);
+    const socialSigned = social * (personal <= 0 ? -1 : 1);
+    return personal * 0.65 + socialSigned * 0.35;
+  }
+
+  normStrength(key) {
+    return this.norms.find((n) => n.key === key)?.strength || 0;
+  }
+
+  /** Aggregate what minds actually believe into the society report. */
+  aggregateNorms() {
+    const buckets = new Map();
+    for (const a of this.living) {
+      for (const b of a.memory.semantic.values()) {
+        if (b.kind !== 'norm' || b.confidence < 0.15) continue;
+        const k = b.key.replace(/^norm:/, '');
+        const bucket = buckets.get(k) || {
+          confs: [],
+          vals: [],
+          labels: [],
+          holders: 0,
+        };
+        bucket.confs.push(b.confidence);
+        bucket.vals.push(b.valence);
+        if (b.payload?.label) bucket.labels.push(b.payload.label);
+        bucket.holders++;
+        buckets.set(k, bucket);
+      }
+    }
+
+    for (const [key, b] of buckets) {
+      const strength = mean(b.confs);
+      const avgVal = mean(b.vals);
+      const polarity = avgVal < 0 ? -1 : 1;
+      const label =
+        b.labels.sort(
+          (x, y) =>
+            b.labels.filter((z) => z === y).length -
+            b.labels.filter((z) => z === x).length,
+        )[0] || key;
+
+      let n = this.norms.find((x) => x.key === key);
+      if (!n) {
+        n = {
+          key,
+          label,
+          polarity,
+          strength: 0.04,
+          violations: 0,
+          upholdings: 0,
+          becameLaw: null,
+          emergent: true,
+        };
+        this.norms.push(n);
+        this.record(
+          null,
+          'custom',
+          `Something new began to be felt among them: ${label}`,
+          {
+            valence: polarity > 0 ? 0.2 : -0.2,
+            intensity: 0.5,
+            landmark: true,
+          },
+        );
+      } else {
+        n.label = label;
+        n.polarity = polarity;
+      }
+      n.strength = clamp(n.strength * 0.65 + strength * 0.35, 0, 1);
+      n.holders = b.holders;
+      this.checkLaw(n);
+    }
+  }
+
   normsTick() {
     if (this.world.tick % BALANCE.normsInterval) return;
-    const anger = mean(
-      this.living,
-      (a) => a.affect.e.anger + a.affect.e.disgust,
-    );
+    this.aggregateNorms();
+
+    // Slow ambient drift so unused norms fade in the report
     for (const n of this.norms) {
-      n.strength = clamp(
-        n.strength - 0.004 + (n.polarity > 0 ? 0.001 : 0) + anger * 0.002,
-      );
+      n.strength = clamp(n.strength - 0.003, 0, 1);
       if (n.becameLaw && n.strength < 0.35) {
         n.becameLaw = null;
         this.record(null, 'law', `The rule slipped away: ${n.label}`, {
@@ -1723,21 +2016,14 @@ export class Simulation {
     }
   }
 
-  // ── Norms & reputation ──────────────────────────────────────────────────
-
-  normStrength(key) {
-    return this.norms.find((n) => n.key === key)?.strength || 0;
-  }
-
   violateNorm(key, weight) {
     const n = this.norms.find((x) => x.key === key);
     if (!n) return;
     n.violations++;
-    // Being violated in front of people who are disgusted STRENGTHENS the norm.
     n.strength = clamp(
       n.strength +
         weight *
-          (0.4 +
+          (0.35 +
             mean(this.living, (a) => a.affect.e.disgust + a.affect.e.anger)),
     );
     this.checkLaw(n);
@@ -1762,40 +2048,20 @@ export class Simulation {
     }
   }
 
-  /**
-   * The only way a norm not in NORM_SEEDS can come to exist. Called from
-   * wherever a recurring situation calls for a rule nobody wrote — the first
-   * call coins it and records its birth; every call after that strengthens
-   * or weakens it through the same machinery seeded norms already use.
-   */
+  /** @deprecated Prefer agent memory.learn('norm:…') — kept for call-site compat. */
   spawnOrStrengthenNorm(key, label, polarity, weight) {
-    let n = this.norms.find((x) => x.key === key);
-    if (!n) {
-      n = {
-        key,
-        label,
-        polarity,
-        strength: 0.04,
-        violations: 0,
-        upholdings: 0,
-        becameLaw: null,
-        emergent: true,
-      };
-      this.norms.push(n);
-      this.record(
-        null,
-        'custom',
-        `Something new began to be felt among them: ${label}`,
-        {
-          valence: polarity > 0 ? 0.2 : -0.2,
-          intensity: 0.5,
-          landmark: true,
-        },
-      );
+    // Write into a nearby living agent's memory instead of authoring society law
+    const sample = this.living[0];
+    if (sample) {
+      sample.memory.learn(`norm:${key}`, {
+        kind: 'norm',
+        confidence: 0.15 + weight,
+        valence: polarity > 0 ? 0.4 : -0.4,
+        source: 'reflection',
+        payload: { situation: key, polarity, label, evidence: 1 },
+      });
     }
-    if (polarity < 0) this.violateNorm(key, weight);
-    else this.upholdNorm(key, weight);
-    return n;
+    return this.norms.find((x) => x.key === key) || null;
   }
 
   reputationDelta(a, d) {
@@ -1820,17 +2086,8 @@ export class Simulation {
   capabilityGaps(a) {
     const gaps = [];
     const want = [
-      'cutting',
-      'heat',
-      'vessel',
-      'clothing',
-      'shelter',
-      'storage',
-      'sustenance',
-      'weapon',
-      'medicine',
-      'record',
-      'art',
+      'cutting', 'heat', 'vessel', 'clothing', 'shelter', 'storage',
+      'sustenance', 'weapon', 'medicine', 'record', 'art',
     ];
     for (const fn of want) {
       const mine = a.bestToolFor(fn, this.ont);
@@ -1889,7 +2146,6 @@ export class Simulation {
   dailyReflection() {
     for (const a of this.living) {
       if (this.rng.bool(0.3)) a.memory.consolidate(a);
-      // Belief revision: things repeatedly valued get revalued upward.
       for (const [k] of a.inventory) {
         const m = this.marketPrices.get(k);
         if (m) a.updateValue(k, m.price, 0.08);
@@ -1935,6 +2191,106 @@ export class Simulation {
     return Math.round(t);
   }
 
+  // ── Observers: what they learned, what they are doing ───────────────────
+
+  inspectBeliefs(a) {
+    const sem = [...a.memory.semantic.values()];
+    const score = (b) =>
+      Math.abs(b.confidence * (b.valence || 0)) + b.confidence * 0.15;
+    const take = (kind, n = 8) =>
+      topN(
+        kind ? sem.filter((b) => b.kind === kind) : sem,
+        n,
+        score,
+      ).map((b) => ({
+        key: b.key,
+        kind: b.kind,
+        confidence: +b.confidence.toFixed(2),
+        valence: +(b.valence || 0).toFixed(2),
+        source: b.source,
+        age: (a.worldTick || this.world.tick) - (b.learnedAt || 0),
+        payload: b.payload,
+      }));
+
+    return {
+      id: a.id,
+      name: a.name,
+      role: a.role,
+      mood: moodWord(a.affect.mood),
+      emotion: dominantEmotion(a),
+      goal: a.goal,
+      action: a.action?.kind || null,
+      reasoning: a.reasoning,
+      dominant: take(null, 12),
+      norms: take('norm', 10),
+      lessons: take('lesson', 6),
+      places: take('place', 6),
+      recipes: take('recipe', 8),
+      matter: take('matter', 8),
+      recentEpisodes: a.memory.recall(() => true, 8).map((m) => ({
+        kind: m.kind,
+        text: m.text,
+        salience: +m.salience.toFixed(2),
+        valence: +m.valence.toFixed(2),
+        tick: m.tick,
+      })),
+      stats: a.memory.stats(),
+    };
+  }
+
+  inspectNorms() {
+    return this.norms
+      .map((n) => ({
+        key: n.key,
+        label: n.label,
+        strength: +n.strength.toFixed(2),
+        polarity: n.polarity,
+        holders:
+          n.holders ??
+          this.living.filter((a) =>
+            a.memory.knows(`norm:${n.key}`, 0.15),
+          ).length,
+        emergent: !!n.emergent,
+        becameLaw: n.becameLaw,
+        violations: n.violations,
+        upholdings: n.upholdings,
+      }))
+      .sort((x, y) => y.strength - x.strength);
+  }
+
+  activityFeed(limit = 40) {
+    return topN(
+      this.living.filter((a) => a.action || a.goal),
+      limit,
+      (a) =>
+        (a.action ? 2 : 1) +
+        a.body.hunger +
+        a.body.thirst +
+        (1 - a.body.health),
+    ).map((a) => ({
+      id: a.id,
+      name: a.name,
+      goal: a.goal || '—',
+      action: a.action?.kind || 'idle',
+      where: `${a.x},${a.y}`,
+      emotion: dominantEmotion(a),
+      mood: moodWord(a.affect.mood),
+      why: a.reasoning?.[0]?.why || null,
+      hunger: +a.body.hunger.toFixed(2),
+      health: +a.body.health.toFixed(2),
+    }));
+  }
+
+  /** Recent log in plain / glossed / native form. */
+  recentLog(limit = 30, mode = 'plain') {
+    const slice = this.logBuffer.slice(-limit);
+    return slice.map((ev) => {
+      if (mode === 'glossed') return { ...ev, display: ev.glossed || ev.text };
+      if (mode === 'native') return { ...ev, display: ev.text };
+      return { ...ev, display: ev.plain || ev.text };
+    });
+  }
+
   drainLog() {
     const out = this.logBuffer;
     this.logBuffer = [];
@@ -1946,4 +2302,4 @@ export class Simulation {
   }
 }
 
-export { YEAR_TICKS, SKILLS, moodWord, BALANCE };
+export { YEAR_TICKS, SKILLS, moodWord, BALANCE, NORM_SEEDS };
