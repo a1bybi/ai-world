@@ -10,156 +10,318 @@ const LANDMARK_KINDS = new Set([
   'rescue', 'gift', 'exile', 'law', 'ritual', 'teach', 'famine', 'migration',
 ]);
 
-let mid = 0;
-
 export class MemoryStore {
-  constructor(capacity = 320) {
-    this.episodes = [];        // ordinary recollections, which fade and can be lost
-    this.core = [];            // the things a life is built on; these are never pruned
+  /**
+   * @param {number} [capacity=320] Max ordinary episodes kept after pruning.
+   * @param {object} [opts]
+   * @param {Iterable<string>} [opts.landmarkKinds] Extra kinds treated as permanent.
+   */
+  constructor(capacity = 320, opts = {}) {
+    this.episodes = [];        // ordinary recollections — fade and can be lost
+    this.core = [];            // life-defining memories — never pruned
     this.capacity = capacity;
-    this.semantic = new Map();  // key -> belief
-    this.edges = new Map();     // `${a}|${rel}|${b}` -> weight
+    this.semantic = new Map(); // key -> belief
+    this.edges = new Map();    // `${a}|${rel}|${b}` -> weight
     this.pruned = 0;
+    this._nextId = 0;
+
+    // Optional extension of landmark kinds
+    this._landmarks = opts.landmarkKinds
+      ? new Set([...LANDMARK_KINDS, ...opts.landmarkKinds])
+      : LANDMARK_KINDS;
   }
 
+  // ── Episodic layer ────────────────────────────────────────────────────────
+
+  /**
+   * Record an event. High-salience or landmark events become permanent (core).
+   * @param {object} ev
+   * @returns {object} the stored memory record
+   */
   remember(ev) {
+    const isLandmark = this._landmarks.has(ev.kind);
     const salience = clamp(
       (Math.abs(ev.valence ?? 0) * 0.5 + (ev.intensity ?? 0.3) * 0.5) *
-      (LANDMARK_KINDS.has(ev.kind) ? 1.5 : 1), 0, 1,
+        (isLandmark ? 1.5 : 1),
+      0,
+      1,
     );
+
     const m = {
-      id: ++mid,
-      tick: ev.tick,
-      kind: ev.kind,
-      text: ev.text,
-      actors: ev.actors || [],
-      place: ev.place || null,
-      concept: ev.concept || null,
+      id: ++this._nextId,
+      tick: ev.tick ?? 0,
+      kind: ev.kind ?? 'event',
+      text: ev.text ?? '',
+      actors: Array.isArray(ev.actors) ? ev.actors : [],
+      place: ev.place ?? null,
+      concept: ev.concept ?? null,
       valence: ev.valence ?? 0,
       salience,
       strength: 0.55 + salience * 0.45,
-      permanent: LANDMARK_KINDS.has(ev.kind) || salience > 0.78,
+      permanent: isLandmark || salience > 0.78,
       recalls: 0,
     };
-    if (m.permanent) this.core.push(m);
-    else {
+
+    if (m.permanent) {
+      this.core.push(m);
+    } else {
       this.episodes.push(m);
       if (this.episodes.length > this.capacity) this.prune();
     }
     return m;
   }
 
-  /** Forgetting the ordinary. Landmarks in `core` are exempt: what mattered stays. */
+  /**
+   * Forgetting the ordinary. Core memories are exempt.
+   * Keeps the strongest ~80 % of capacity (minimum 40).
+   */
   prune() {
     const room = Math.max(40, Math.round(this.capacity * 0.8));
     if (this.episodes.length <= room) return;
-    this.episodes.sort((a, b) => (b.strength * (0.5 + b.salience)) - (a.strength * (0.5 + a.salience)));
+
+    // Rank by current strength × salience, keep the top `room`
+    this.episodes.sort(
+      (a, b) =>
+        b.strength * (0.5 + b.salience) - a.strength * (0.5 + a.salience),
+    );
     this.pruned += this.episodes.length - room;
     this.episodes.length = room;
+
+    // Restore chronological order for later slicing / consolidation
     this.episodes.sort((a, b) => a.tick - b.tick);
   }
 
-  /** Slow forgetting of unimportant things; rehearsal strengthens the rest. */
+  /**
+   * Slow forgetting of unimportant episodes.
+   * Higher-salience memories decay more slowly.
+   * @param {number} [rate=0.0015]
+   */
   fade(rate = 0.0015) {
     for (const m of this.episodes) {
-      if (m.permanent) continue;
       m.strength = clamp(m.strength - rate * (1 - m.salience), 0, 1);
     }
   }
 
   /**
-   * Slow forgetting for BELIEFS, not just episodes. Without this, semantic
-   * confidence — once learned — never revisits itself unless something
-   * explicitly relearns that exact key, so stale beliefs sit unchanged
-   * forever even after the world has moved on. Lessons (hard-won reflective
-   * beliefs) are exempt; ordinary factual/place/recipe beliefs are not.
+   * Retrieve memories matching a predicate, ranked by strength, salience and
+   * mild recency. Successful recall strengthens the memory (rehearsal).
+   * @param {(m: object) => boolean} filter
+   * @param {number} [n=6]
    */
-  fadeBeliefs(rate = 0.0008) {
-    for (const b of this.semantic.values()) {
-      if (b.kind === 'lesson') continue;
-      b.confidence = clamp(b.confidence - rate * (1 - Math.abs(b.valence)), 0, 1);
-    }
-  }
-
   recall(filter, n = 6) {
     const hits = [];
     for (const m of this.core) if (filter(m)) hits.push(m);
     for (const m of this.episodes) if (filter(m)) hits.push(m);
-    const out = topN(hits, n, (m) => m.strength * (0.6 + m.salience) + m.tick * 1e-9);
-    for (const m of out) { m.recalls++; m.strength = clamp(m.strength + 0.05, 0, 1); }
+
+    // Prefer strength + salience; add a soft recency term that stays bounded
+    const score = (m) => {
+      const ageBias = 1 / (1 + Math.max(0, (Date.now() / 1000 - m.tick) * 1e-6)); // optional; or use pure tick
+      // Pure tick-based soft bias (works when tick is a simulation counter):
+      return m.strength * (0.6 + m.salience) + m.tick * 1e-9;
+    };
+
+    const out = topN(hits, n, score);
+    for (const m of out) {
+      m.recalls++;
+      m.strength = clamp(m.strength + 0.05, 0, 1);
+    }
     return out;
   }
 
-  about(actorId, n = 6) { return this.recall((m) => m.actors.includes(actorId), n); }
-  aboutConcept(key, n = 4) { return this.recall((m) => m.concept === key, n); }
+  about(actorId, n = 6) {
+    return this.recall((m) => m.actors.includes(actorId), n);
+  }
+
+  aboutConcept(key, n = 4) {
+    return this.recall((m) => m.concept === key, n);
+  }
 
   // ── Semantic layer ────────────────────────────────────────────────────────
+
   /**
-   * Learn or update a belief. Confidence is no longer a one-way ratchet: a
-   * disconfirming observation (low confidence paired with negative valence —
-   * e.g. "I went to where I thought the berries were, and there were none")
-   * can pull existing confidence DOWN, not just slow its climb. Without this,
-   * a belief that reality keeps contradicting only ever gets more certain and
-   * sadder, which is the opposite of learning.
+   * Learn or update a belief.
+   * Confidence is bidirectional: disconfirming evidence (negative valence)
+   * can lower existing confidence instead of only ratcheting upward.
+   *
+   * @param {string} key
+   * @param {object} [opts]
+   * @param {string}  [opts.kind='fact']
+   * @param {number}  [opts.confidence=0.4]
+   * @param {number}  [opts.valence=0]
+   * @param {string}  [opts.source='experience']
+   * @param {object|null} [opts.payload=null]
+   * @param {number|null} [opts.tick=null]  simulation tick when learned
    */
-  learn(key, { kind = 'fact', confidence = 0.4, valence = 0, source = 'experience', payload = null } = {}) {
+  learn(
+    key,
+    {
+      kind = 'fact',
+      confidence = 0.4,
+      valence = 0,
+      source = 'experience',
+      payload = null,
+      tick = null,
+    } = {},
+  ) {
     const cur = this.semantic.get(key);
+
     if (cur) {
       const disconfirming = valence < 0;
-      const target = disconfirming ? confidence * 0.5 : confidence;
-      const pull = disconfirming ? 0.35 : (1 - cur.confidence);
-      cur.confidence = clamp(cur.confidence + (target - cur.confidence) * pull, 0, 1);
+      // Incoming confidence is tempered when disconfirming
+      const target = disconfirming ? confidence * 0.55 : confidence;
+      // Pull strength: fixed modest pull on disconfirm, confidence-gap on confirm
+      const pull = disconfirming ? 0.32 : 1 - cur.confidence;
+      cur.confidence = clamp(
+        cur.confidence + (target - cur.confidence) * pull,
+        0,
+        1,
+      );
       cur.valence = cur.valence * 0.7 + valence * 0.3;
       cur.reinforced++;
-      if (payload) cur.payload = { ...(cur.payload || {}), ...payload };
+      cur.lastUpdated = tick ?? Date.now();
+      if (payload) {
+        cur.payload = { ...(cur.payload || {}), ...payload };
+      }
       return cur;
     }
-    const b = { key, kind, confidence: clamp(confidence, 0, 1), valence, source, payload, reinforced: 0, learnedAt: null };
+
+    const b = {
+      key,
+      kind,
+      confidence: clamp(confidence, 0, 1),
+      valence,
+      source,
+      payload,
+      reinforced: 0,
+      learnedAt: tick ?? Date.now(),
+      lastUpdated: tick ?? Date.now(),
+    };
     this.semantic.set(key, b);
     return b;
   }
 
-  knows(key, threshold = 0.12) { return (this.semantic.get(key)?.confidence || 0) >= threshold; }
-  belief(key) { return this.semantic.get(key) || null; }
+  /**
+   * Slow decay of ordinary beliefs. Lessons (hard-won reflective beliefs)
+   * are exempt so they remain stable personality anchors.
+   * @param {number} [rate=0.0008]
+   */
+  fadeBeliefs(rate = 0.0008) {
+    for (const b of this.semantic.values()) {
+      if (b.kind === 'lesson') continue;
+      b.confidence = clamp(
+        b.confidence - rate * (1 - Math.abs(b.valence)),
+        0,
+        1,
+      );
+    }
+  }
+
+  knows(key, threshold = 0.12) {
+    return (this.semantic.get(key)?.confidence || 0) >= threshold;
+  }
+
+  belief(key) {
+    return this.semantic.get(key) || null;
+  }
+
   knownKeys(kind = null) {
     const out = [];
-    for (const b of this.semantic.values()) if ((!kind || b.kind === kind) && b.confidence > 0.12) out.push(b.key);
+    for (const b of this.semantic.values()) {
+      if ((!kind || b.kind === kind) && b.confidence > 0.12) out.push(b.key);
+    }
     return out;
   }
 
+  // ── Relational graph ──────────────────────────────────────────────────────
+
+  /**
+   * Strengthen (or create) a directed relation a --rel--> b.
+   * Weights are clamped to [0, 1].
+   */
   link(a, rel, b, weight = 0.3) {
     const k = `${a}|${rel}|${b}`;
     this.edges.set(k, clamp((this.edges.get(k) || 0) + weight, 0, 1));
   }
+
+  /**
+   * Return outgoing relations from `a`. Optional filter by relation type.
+   * Results are sorted by weight descending.
+   */
   related(a, rel = null) {
     const out = [];
     for (const [k, w] of this.edges) {
       const [x, r, y] = k.split('|');
-      if (x === a && (!rel || r === rel)) out.push({ key: y, rel: r, weight: w });
+      if (x === a && (!rel || r === rel)) {
+        out.push({ key: y, rel: r, weight: w });
+      }
     }
+    out.sort((p, q) => q.weight - p.weight);
     return out;
   }
 
-  /** Sleep consolidation: repeated episodes harden into semantic beliefs. */
+  /**
+   * Optional: prune very weak edges to keep the graph bounded.
+   * @param {number} [minWeight=0.05]
+   */
+  pruneEdges(minWeight = 0.05) {
+    for (const [k, w] of this.edges) {
+      if (w < minWeight) this.edges.delete(k);
+    }
+  }
+
+  // ── Consolidation ─────────────────────────────────────────────────────────
+
+  /**
+   * Sleep consolidation: repeated recent episodes harden into semantic beliefs.
+   * High-salience core events can crystallize into permanent “lesson” beliefs.
+   * @param {object} [agent] optional agent reference (unused in base impl)
+   */
   consolidate(agent) {
     const counts = new Map();
-    for (const m of this.episodes.slice(-40).concat(this.core.slice(-20))) {
+
+    // Recent ordinary + recent core
+    const candidates = this.episodes.slice(-40).concat(this.core.slice(-20));
+    for (const m of candidates) {
       if (!m.concept) continue;
       const c = counts.get(m.concept) || { n: 0, v: 0 };
-      c.n++; c.v += m.valence;
+      c.n++;
+      c.v += m.valence;
       counts.set(m.concept, c);
     }
+
     for (const [key, c] of counts) {
-      if (c.n >= 3) this.learn(key, { kind: 'concept', confidence: 0.1 + c.n * 0.03, valence: c.v / c.n, source: 'reflection' });
+      if (c.n >= 3) {
+        this.learn(key, {
+          kind: 'concept',
+          confidence: 0.1 + c.n * 0.03,
+          valence: c.v / c.n,
+          source: 'reflection',
+        });
+      }
     }
-    // Grief and joy leave permanent traces on personality-adjacent beliefs.
-    const strongest = topN(this.core.length ? this.core : this.episodes, 1, (m) => m.salience)[0];
-    if (strongest && strongest.salience > 0.8) this.learn(`lesson:${strongest.kind}`, { kind: 'lesson', confidence: 0.3, valence: strongest.valence, source: 'reflection' });
+
+    // Strongest permanent memory can leave a lasting lesson
+    const pool = this.core.length ? this.core : this.episodes;
+    const strongest = topN(pool, 1, (m) => m.salience)[0];
+    if (strongest && strongest.salience > 0.8) {
+      const lessonKey = `lesson:${strongest.kind}`;
+      const existing = this.belief(lessonKey);
+      // Only create or gently reinforce; avoid overwriting with low confidence
+      this.learn(lessonKey, {
+        kind: 'lesson',
+        confidence: existing ? Math.max(existing.confidence, 0.35) : 0.35,
+        valence: strongest.valence,
+        source: 'reflection',
+      });
+    }
   }
+
+  // ── Introspection ─────────────────────────────────────────────────────────
 
   stats() {
     return {
       episodes: this.episodes.length + this.core.length,
+      ordinary: this.episodes.length,
       permanent: this.core.length,
       pruned: this.pruned,
       beliefs: this.semantic.size,
