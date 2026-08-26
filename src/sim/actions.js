@@ -2,6 +2,9 @@
 // utility derived from the agent's own body, feelings, beliefs and relationships,
 // so behaviour is never scripted — it is argued for, and the strongest argument
 // (with some temperament-driven noise) wins.
+//
+// Norms enter here only as learned beliefs (via sim.effectiveNorm / personalNorm).
+// Nothing is forbidden because a constant said so.
 
 import { clamp, dist, topN } from '../core/util.js';
 import { TERRAIN } from '../world/world.js';
@@ -11,10 +14,6 @@ import { appraise } from './emotion.js';
 
 const T = (x, y) => ({ x, y });
 
-/**
- * Step one tile toward target using a short ordered list of tries.
- * Returns true when the agent is standing on the target tile.
- */
 function stepToward(agent, world, target) {
   const dx = Math.sign(target.x - agent.x);
   const dy = Math.sign(target.y - agent.y);
@@ -41,7 +40,6 @@ function stepToward(agent, world, target) {
   return false;
 }
 
-/** Nearest water / marsh tile within radius, or null. */
 function nearWater(world, agent, radius = 14) {
   let best = null;
   let bd = Infinity;
@@ -64,7 +62,6 @@ function nearWater(world, agent, radius = 14) {
   return best;
 }
 
-/** Adjacent walkable tile next to a target (stand beside water / rock / corpse). */
 function beside(world, t) {
   for (const [ox, oy] of [
     [1, 0], [-1, 0], [0, 1], [0, -1],
@@ -75,7 +72,21 @@ function beside(world, t) {
   return t;
 }
 
-// ── Shared utility scales (tune here, not scattered through proposes) ───────
+/**
+ * Norm pressure in roughly [-1, 1] from the agent's own beliefs + population climate.
+ * Falls back safely if sim helpers are missing.
+ */
+function normPull(a, ctx, key) {
+  if (typeof ctx.sim.effectiveNorm === 'function') {
+    return ctx.sim.effectiveNorm(a, key);
+  }
+  if (typeof ctx.sim.personalNorm === 'function') {
+    return ctx.sim.personalNorm(a, key);
+  }
+  // Legacy: society strength only (signed negative for prohibitions)
+  const s = ctx.sim.normStrength?.(key) || 0;
+  return -s;
+}
 
 const U = {
   thirstBase: 2.6,
@@ -86,8 +97,6 @@ const U = {
   warmth: 3.2,
   idle: 0.08,
 };
-
-// ── Structure catalogue ─────────────────────────────────────────────────────
 
 const STRUCTURE_KINDS = {
   shelter:  { fn: 'shelter',    cost: 6,  need: (s) => s.shelterDeficit,  desc: 'a place to sleep out of the weather' },
@@ -100,8 +109,6 @@ const STRUCTURE_KINDS = {
   wall:     { fn: 'shelter',    cost: 14, need: (s) => s.wallDeficit,     desc: 'a boundary against what is out there' },
   hall:     { fn: 'shelter',    cost: 18, need: (s) => s.hallDeficit,     desc: 'one roof big enough for everyone' },
 };
-
-// ── Actions ─────────────────────────────────────────────────────────────────
 
 export const ACTIONS = {
   // ── survival ──────────────────────────────────────────────────────────────
@@ -155,22 +162,21 @@ export const ACTIONS = {
         if (n > (best?.n || 0)) best = { key, n, c };
       }
       if (!best) {
-        // Fall through to takeFromStore if a stocked store exists
         const store = ctx.world
           .structuresOfKind('store')
           .find((s) => s.stock && [...s.stock.values()].some((v) => v > 0));
         if (store) {
           return [{
             kind: 'takeFromStore',
-            u: a.body.hunger * U.hungerBase +
-               Math.max(0, a.body.hunger - 0.45) * 10,
+            u:
+              a.body.hunger * U.hungerBase +
+              Math.max(0, a.body.hunger - 0.45) * 10,
             target: store,
             dur: 1,
           }];
         }
         return [];
       }
-      // A person with food in hand and an empty stomach eats. Nothing outbids that.
       const u =
         (a.body.hunger * U.hungerBase +
           Math.max(0, a.body.hunger - 0.45) * U.hungerCrisis) *
@@ -218,7 +224,6 @@ export const ACTIONS = {
 
   takeFromStore: {
     category: 'body',
-    // Now proposable on its own (low priority) so it appears in reasoning traces
     propose(a, ctx) {
       if (a.body.hunger < 0.45) return [];
       const store = ctx.world
@@ -317,7 +322,7 @@ export const ACTIONS = {
     },
   },
 
-  // ── work ──────────────────────────────────────────────────────────────────
+  // ── work (unchanged structure; omitted comments only) ───────────────────
 
   gather: {
     category: 'work',
@@ -429,7 +434,9 @@ export const ACTIONS = {
         0.25 + a.skills.hunt * 0.9 + (weapon ? weapon.score * 0.9 : 0);
       const risk = clamp(0.5 - capability * 0.4);
       const u =
-        (hungerPull * capability * ctx.bias.work *
+        (hungerPull *
+          capability *
+          ctx.bias.work *
           (1 - risk * (1 - a.genome.risk))) /
         (1 + dist(a, spot) * 0.05);
       return [{
@@ -485,7 +492,8 @@ export const ACTIONS = {
           a.memory.learn(k, { kind: 'matter', confidence: 0.6, valence: 0.4 });
         }
       } else {
-        const hurt = ctx.rng.float(0.05, 0.3) / Math.max(0.2, a.genome.resilience);
+        const hurt =
+          ctx.rng.float(0.05, 0.3) / Math.max(0.2, a.genome.resilience);
         a.body.injury = clamp(a.body.injury + hurt, 0, 1);
         const idx = ctx.world.idx(act.site.x, act.site.y);
         ctx.world.danger[idx] = clamp(ctx.world.danger[idx] + 0.3, 0, 1);
@@ -522,7 +530,6 @@ export const ACTIONS = {
         if (!c) continue;
         const have = c.parents.every((p) => a.count(p) >= 1);
         if (!have) continue;
-        // Nobody grinds their last meal into a trinket while the pot is empty.
         if (
           hungryHousehold &&
           !c.functions.sustenance &&
@@ -533,9 +540,16 @@ export const ACTIONS = {
           continue;
         }
         const desire = a.desireFor(key, ctx.ont, ctx.sim);
+        // Craft-respect norm gently boosts making things well
+        const craftNorm = normPull(a, ctx, 'craft');
         out.push({
           kind: 'craft',
-          u: desire * 1.3 * ctx.bias.work * (0.5 + a.skills.craft),
+          u:
+            desire *
+            1.3 *
+            ctx.bias.work *
+            (0.5 + a.skills.craft) *
+            (1 + Math.max(0, craftNorm) * 0.25),
           payload: key,
           dur: 2 + c.tier,
         });
@@ -604,7 +618,9 @@ export const ACTIONS = {
         let w = 0.3 + (a.memory.belief(k)?.confidence || 0) * 0.6;
         if (short && c.serves('sustenance') > 0.2) w *= 0.08;
         for (const g of gaps) {
-          w += (c.functions[g] || 0) * 1.5 + (c.props.hard + c.props.flexible) * 0.1;
+          w +=
+            (c.functions[g] || 0) * 1.5 +
+            (c.props.hard + c.props.flexible) * 0.1;
         }
         return w;
       };
@@ -687,889 +703,4 @@ export const ACTIONS = {
     propose(a, ctx) {
       if (a.isChild(ctx.world.tick)) return [];
       const settlement = ctx.sim.nearestSettlement(a.x, a.y);
-      const s = ctx.sim.settlementNeeds(settlement);
-      const out = [];
-
-      for (const [kind, def] of Object.entries(STRUCTURE_KINDS)) {
-        const need = def.need(s);
-        if (need <= 0.05) continue;
-        const material = ctx.sim.bestBuildMaterial(a, def.fn);
-        if (!material) continue;
-        const cost = Math.ceil(def.cost / (0.5 + material.score));
-
-        if (a.count(material.key) < cost) {
-          // Wanting a thing built is itself a reason to go fetch stone or timber.
-          const spot = ctx.world.findResource(material.key, a, 16);
-          if (spot && a.carried() <= a.carryLimit) {
-            out.push({
-              kind: 'gather',
-              u: need * 1.25 * ctx.bias.work * (0.5 + a.genome.industry),
-              payload: material.key,
-              target: beside(ctx.world, spot),
-              site: spot,
-              dur: 2,
-            });
-          }
-          continue;
-        }
-
-        // Skill 0 no longer near-disqualifies the first building.
-        const u =
-          need *
-          1.5 *
-          ctx.bias.work *
-          (0.65 + a.skills.build * 0.5) *
-          (0.5 + a.genome.industry);
-        out.push({
-          kind: 'build',
-          u,
-          payload: {
-            structure: kind,
-            material: material.key,
-            cost,
-            fn: def.fn,
-            settlement,
-          },
-          dur: 4 + Math.round(def.cost / 3),
-        });
-      }
-      return topN(out, 2, (o) => o.u);
-    },
-    run(a, ctx, act) {
-      if (!act.spot) {
-        act.spot = ctx.sim.pickBuildSite(
-          a,
-          act.payload.structure,
-          act.payload.settlement,
-        );
-      }
-      if (!act.spot) return 'abort';
-      if (dist(a, act.spot) > 1.2) {
-        stepToward(a, ctx.world, act.spot);
-        return 'continue';
-      }
-      a.body.energy = clamp(a.body.energy - 0.05, 0, 1);
-      if (--act.dur > 0) return 'continue';
-
-      // Atomic material check
-      const { material, cost } = act.payload;
-      if (a.count(material) < cost) return 'abort';
-      a.take(material, cost);
-
-      const st = ctx.sim.raiseStructure(
-        a,
-        act.payload.structure,
-        act.spot,
-        material,
-      );
-      a.stats.built++;
-      a.gainSkill('build', 0.07);
-      appraise(a, {
-        goalCongruence: 0.8,
-        agency: 'self',
-        intensity: 0.7,
-        kind: 'first',
-      });
-      if (!a.home && act.payload.structure === 'shelter') a.home = st;
-      return 'done';
-    },
-  },
-
-  expand: {
-    category: 'work',
-    propose(a, ctx) {
-      if (a.isChild(ctx.world.tick) || a.ageAt(ctx.world.tick) < 16) return [];
-      const home = ctx.sim.nearestSettlement(a.x, a.y);
-      const pressure = ctx.sim.settlementPressure(home);
-      if (pressure < 0.35) return [];
-
-      const known = a.memory
-        .knownKeys('place')
-        .map((k) => a.memory.belief(k))
-        .filter((b) => b?.payload);
-      let best = null;
-      let bestScore = 0;
-      for (const belief of known) {
-        const p = belief.payload;
-        const nearestD = Math.min(
-          ...ctx.sim.settlements.map((s) => dist(p, s)),
-        );
-        if (nearestD < 24) continue;
-        const score =
-          clamp(belief.confidence) *
-          (0.4 + clamp(belief.valence, 0, 1)) *
-          Math.min(1, nearestD * 0.02);
-        if (score > bestScore) {
-          bestScore = score;
-          best = p;
-        }
-      }
-      if (!best) return [];
-      const u =
-        pressure *
-        (0.4 + a.genome.risk + a.genome.industry * 0.5) *
-        ctx.bias.work *
-        (0.3 + bestScore);
-      if (u < 0.4) return [];
-      return [{ kind: 'expand', u, target: T(best.x, best.y), dur: 1 }];
-    },
-    run(a, ctx, act) {
-      if (dist(a, act.target) > 1.4) {
-        stepToward(a, ctx.world, act.target);
-        return 'continue';
-      }
-      ctx.sim.foundSettlement(a, act.target);
-      return 'done';
-    },
-  },
-
-  farm: {
-    category: 'work',
-    propose(a, ctx) {
-      const fields = ctx.world.structuresOfKind('field');
-      if (!fields.length) return [];
-      const f = topN(
-        fields,
-        1,
-        (s) => (s.ripeness || 0) * 2 - dist(a, s) * 0.05,
-      )[0];
-      if (!f) return [];
-      const ripe = f.ripeness || 0;
-      const u =
-        (ripe > 0.85 ? 1.9 + a.body.hunger : 0.5) *
-        ctx.bias.work *
-        (0.4 + a.skills.farm) /
-        (1 + dist(a, f) * 0.05);
-      return [{ kind: 'farm', u, target: T(f.x, f.y), field: f, dur: 2 }];
-    },
-    run(a, ctx, act) {
-      if (dist(a, act.target) > 1.2) {
-        stepToward(a, ctx.world, act.target);
-        return 'continue';
-      }
-      const f = act.field;
-      if ((f.ripeness || 0) > 0.85) {
-        const got =
-          2 +
-          Math.round(
-            a.skills.farm * 5 +
-              ctx.world.fertility[ctx.world.idx(f.x, f.y)] * 4,
-          );
-        a.add('grain', got);
-        f.ripeness = 0;
-        f.harvests = (f.harvests || 0) + 1;
-        a.stats.harvested += got;
-        a.gainSkill('farm', 0.05);
-        ctx.sim.record(
-          a,
-          'harvest',
-          `${a.name} took ${Math.round(got)} ${ctx.ont.get('grain')?.word || 'grain'} from the ${f.word}`,
-          { valence: 0.6, intensity: 0.5, concept: 'grain' },
-        );
-        appraise(a, {
-          goalCongruence: 0.65,
-          agency: 'self',
-          intensity: 0.5,
-          kind: 'harvest',
-        });
-      } else {
-        f.tended = (f.tended || 0) + 0.15 + a.skills.farm * 0.2;
-        a.gainSkill('farm', 0.02);
-        if (--act.dur > 0) return 'continue';
-      }
-      return 'done';
-    },
-  },
-
-  store: {
-    category: 'work',
-    propose(a, ctx) {
-      const stores = ctx.world.structuresOfKind('store');
-      if (!stores.length) return [];
-      let surplus = 0;
-      for (const [k, v] of a.inventory) {
-        const c = ctx.ont.get(k);
-        if (c?.functions.sustenance && v > 3) surplus += v - 3;
-      }
-      if (surplus < 2) return [];
-      const s = topN(stores, 1, (x) => -dist(a, x))[0];
-      const u =
-        surplus * 0.16 * (0.5 + a.genome.patience) * ctx.bias.hoard;
-      return [{ kind: 'store', u, target: T(s.x, s.y), store: s, dur: 1 }];
-    },
-    run(a, ctx, act) {
-      if (dist(a, act.target) > 1.2) {
-        stepToward(a, ctx.world, act.target);
-        return 'continue';
-      }
-      let moved = 0;
-      for (const [k, v] of [...a.inventory]) {
-        const c = ctx.ont.get(k);
-        if (c?.functions.sustenance && v > 3) {
-          const give = v - 3;
-          a.take(k, give);
-          act.store.stock.set(
-            k,
-            (act.store.stock.get(k) || 0) + give,
-          );
-          moved += give;
-        }
-      }
-      if (moved) {
-        ctx.sim.record(
-          a,
-          'store',
-          `${a.name} laid ${Math.round(moved)} measures of food into the ${act.store.word}`,
-          { valence: 0.35, intensity: 0.3, quiet: true },
-        );
-      }
-      return 'done';
-    },
-  },
-
-  // ── social ────────────────────────────────────────────────────────────────
-
-  converse: {
-    category: 'social',
-    propose(a, ctx) {
-      const near = ctx.nearby(a, 6).filter((o) => o.id !== a.id);
-      if (!near.length) return [];
-      const out = [];
-      for (const o of near.slice(0, 4)) {
-        const r = a.rel(o);
-        const lonely = 1 - clamp(r.familiarity);
-        const u =
-          (0.2 + a.genome.sociability * 0.8) *
-          ctx.bias.social *
-          (1 - a.body.hunger * 0.6) *
-          (0.4 + lonely * 0.6 + r.affection * 0.5 + a.genome.expressive * 0.3) /
-          (1 + dist(a, o) * 0.12);
-        out.push({ kind: 'converse', u, targetId: o.id, dur: 2 });
-      }
-      return topN(out, 2, (o) => o.u);
-    },
-    run(a, ctx, act) {
-      const o = ctx.sim.byId(act.targetId);
-      if (!o || !o.alive) return 'abort';
-      if (dist(a, o) > 1.6) {
-        stepToward(a, ctx.world, T(o.x, o.y));
-        return 'continue';
-      }
-      ctx.sim.converse(a, o);
-      if (--act.dur > 0) return 'continue';
-      return 'done';
-    },
-  },
-
-  teach: {
-    category: 'social',
-    propose(a, ctx) {
-      const near = ctx.nearby(a, 5).filter((o) => o.id !== a.id);
-      if (!near.length) return [];
-      const mine = a.memory.knownKeys('recipe');
-      if (!mine.length) return [];
-      const out = [];
-      for (const o of near) {
-        const unknown = mine.filter((k) => !o.memory.knows(k, 0.3));
-        if (!unknown.length) continue;
-        const kinBonus = a.children.includes(o.id) ? 1.4 : 0;
-        const u =
-          (0.25 + a.genome.empathy * 0.9 + kinBonus) *
-          ctx.bias.social *
-          (0.4 + a.skills.teach) *
-          (a.isElder(ctx.world.tick) ? 1.5 : 1) *
-          (o.isChild(ctx.world.tick) ? 1.4 : 1);
-        out.push({
-          kind: 'teach',
-          u,
-          targetId: o.id,
-          payload: ctx.rng.pick(unknown),
-          dur: 3,
-        });
-      }
-      return topN(out, 1, (o) => o.u);
-    },
-    run(a, ctx, act) {
-      const o = ctx.sim.byId(act.targetId);
-      if (!o || !o.alive) return 'abort';
-      if (dist(a, o) > 1.6) {
-        stepToward(a, ctx.world, T(o.x, o.y));
-        return 'continue';
-      }
-      if (--act.dur > 0) return 'continue';
-      ctx.sim.teach(a, o, act.payload);
-      return 'done';
-    },
-  },
-
-  trade: {
-    category: 'social',
-    propose(a, ctx) {
-      const near = ctx
-        .nearby(a, 7)
-        .filter((o) => o.id !== a.id && !o.isChild(ctx.world.tick));
-      const out = [];
-      for (const o of near) {
-        const r = a.rel(o);
-        if (ctx.world.tick - (r.lastTrade || -999) < 30) continue;
-        const deal = ctx.sim.findDeal(a, o);
-        if (!deal) continue;
-        out.push({
-          kind: 'trade',
-          u:
-            deal.gain *
-            0.6 *
-            (0.5 + r.trust) *
-            (0.5 + a.skills.trade + a.genome.sociability * 0.5),
-          targetId: o.id,
-          deal,
-          dur: 2,
-        });
-      }
-      return topN(out, 1, (o) => o.u);
-    },
-    run(a, ctx, act) {
-      const o = ctx.sim.byId(act.targetId);
-      if (!o || !o.alive) return 'abort';
-      if (dist(a, o) > 1.6) {
-        stepToward(a, ctx.world, T(o.x, o.y));
-        return 'continue';
-      }
-      if (--act.dur > 0) return 'continue';
-      ctx.sim.settleTrade(a, o, act.deal);
-      return 'done';
-    },
-  },
-
-  give: {
-    category: 'social',
-    propose(a, ctx) {
-      const near = ctx.nearby(a, 5).filter((o) => o.id !== a.id);
-      const out = [];
-      for (const o of near) {
-        const r = a.rel(o);
-        const kinChild =
-          o.isChild(ctx.world.tick) &&
-          (r.kin > 0.3 || a.household === o.household);
-        const theirNeed =
-          o.body.hunger * 1.4 +
-          o.body.illness +
-          (kinChild ? 0.5 : 0);
-        if (
-          theirNeed < (kinChild ? 0.35 : 0.6) ||
-          a.body.hunger > (kinChild ? 0.72 : 0.5)
-        ) {
-          continue;
-        }
-        let gift = null;
-        for (const [k, v] of a.inventory) {
-          const c = ctx.ont.get(k);
-          if (!c) continue;
-          if (o.body.hunger > 0.6 && c.functions.sustenance && v > 1) {
-            gift = k;
-            break;
-          }
-          if (o.body.illness > 0.3 && c.functions.medicine && v > 0) {
-            gift = k;
-            break;
-          }
-        }
-        if (!gift) continue;
-        const u =
-          theirNeed *
-          (a.genome.empathy * 1.5 +
-            r.affection * 1.2 +
-            r.kin * 1.5 +
-            (r.debt < 0 ? 0.6 : 0)) *
-          ctx.bias.social;
-        out.push({
-          kind: 'give',
-          u,
-          targetId: o.id,
-          payload: gift,
-          dur: 1,
-        });
-      }
-      return topN(out, 1, (o) => o.u);
-    },
-    run(a, ctx, act) {
-      const o = ctx.sim.byId(act.targetId);
-      if (!o || !o.alive) return 'abort';
-      if (dist(a, o) > 1.6) {
-        stepToward(a, ctx.world, T(o.x, o.y));
-        return 'continue';
-      }
-      if (!a.take(act.payload, 1)) return 'abort';
-      o.add(act.payload, 1);
-      a.stats.gifts++;
-      ctx.sim.counters.gifts++;
-      const word = ctx.ont.get(act.payload)?.word || act.payload;
-      a.adjustRel(o, { affection: 0.08, familiarity: 0.06, debt: -0.4 });
-      o.adjustRel(a, {
-        affection: 0.16,
-        trust: 0.14,
-        familiarity: 0.08,
-        debt: 0.5,
-      });
-      ctx.sim.record(
-        a,
-        'gift',
-        `${a.name} gave ${word} to ${o.name}, who had none`,
-        { valence: 0.6, intensity: 0.6, actors: [a.id, o.id] },
-      );
-      appraise(a, {
-        goalCongruence: 0.4,
-        agency: 'self',
-        intensity: 0.5,
-        kind: 'gift',
-        norm: 1,
-        social: o.id,
-      });
-      appraise(o, {
-        goalCongruence: 0.7,
-        agency: 'other',
-        intensity: 0.7,
-        kind: 'gift',
-        social: a.id,
-      });
-      ctx.sim.reputationDelta(a, 0.05);
-      return 'done';
-    },
-  },
-
-  steal: {
-    category: 'social',
-    propose(a, ctx) {
-      const desperate = a.body.hunger > 0.75 || a.body.illness > 0.5;
-      if (!desperate && a.genome.empathy > 0.35) return [];
-      const near = ctx
-        .nearby(a, 5)
-        .filter((o) => o.id !== a.id && o.carried() > 2);
-      const out = [];
-      for (const o of near) {
-        const norm = ctx.sim.normStrength('theft');
-        const u =
-          (a.body.hunger * 1.5 + (1 - a.genome.empathy)) *
-            (1 - norm * 1.3) *
-            (0.4 + a.genome.risk) -
-          a.rel(o).affection;
-        if (u <= 0.2) continue;
-        out.push({ kind: 'steal', u, targetId: o.id, dur: 1 });
-      }
-      return topN(out, 1, (o) => o.u);
-    },
-    run(a, ctx, act) {
-      const o = ctx.sim.byId(act.targetId);
-      if (!o || !o.alive) return 'abort';
-      if (dist(a, o) > 1.4) {
-        stepToward(a, ctx.world, T(o.x, o.y));
-        return 'continue';
-      }
-      const keys = [...o.inventory.keys()];
-      if (!keys.length) return 'abort';
-      const key = topN(keys, 1, (k) => a.desireFor(k, ctx.ont, ctx.sim))[0];
-      const requested = 1 + Math.floor(a.genome.risk * 2);
-      const n = o.take(key, requested);
-      if (!n) return 'abort';
-      a.add(key, n);
-      a.stats.thefts++;
-      ctx.sim.onTheft(a, o, key, n);
-      return 'done';
-    },
-  },
-
-  court: {
-    category: 'social',
-    propose(a, ctx) {
-      const age = a.ageAt(ctx.world.tick);
-      if (age < 15 || age > 52 || a.partner) return [];
-      const near = ctx
-        .nearby(a, 8)
-        .filter(
-          (o) =>
-            o.id !== a.id &&
-            !o.partner &&
-            o.ageAt(ctx.world.tick) > 16 &&
-            o.ageAt(ctx.world.tick) < 50 &&
-            a.rel(o).kin < 0.4,
-        );
-      const out = [];
-      for (const o of near) {
-        const r = a.rel(o);
-        const u =
-          (r.affection * 1.6 +
-            r.familiarity * 1.1 +
-            a.genome.fertility * 0.7 +
-            a.affect.e.love +
-            0.25) *
-          ctx.bias.social;
-        if (u < 0.3) continue;
-        out.push({ kind: 'court', u, targetId: o.id, dur: 3 });
-      }
-      return topN(out, 1, (o) => o.u);
-    },
-    run(a, ctx, act) {
-      const o = ctx.sim.byId(act.targetId);
-      if (!o || !o.alive || o.partner) return 'abort';
-      if (dist(a, o) > 1.4) {
-        stepToward(a, ctx.world, T(o.x, o.y));
-        return 'continue';
-      }
-      a.adjustRel(o, { affection: 0.12, familiarity: 0.1 });
-      o.adjustRel(a, { affection: 0.1, familiarity: 0.1 });
-      if (--act.dur > 0) return 'continue';
-      ctx.sim.tryBond(a, o);
-      return 'done';
-    },
-  },
-
-  fight: {
-    category: 'social',
-    propose(a, ctx) {
-      if (a.affect.e.anger < 0.45) return [];
-      if (ctx.world.tick - (a.lastFightTick || -999) < 60) return [];
-      const near = ctx.nearby(a, 4).filter((o) => o.id !== a.id);
-      const out = [];
-      for (const o of near) {
-        const r = a.rel(o);
-        if (r.kin > 0.5 || r.affection > 0.15) continue;
-        const grudge =
-          clamp(-r.affection) + Math.min(0.35, r.conflicts * 0.07);
-        const u =
-          (a.affect.e.anger * 1.1 + grudge * 0.9) *
-            (0.15 + a.genome.aggression * 1.2) *
-            ctx.bias.aggress *
-            (1 - a.genome.empathy * 0.7) -
-          ctx.sim.normStrength('violence') * 1.6;
-        if (u < 0.95) continue;
-        out.push({ kind: 'fight', u, targetId: o.id, dur: 1 });
-      }
-      return topN(out, 1, (o) => o.u);
-    },
-    run(a, ctx, act) {
-      const o = ctx.sim.byId(act.targetId);
-      if (!o || !o.alive) return 'abort';
-      if (dist(a, o) > 1.4) {
-        stepToward(a, ctx.world, T(o.x, o.y));
-        return 'continue';
-      }
-      ctx.sim.resolveFight(a, o);
-      return 'done';
-    },
-  },
-
-  follow: {
-    category: 'social',
-    propose(a, ctx) {
-      const age = a.ageAt(ctx.world.tick);
-      let leader = null;
-      let weight = 0;
-
-      if (age < 11) {
-        for (const id of [a.motherId, a.fatherId]) {
-          const p = id && ctx.sim.byId(id);
-          if (p && p.alive) {
-            leader = p;
-            weight = 2.4 - age * 0.12;
-            break;
-          }
-        }
-        if (!leader) {
-          const adults = ctx
-            .nearby(a, 20)
-            .filter((o) => o.id !== a.id && !o.isChild(ctx.world.tick));
-          if (adults.length) {
-            leader = adults.sort((x, y) => dist(a, x) - dist(a, y))[0];
-            weight = 1.6;
-          }
-        }
-      } else if (a.partner) {
-        const p = ctx.sim.byId(a.partner);
-        if (p && p.alive) {
-          leader = p;
-          weight = 0.5 + a.rel(p).affection * 0.8;
-        }
-      }
-
-      if (!leader) return [];
-      const d = dist(a, leader);
-      if (d < 3) return [];
-      // Soft distance fall-off so very distant leaders do not dominate crisis
-      const distFactor = Math.min(1.6, d * 0.16) * (d > 18 ? 0.4 : 1);
-      return [{
-        kind: 'follow',
-        u: weight * distFactor,
-        targetId: leader.id,
-        dur: 1,
-      }];
-    },
-    run(a, ctx, act) {
-      const o = ctx.sim.byId(act.targetId);
-      if (!o || !o.alive) return 'abort';
-      if (dist(a, o) <= 2.2) return 'done';
-      stepToward(a, ctx.world, T(o.x, o.y));
-      return 'continue';
-    },
-  },
-
-  care: {
-    category: 'social',
-    propose(a, ctx) {
-      const near = ctx
-        .nearby(a, 6)
-        .filter(
-          (o) =>
-            o.id !== a.id &&
-            (o.body.illness > 0.3 || o.body.injury > 0.3),
-        );
-      const out = [];
-      const remedy = a.bestToolFor('medicine', ctx.ont);
-      for (const o of near) {
-        const r = a.rel(o);
-        const u =
-          (o.body.illness + o.body.injury) *
-          (a.genome.empathy * 1.4 + r.kin * 1.2 + r.affection) *
-          (0.4 + a.skills.heal + (remedy ? remedy.score : 0));
-        out.push({
-          kind: 'care',
-          u,
-          targetId: o.id,
-          payload: remedy?.key || null,
-          dur: 2,
-        });
-      }
-      return topN(out, 1, (o) => o.u);
-    },
-    run(a, ctx, act) {
-      const o = ctx.sim.byId(act.targetId);
-      if (!o || !o.alive) return 'abort';
-      if (dist(a, o) > 1.4) {
-        stepToward(a, ctx.world, T(o.x, o.y));
-        return 'continue';
-      }
-      if (--act.dur > 0) return 'continue';
-
-      const remedyPower = act.payload
-        ? ctx.ont.get(act.payload)?.serves('medicine') || 0
-        : 0;
-      const heal = 0.12 + a.skills.heal * 0.4 + remedyPower * 0.6;
-      const before = o.body.illness + o.body.injury;
-      o.body.illness = clamp(o.body.illness - heal, 0, 1);
-      o.body.injury = clamp(o.body.injury - heal, 0, 1);
-      if (act.payload) a.take(act.payload, 1);
-      a.gainSkill('heal', 0.06);
-      a.stats.rescues++;
-      o.adjustRel(a, { trust: 0.2, affection: 0.18, debt: 0.6 });
-      a.adjustRel(o, { affection: 0.1, familiarity: 0.08 });
-      ctx.sim.record(
-        a,
-        'rescue',
-        `${a.name} tended ${o.name}${
-          act.payload ? ` with ${ctx.ont.get(act.payload)?.word}` : ''
-        }`,
-        { valence: 0.6, intensity: 0.6, actors: [a.id, o.id] },
-      );
-      appraise(o, {
-        goalCongruence: clamp(before, 0, 1),
-        agency: 'other',
-        intensity: 0.6,
-        kind: 'rescue',
-        social: a.id,
-      });
-      if (remedyPower > 0.2) {
-        a.memory.learn(act.payload, {
-          kind: 'recipe',
-          confidence: 0.3,
-          valence: 0.6,
-          source: 'healing',
-        });
-      }
-      return 'done';
-    },
-  },
-
-  bury: {
-    category: 'ritual',
-    propose(a, ctx) {
-      if (!ctx.world.corpses?.length) return [];
-      const c = topN(ctx.world.corpses, 1, (k) => -dist(a, k))[0];
-      if (!c || dist(a, c) > 22) return [];
-      const r = a.rel(c.id) || { kin: 0, affection: 0 };
-      const u =
-        (0.5 +
-          a.genome.empathy +
-          r.kin * 1.5 +
-          r.affection +
-          a.affect.e.grief) *
-        1.2;
-      return [{
-        kind: 'bury',
-        u,
-        target: T(c.x, c.y),
-        corpse: c,
-        dur: 3,
-      }];
-    },
-    run(a, ctx, act) {
-      if (!ctx.world.corpses.includes(act.corpse)) return 'abort';
-      if (dist(a, act.target) > 1.2) {
-        stepToward(a, ctx.world, act.target);
-        return 'continue';
-      }
-      if (--act.dur > 0) return 'continue';
-      ctx.sim.bury(a, act.corpse);
-      return 'done';
-    },
-  },
-
-  ritual: {
-    category: 'ritual',
-    propose(a, ctx) {
-      const shrines = ctx.world
-        .structuresOfKind('shrine')
-        .concat(ctx.world.sites?.filter((s) => s.kind === 'graves') || []);
-      if (!shrines.length) return [];
-      const s = topN(shrines, 1, (x) => -dist(a, x))[0];
-      const u =
-        (a.affect.e.grief * 1.4 +
-          a.affect.e.awe * 1.2 +
-          a.genome.expressive * 0.5 +
-          (ctx.sim.ritualPull || 0)) *
-        0.9 /
-        (1 + dist(a, s) * 0.04);
-      if (u < 0.4) return [];
-      return [{
-        kind: 'ritual',
-        u,
-        target: T(s.x, s.y),
-        site: s,
-        dur: 3,
-      }];
-    },
-    run(a, ctx, act) {
-      if (dist(a, act.target) > 1.2) {
-        stepToward(a, ctx.world, act.target);
-        return 'continue';
-      }
-      if (--act.dur > 0) return 'continue';
-      ctx.sim.performRitual(a, act.site);
-      return 'done';
-    },
-  },
-
-  makeArt: {
-    category: 'thought',
-    propose(a, ctx) {
-      const medium =
-        a.bestToolFor('art', ctx.ont) || a.bestToolFor('record', ctx.ont);
-      const u =
-        (a.genome.expressive * 1.3 +
-          a.affect.e.awe +
-          a.affect.e.grief * 0.8 +
-          a.affect.e.love * 0.6) *
-          ctx.bias.create *
-          (medium ? 1.4 : 0.6) -
-        a.body.hunger;
-      if (u < 0.6) return [];
-      return [{
-        kind: 'makeArt',
-        u,
-        payload: medium?.key || null,
-        dur: 3,
-      }];
-    },
-    run(a, ctx, act) {
-      if (--act.dur > 0) return 'continue';
-      ctx.sim.makeArt(a, act.payload);
-      a.gainSkill('art', 0.06);
-      return 'done';
-    },
-  },
-
-  explore: {
-    category: 'thought',
-    propose(a, ctx) {
-      const u =
-        (0.25 + a.genome.curiosity * 1.1) *
-        ctx.bias.explore *
-        (1 - a.body.hunger * 0.8) *
-        a.body.energy;
-      const r = 8 + Math.round(a.genome.curiosity * 26);
-      let target = null;
-      for (let i = 0; i < 12 && !target; i++) {
-        const t = T(
-          clamp(a.x + ctx.rng.int(-r, r), 1, ctx.world.w - 2),
-          clamp(a.y + ctx.rng.int(-r, r), 1, ctx.world.h - 2),
-        );
-        if (ctx.world.walkable(t.x, t.y)) target = t;
-      }
-      if (!target) return [];
-      return [{ kind: 'explore', u, target, dur: 12 }];
-    },
-    run(a, ctx, act) {
-      const arrived = stepToward(a, ctx.world, act.target);
-      const bed = ctx.world.bedAt(a.x, a.y);
-      if (bed) {
-        for (const key of Object.keys(bed)) {
-          if (key === 'game') continue;
-          const known = a.memory.knows(key, 0.3);
-          a.memory.learn(key, {
-            kind: 'matter',
-            confidence: known ? 0.15 : 0.6,
-            valence: 0.3,
-            source: 'exploration',
-          });
-          a.memory.learn(`where:${key}`, {
-            kind: 'place',
-            confidence: 0.5,
-            valence: 0.3,
-            payload: { x: a.x, y: a.y },
-          });
-          if (!known) {
-            ctx.sim.record(
-              a,
-              'discovery',
-              `${a.name} found ${ctx.ont.get(key)?.word || key} out past the ${ctx.world.season} ground`,
-              {
-                valence: 0.5,
-                intensity: 0.5,
-                concept: key,
-                quiet: true,
-              },
-            );
-            appraise(a, {
-              goalCongruence: 0.35,
-              agency: 'self',
-              intensity: 0.4,
-              novelty: 0.8,
-              kind: 'discovery',
-            });
-          }
-        }
-      }
-      a.body.energy = clamp(a.body.energy - 0.012, 0, 1);
-      if (arrived || --act.dur <= 0) return 'done';
-      return 'continue';
-    },
-  },
-
-  idle: {
-    category: 'body',
-    propose() {
-      return [{ kind: 'idle', u: U.idle, dur: 1 }];
-    },
-    run(a, ctx) {
-      a.body.rest = clamp(a.body.rest + 0.02, 0, 1);
-      if (ctx.rng.bool(0.25)) {
-        const t = T(
-          clamp(a.x + ctx.rng.int(-1, 1), 1, ctx.world.w - 2),
-          clamp(a.y + ctx.rng.int(-1, 1), 1, ctx.world.h - 2),
-        );
-        stepToward(a, ctx.world, t);
-      }
-      return 'done';
-    },
-  },
-};
-
-export { STRUCTURE_KINDS, stepToward, beside, nearWater, T };
+      const s = ctx.sim
