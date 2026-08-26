@@ -4,6 +4,8 @@
 // (with some temperament-driven noise) wins.
 //
 // Norms enter only as learned beliefs (sim.effectiveNorm / personalNorm).
+// normsFor(tags) averages pressure across any matching situation keys, including
+// emergent norm:* beliefs formed by memory consolidation.
 
 import { clamp, dist, topN } from '../core/util.js';
 import { TERRAIN } from '../world/world.js';
@@ -66,12 +68,46 @@ function beside(world, t) {
   return t;
 }
 
-/** Norm pressure ~[-1, 1] from personal beliefs + population climate. */
+/**
+ * Average norm pressure for any of the given situation tags.
+ * Works with seeded keys and emergent norm:<situation> beliefs.
+ */
+function normsFor(a, ctx, tags = []) {
+  if (!tags.length) return 0;
+  let sum = 0;
+  let n = 0;
+
+  const consider = (key) => {
+    let v = 0;
+    if (typeof ctx.sim?.effectiveNorm === 'function') v = ctx.sim.effectiveNorm(a, key);
+    else if (typeof ctx.sim?.personalNorm === 'function') v = ctx.sim.personalNorm(a, key);
+    else {
+      const b = a.memory.belief(`norm:${key}`);
+      if (b && b.confidence >= 0.12) v = b.valence * b.confidence;
+    }
+    if (v !== 0) {
+      sum += v;
+      n++;
+    }
+  };
+
+  for (const tag of tags) consider(tag);
+
+  if (typeof a.memory.knownNorms === 'function') {
+    for (const b of a.memory.knownNorms(0.12)) {
+      const sit = b.payload?.situation || b.key.replace(/^norm:/, '');
+      if (tags.includes(sit)) {
+        sum += b.valence * b.confidence;
+        n++;
+      }
+    }
+  }
+
+  return n ? sum / n : 0;
+}
+
 function normPull(a, ctx, key) {
-  if (typeof ctx.sim?.effectiveNorm === 'function') return ctx.sim.effectiveNorm(a, key);
-  if (typeof ctx.sim?.personalNorm === 'function') return ctx.sim.personalNorm(a, key);
-  const s = ctx.sim?.normStrength?.(key) || 0;
-  return -s;
+  return normsFor(a, ctx, [key]);
 }
 
 const U = {
@@ -336,7 +372,7 @@ export const ACTIONS = {
         if (hungryHousehold && !c.functions.sustenance &&
             c.parents.some((p) => (ctx.ont.get(p)?.serves('sustenance') || 0) > 0.2)) continue;
         const desire = a.desireFor(key, ctx.ont, ctx.sim);
-        const craftNorm = normPull(a, ctx, 'craft');
+        const craftNorm = normsFor(a, ctx, ['craft', 'invention']);
         out.push({
           kind: 'craft',
           u: desire * 1.3 * ctx.bias.work * (0.5 + a.skills.craft) * (1 + Math.max(0, craftNorm) * 0.25),
@@ -605,7 +641,7 @@ export const ACTIONS = {
       if (!near.length) return [];
       const mine = a.memory.knownKeys('recipe');
       if (!mine.length) return [];
-      const teachNorm = normPull(a, ctx, 'teaching');
+      const teachNorm = normsFor(a, ctx, ['teaching', 'teach']);
       const out = [];
       for (const o of near) {
         const unknown = mine.filter((k) => !o.memory.knows(k, 0.3));
@@ -662,7 +698,7 @@ export const ACTIONS = {
     category: 'social',
     propose(a, ctx) {
       const near = ctx.nearby(a, 5).filter((o) => o.id !== a.id);
-      const shareNorm = normPull(a, ctx, 'sharing');
+      const shareNorm = normsFor(a, ctx, ['sharing', 'gift', 'neglect']);
       const out = [];
       for (const o of near) {
         const r = a.rel(o);
@@ -677,7 +713,6 @@ export const ACTIONS = {
           if (o.body.illness > 0.3 && c.functions.medicine && v > 0) { gift = k; break; }
         }
         if (!gift) continue;
-        // Positive sharing-norm raises give; negative (rare) lowers it
         const u = theirNeed *
           (a.genome.empathy * 1.5 + r.affection * 1.2 + r.kin * 1.5 + (r.debt < 0 ? 0.6 : 0)) *
           ctx.bias.social *
@@ -717,13 +752,12 @@ export const ACTIONS = {
       const desperate = a.body.hunger > 0.75 || a.body.illness > 0.5;
       if (!desperate && a.genome.empathy > 0.35) return [];
       const near = ctx.nearby(a, 5).filter((o) => o.id !== a.id && o.carried() > 2);
-      // effectiveNorm is negative when agent believes theft is wrong → shrinks u
-      const theftNorm = normPull(a, ctx, 'theft');
+      const theftNorm = normsFor(a, ctx, ['theft', 'betrayal', 'neglect']);
       const out = [];
       for (const o of near) {
         const u =
           (a.body.hunger * 1.5 + (1 - a.genome.empathy)) *
-            (1 + theftNorm) * // theftNorm typically negative
+            (1 + theftNorm) *
             (0.4 + a.genome.risk) -
           a.rel(o).affection;
         if (u <= 0.2) continue;
@@ -785,7 +819,7 @@ export const ACTIONS = {
       if (a.affect.e.anger < 0.45) return [];
       if (ctx.world.tick - (a.lastFightTick || -999) < 60) return [];
       const near = ctx.nearby(a, 4).filter((o) => o.id !== a.id);
-      const violenceNorm = normPull(a, ctx, 'violence'); // usually negative
+      const violenceNorm = normsFor(a, ctx, ['violence', 'injury']);
       const out = [];
       for (const o of near) {
         const r = a.rel(o);
@@ -796,7 +830,7 @@ export const ACTIONS = {
             (0.15 + a.genome.aggression * 1.2) *
             ctx.bias.aggress *
             (1 - a.genome.empathy * 0.7) *
-            (1 + violenceNorm * 1.2); // stronger anti-violence belief → lower u
+            (1 + violenceNorm * 1.2);
         if (u < 0.95) continue;
         out.push({ kind: 'fight', u, targetId: o.id, dur: 1 });
       }
@@ -851,7 +885,7 @@ export const ACTIONS = {
     category: 'social',
     propose(a, ctx) {
       const near = ctx.nearby(a, 6).filter((o) => o.id !== a.id && (o.body.illness > 0.3 || o.body.injury > 0.3));
-      const rescueNorm = normPull(a, ctx, 'rescue');
+      const rescueNorm = normsFor(a, ctx, ['rescue', 'care']);
       const out = [];
       const remedy = a.bestToolFor('medicine', ctx.ont);
       for (const o of near) {
@@ -897,7 +931,7 @@ export const ACTIONS = {
       const c = topN(ctx.world.corpses, 1, (k) => -dist(a, k))[0];
       if (!c || dist(a, c) > 22) return [];
       const r = a.rel(c.id) || { kin: 0, affection: 0 };
-      const burialNorm = normPull(a, ctx, 'burial');
+      const burialNorm = normsFor(a, ctx, ['burial', 'ritual', 'death']);
       const u = (0.5 + a.genome.empathy + r.kin * 1.5 + r.affection + a.affect.e.grief) * 1.2 *
         (1 + Math.max(0, burialNorm) * 0.45);
       return [{ kind: 'bury', u, target: T(c.x, c.y), corpse: c, dur: 3 }];
@@ -1010,4 +1044,4 @@ export const ACTIONS = {
   },
 };
 
-export { STRUCTURE_KINDS, stepToward, beside, nearWater, T, normPull };
+export { STRUCTURE_KINDS, stepToward, beside, nearWater, T, normPull, normsFor };
