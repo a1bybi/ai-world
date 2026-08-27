@@ -6,8 +6,6 @@ import { clamp, softmaxPick, topN } from '../core/util.js';
 import { ACTIONS } from './actions.js';
 import { decayAffect, emotionalBias, appraise, dominantEmotion } from './emotion.js';
 
-// ── Constants ───────────────────────────────────────────────────────────────
-
 const ACTION_LIST = Object.entries(ACTIONS);
 
 const SKILL_FOR = {
@@ -66,33 +64,32 @@ export function updateBody(a, world, dt = 1) {
   const cold = clamp(0.62 - world.temperature) * (world.isNight ? 1.5 : 1);
   const clothing = a.bestClothing || 0;
   const age = a.ageAt(world.tick);
-  const young = age < 12 ? 0.55 : 1; // smaller bodies, smaller appetites
+  const young = age < 12 ? 0.55 : 1;
 
-  // Drains
-  b.hunger = clamp(b.hunger + 0.0105 * g.metabolism * young * dt, 0, 1);
-  b.thirst = clamp(b.thirst + 0.016 * young * dt, 0, 1); // children also drink less
-  b.rest   = clamp(b.rest   - 0.0092 * dt, 0, 1);
+  // Drains — tuned so a generation can learn before collapsing
+  b.hunger = clamp(b.hunger + 0.0045 * g.metabolism * young * dt, 0, 1);
+  b.thirst = clamp(b.thirst + 0.008 * young * dt, 0, 1);
+  b.rest = clamp(b.rest - 0.0075 * dt, 0, 1);
   b.energy = clamp(
-    b.energy - 0.007 * dt + (b.rest > 0.6 ? 0.007 : 0),
+    b.energy - 0.006 * dt + (b.rest > 0.6 ? 0.007 : 0),
     0,
     1,
   );
   b.warmth = clamp(
-    b.warmth - cold * 0.035 * dt * (1 - clothing * 0.7) + 0.022 * dt,
+    b.warmth - cold * 0.028 * dt * (1 - clothing * 0.7) + 0.022 * dt,
     0,
     1,
   );
 
   // Damage from deficits + ongoing conditions
   let damage = 0;
-  if (b.hunger > 0.9) damage += (b.hunger - 0.9) * 0.055;
-  if (b.thirst > 0.9) damage += (b.thirst - 0.9) * 0.14;
-  if (b.warmth < 0.18) damage += (0.18 - b.warmth) * 0.09;
-  if (b.rest < 0.06) damage += 0.005;
+  if (b.hunger > 0.92) damage += (b.hunger - 0.92) * 0.012;
+  if (b.thirst > 0.92) damage += (b.thirst - 0.92) * 0.05;
+  if (b.warmth < 0.15) damage += (0.15 - b.warmth) * 0.05;
+  if (b.rest < 0.05) damage += 0.004;
   damage += b.illness * 0.02 + b.injury * 0.015;
-  damage /= Math.max(0.05, g.resilience); // guard against zero resilience
+  damage /= Math.max(0.05, g.resilience);
 
-  // Natural recovery when not starving / already sick
   const mend =
     0.007 *
     clamp(1 - b.hunger * 1.1) *
@@ -101,13 +98,11 @@ export function updateBody(a, world, dt = 1) {
 
   b.health = clamp(b.health - damage * dt + mend * dt, 0, 1);
   b.illness = clamp(b.illness - 0.004 * g.resilience * dt, 0, 1);
-  b.injury  = clamp(b.injury  - 0.004 * g.resilience * dt, 0, 1);
+  b.injury = clamp(b.injury - 0.004 * g.resilience * dt, 0, 1);
 
-  // Senescence — soft linear drain after 75 % of expected lifespan
   const span = 62 * g.longevity;
   if (age > span * 0.75) {
     const excess = age - span * 0.75;
-    // Cap the extra drain so the final years are harsh but not free-fall
     b.health = clamp(
       b.health - Math.min(0.004, 0.0006 * excess) * dt,
       0,
@@ -136,16 +131,13 @@ export function think(a, ctx) {
   updateBody(a, world);
   decayAffect(a);
 
-  // Slow memory decay on a staggered schedule
   if ((world.tick + a.seq) % 8 === 0) {
     a.memory.fade(0.012);
     a.memory.fadeBeliefs();
   }
 
-  // Mild natural decay of frustration
   a.frustration = Math.max(0, (a.frustration || 0) - 0.12);
 
-  // Perception: update familiarity with nearby agents
   const near = ctx.nearby(a, 7).filter((o) => o.id !== a.id);
   for (const o of near) {
     const r = a.rel(o);
@@ -165,31 +157,32 @@ export function think(a, ctx) {
     });
   }
 
-  // Emotional bias is consumed by action proposers
   ctx.bias = emotionalBias(a);
 
   // ── Continue or abort current action ────────────────────────────────────
   if (a.action) {
     const urgent =
-      a.body.thirst > 0.9 ||
-      a.body.hunger > 0.92 ||
+      a.body.thirst > 0.88 ||
+      a.body.hunger > 0.85 ||
       a.body.health < 0.3;
 
-    // Keep going if nothing is critically wrong, or if we are already
-    // performing the action that would relieve the crisis.
     const relieving =
       a.action.kind === 'eat' ||
+      a.action.kind === 'takeFromStore' ||
       a.action.kind === 'drink' ||
       a.action.kind === 'seekWarmth' ||
       a.action.kind === 'sleep' ||
-      a.action.kind === 'care';
+      a.action.kind === 'care' ||
+      ((a.action.kind === 'gather' ||
+        a.action.kind === 'hunt' ||
+        a.action.kind === 'farm') &&
+        a.body.hunger > 0.55);
 
     if (!urgent || relieving) {
       let res;
       try {
         res = ACTIONS[a.action.kind].run(a, ctx, a.action);
       } catch (e) {
-        // Action threw — treat as abort so the agent can re-deliberate
         res = 'abort';
         if (ctx.debug) console.warn(`[think] action ${a.action.kind} threw`, e);
       }
@@ -203,19 +196,17 @@ export function think(a, ctx) {
       return;
     }
 
-    // Crisis overrides non-relieving work
     a.action = null;
   }
 
   // ── Deliberation ────────────────────────────────────────────────────────
-  // A body in trouble narrows the mind. Philosophy waits for the thirst to pass.
 
   const deficits = {
-    food:  (a.body.hunger - 0.5) / 0.5,
+    food: (a.body.hunger - 0.5) / 0.5,
     water: (a.body.thirst - 0.5) / 0.5,
-    warm:  (0.3 - a.body.warmth) / 0.3,
+    warm: (0.3 - a.body.warmth) / 0.3,
     tired: (0.25 - a.body.rest) / 0.25,
-    hurt:  (0.4 - a.body.health) / 0.4,
+    hurt: (0.4 - a.body.health) / 0.4,
   };
 
   let worst = null;
@@ -244,30 +235,26 @@ export function think(a, ctx) {
     for (const p of props) {
       if (!p.kind) p.kind = name;
 
-      // Age capability modifiers
       if (isChild && CHILD_RESTRICTED.has(p.kind)) p.u *= 0.15;
       if (isElder && ELDER_HARD.has(p.kind)) p.u *= 0.5;
       if (isElder && ELDER_FAVOURED.has(p.kind)) p.u *= 1.6;
 
-      // Frustration: avoid repeating a recently failed action
       if ((a.frustration || 0) > 2 && p.kind === a.lastAction) p.u *= 0.5;
 
-      // Skill bonus
       const skillKey = SKILL_FOR[p.kind];
       if (skillKey) p.u *= 1 + (a.skills[skillKey] || 0) * 0.25;
 
-      // Crisis re-weighting
       if (crisis > 0) {
         if (RELIEF[p.kind] === worst) {
-          p.u *= 1 + crisis * 2.6;          // direct relief
+          p.u *= 1 + crisis * 2.6;
         } else if (RELIEF[p.kind]) {
-          p.u *= 1 + crisis * 0.4;          // any relief is still useful
+          p.u *= 1 + crisis * 0.4;
         } else if (FEEDS.has(p.kind) && worst === 'food') {
-          p.u *= 1 + crisis * 1.4;          // food-producing actions
+          p.u *= 1 + crisis * 1.4;
         } else if (INVEST.has(p.kind)) {
-          p.u *= 1 - crisis * 0.25;         // soft penalty for investment
+          p.u *= 1 - crisis * 0.25;
         } else {
-          p.u *= 1 - crisis * 0.8;          // everything else is deprioritised
+          p.u *= 1 - crisis * 0.8;
         }
       }
 
@@ -275,7 +262,6 @@ export function think(a, ctx) {
     }
   }
 
-  // Guarantee at least an idle option so softmax never receives an empty list
   if (!candidates.length) {
     a.action = { kind: 'idle', dur: 1 };
     a.reasoning = [{ kind: 'idle', u: 0, why: 'nothing available' }];
@@ -283,7 +269,6 @@ export function think(a, ctx) {
     return;
   }
 
-  // Softmax temperature: curiosity raises exploration, patience lowers it
   const temperature = clamp(
     0.16 + a.genome.curiosity * 0.3 + (1 - a.genome.patience) * 0.16,
     0.08,
@@ -301,7 +286,6 @@ export function think(a, ctx) {
   a.action = chosen;
   a.goal = describeGoal(a, chosen, ctx);
 
-  // Occasional voiced thought for expressive agents
   if (
     a.genome.expressive > 0.45 &&
     ctx.rng.bool(0.05 + a.genome.expressive * 0.06)
