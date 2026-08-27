@@ -29,7 +29,14 @@ const NORM_LABELS = {
   betrayal: 'trust broken is not quickly mended',
 };
 
-/** Soft merges so related episode kinds share a bucket when useful. */
+/** Episode kinds that may ground a personal norm (prohibition or duty). */
+const NORMABLE_KINDS = new Set([
+  'theft', 'betrayal', 'violence', 'injury', 'witness', 'neglect',
+  'gift', 'teach', 'rescue', 'burial', 'ritual', 'bond',
+  'exile', 'famine', 'migration', 'law', 'death',
+]);
+
+/** Soft merges so related social events share a bucket. */
 const SITUATION_ALIASES = {
   betrayal: 'theft',
   injury: 'violence',
@@ -38,30 +45,32 @@ const SITUATION_ALIASES = {
   burial: 'burial',
   ritual: 'burial',
   neglect: 'neglect',
+  death: 'burial',
 };
 
+/**
+ * Map an episode to a norm situation key, or null if it should not form a norm.
+ * Gather / craft / hunt / eat concepts never become norms.
+ */
 function situationKey(m) {
-  let raw =
-    (m.concept && String(m.concept)) ||
-    (m.kind && String(m.kind)) ||
-    null;
-  if (!raw) return null;
-
-  const kind = m.kind;
-  if (kind === 'talk' || kind === 'event' || kind === 'speech' || kind === 'thought') {
-    // Only keep these if they carry a real concept
-    if (!m.concept) return null;
-    raw = String(m.concept);
-  }
+  const kind = m.kind || '';
+  if (!NORMABLE_KINDS.has(kind)) return null;
+  let raw = kind;
 
   if (kind === 'witness') {
     if (m.concept === 'theft' || /thief|took|stole/i.test(m.text || '')) raw = 'theft';
     else if (/blow|fight|struck|violence/i.test(m.text || '')) raw = 'violence';
-    else if (m.concept) raw = String(m.concept);
+    else if (m.concept && NORMABLE_KINDS.has(m.concept)) raw = m.concept;
     else raw = 'neglect';
   }
 
-  raw = SITUATION_ALIASES[raw] || SITUATION_ALIASES[kind] || raw;
+  // Optional: social concept only when the kind is already normable
+  // (e.g. concept "theft" on a betrayal episode) — still not matter keys
+  if (m.concept && NORMABLE_KINDS.has(String(m.concept))) {
+    raw = String(m.concept);
+  }
+
+  raw = SITUATION_ALIASES[raw] || raw;
 
   const sitKey = String(raw)
     .toLowerCase()
@@ -406,4 +415,4 @@ export class MemoryStore {
   }
 }
 
-export { LANDMARK_KINDS, NORM_LABELS, SITUATION_ALIASES };
+export { LANDMARK_KINDS, NORM_LABELS, NORMABLE_KINDS, SITUATION_ALIASES };
