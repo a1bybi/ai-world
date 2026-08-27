@@ -3,6 +3,7 @@
 //
 // Norms are not decrees. They are statistical shadows of what minds have learned.
 // Language is native-first; plain + gloss layers exist so an observer can follow.
+// Structures (bridge/path/plaza/…) change movement and social pressure via world + needs.
 
 import { RNG } from '../core/rng.js';
 import { Language } from '../core/language.js';
@@ -25,7 +26,6 @@ const BALANCE = {
   spoilInterval: 24,
   rolesInterval: 12,
   chronicleInterval: 24,
-  tiersInterval: 24,
   corpseDesiccation: 24 * 12,
   tradeCooldown: 30,
   fightCooldown: 60,
@@ -45,18 +45,6 @@ const NORM_SEEDS = [
   { key: 'teaching', label: 'what one knows, all may learn', polarity: 1 },
   { key: 'craft', label: 'a thing well made is owed respect', polarity: 1 },
 ];
-
-// Growth is shown, not scripted: a settlement's tier is just a read-out of how
-// much is actually there. Nothing caps this list from growing further — it's
-// just the ranks named so far.
-const SETTLEMENT_TIERS = [
-  { min: 0, name: 'camp' },
-  { min: 6, name: 'hamlet' },
-  { min: 16, name: 'village' },
-  { min: 32, name: 'town' },
-  { min: 60, name: 'city' },
-];
-function article(word) { return /^[aeiou]/i.test(word) ? 'an' : 'a'; }
 
 export class Simulation {
   constructor(seed = 'aurorae', opts = {}) {
@@ -214,13 +202,16 @@ export class Simulation {
         });
       }
       for (const seed of NORM_SEEDS) {
-        if (rng.bool(0.55 + g.empathy * 0.25)) {
+        if (rng.bool(0.2 + g.empathy * 0.15)) {
           a.memory.learn(`norm:${seed.key}`, {
             kind: 'norm',
-            confidence: rng.float(0.2, 0.45),
-            valence: seed.polarity > 0 ? 0.4 : -0.45,
+            confidence: rng.float(0.08, 0.2),
+            valence: seed.polarity > 0 ? 0.25 : -0.3,
             source: 'upbringing',
-            payload: { situation: seed.key, polarity: seed.polarity, label: seed.label, evidence: 1 },
+            payload: {
+              situation: seed.key, polarity: seed.polarity, label: seed.label,
+              evidence: 1, emergent: false,
+            },
           });
         }
       }
@@ -309,7 +300,6 @@ export class Simulation {
       this.updateRoles();
       this.updateWants();
     }
-    if (w.tick % BALANCE.tiersInterval === 0) this.updateSettlementTiers();
     if (w.tick % BALANCE.chronicleInterval === 0) {
       this.chronicle.sample(this);
       this.chronicle.maybeAdvanceEra(this);
@@ -1125,28 +1115,6 @@ export class Simulation {
     return clamp((pop - 16) / 12, 0, 1);
   }
 
-  /** How grown each settlement is, expressed the same way to everyone: a tier
-   *  name, derived fresh each time from living population and structures built
-   *  nearby — never assigned directly, so it can only ever reflect what's
-   *  actually there. */
-  updateSettlementTiers() {
-    for (const s of this.settlements) {
-      const pop = this.living.filter((a) => dist(a, s) < 22).length;
-      const built = this.world.structures.filter((st) => dist(st, s) < 22).length;
-      const score = pop + built * 0.5;
-      let tier = SETTLEMENT_TIERS[0].name, rank = 0;
-      SETTLEMENT_TIERS.forEach((t, i) => { if (score >= t.min) { tier = t.name; rank = i; } });
-      if (tier !== s.tier) {
-        const priorRank = SETTLEMENT_TIERS.findIndex((t) => t.name === s.tier);
-        const grew = rank > priorRank;
-        s.tier = tier;
-        this.record(null, grew ? 'growth' : 'decline', `${s.name} became ${article(tier)} ${tier}`, {
-          valence: grew ? 0.4 : -0.3, intensity: 0.6, landmark: true,
-        });
-      }
-    }
-  }
-
   updateWants() {
     const want = new Map();
     for (const settlement of this.settlements) {
@@ -1171,6 +1139,30 @@ export class Simulation {
     const pop = Math.max(1, this.living.filter((a) => dist(a, settlement) < radius).length);
     const count = (k) => w.structuresOfKind(k).filter((s) => dist(s, settlement) < radius).length;
     const need = (have, per) => clamp((pop / per - have) / Math.max(1, pop / per));
+
+    let waterTiles = 0;
+    for (let y = settlement.y - 8; y <= settlement.y + 8; y++) {
+      for (let x = settlement.x - 8; x <= settlement.x + 8; x++) {
+        if (!w.inBounds(x, y)) continue;
+        const t = w.at(x, y);
+        if (t === TERRAIN.WATER || t === TERRAIN.MARSH) waterTiles++;
+      }
+    }
+    const wantsBridge = waterTiles > 6 && count('bridge') < 1;
+
+    let trailSum = 0;
+    let trailN = 0;
+    for (let y = settlement.y - 6; y <= settlement.y + 6; y++) {
+      for (let x = settlement.x - 6; x <= settlement.x + 6; x++) {
+        if (!w.inBounds(x, y) || !w.walkable(x, y)) continue;
+        trailSum += w.trails[w.idx(x, y)] || 0;
+        trailN++;
+      }
+    }
+    const avgTrail = trailN ? trailSum / trailN : 0;
+    const pathDeficit =
+      count('path') < 2 && avgTrail > 0.2 ? clamp(avgTrail * 1.2) : need(count('path'), 12);
+
     return {
       shelterDeficit: need(count('shelter'), 2.2),
       hearthDeficit: need(count('hearth'), 6) * (w.temperature < 0.5 ? 1.6 : 0.7),
@@ -1181,6 +1173,9 @@ export class Simulation {
       shrineDeficit: need(count('shrine'), 16) * clamp(this.ritualPull),
       wallDeficit: need(count('wall'), 26) * clamp(mean(this.living, (x) => x.affect.e.fear) * 2),
       hallDeficit: pop > 18 && count('hall') < 1 ? 0.9 : 0,
+      bridgeDeficit: wantsBridge ? 0.85 : 0,
+      pathDeficit,
+      plazaDeficit: pop > 8 ? need(count('plaza'), 14) : 0,
     };
   }
 
@@ -1198,21 +1193,31 @@ export class Simulation {
 
   pickBuildSite(a, kind, settlement = this.nearestSettlement(a.x, a.y)) {
     const w = this.world;
-    const anchor = kind === 'field'
-      ? topN(
-          [...Array(40)].map(() => ({
-            x: clamp(settlement.x + this.rng.int(-10, 10), 1, w.w - 2),
-            y: clamp(settlement.y + this.rng.int(-10, 10), 1, w.h - 2),
-          })),
-          1,
-          (p) => (w.walkable(p.x, p.y) ? w.fertility[w.idx(p.x, p.y)] : -1),
-        )[0]
-      : settlement;
+    const anchor =
+      kind === 'field'
+        ? topN(
+            [...Array(40)].map(() => ({
+              x: clamp(settlement.x + this.rng.int(-10, 10), 1, w.w - 2),
+              y: clamp(settlement.y + this.rng.int(-10, 10), 1, w.h - 2),
+            })),
+            1,
+            (p) => (w.walkable(p.x, p.y) ? w.fertility[w.idx(p.x, p.y)] : -1),
+          )[0]
+        : settlement;
+
     for (let r = 1; r < 16; r++) {
       for (let i = 0; i < 14; i++) {
         const x = clamp(anchor.x + this.rng.int(-r, r), 1, w.w - 2);
         const y = clamp(anchor.y + this.rng.int(-r, r), 1, w.h - 2);
-        if (!w.walkable(x, y) || w.structureAt(x, y)) continue;
+        if (w.structureAt(x, y)) continue;
+
+        if (kind === 'bridge') {
+          const t = w.at(x, y);
+          if (t !== TERRAIN.WATER && t !== TERRAIN.MARSH) continue;
+          return { x, y };
+        }
+
+        if (!w.walkable(x, y)) continue;
         return { x, y };
       }
     }
@@ -1428,18 +1433,6 @@ export class Simulation {
     }
   }
 
-  spawnOrStrengthenNorm(key, label, polarity, weight) {
-    const sample = this.living[0];
-    if (sample) {
-      sample.memory.learn(`norm:${key}`, {
-        kind: 'norm', confidence: 0.15 + weight,
-        valence: polarity > 0 ? 0.4 : -0.4, source: 'reflection',
-        payload: { situation: key, polarity, label, evidence: 1 },
-      });
-    }
-    return this.norms.find((x) => x.key === key) || null;
-  }
-
   reputationDelta(a, d) { a.reputation = clamp(a.reputation + d, 0, 1); }
 
   respectFor(a) {
@@ -1609,4 +1602,4 @@ export class Simulation {
   }
 }
 
-export { YEAR_TICKS, SKILLS, moodWord, BALANCE, NORM_SEEDS, SETTLEMENT_TIERS };
+export { YEAR_TICKS, SKILLS, moodWord, BALANCE, NORM_SEEDS };
