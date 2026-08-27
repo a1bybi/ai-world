@@ -23,17 +23,9 @@ const SKILL_FOR = {
   experiment: 'craft',
 };
 
-/** Actions that directly produce food. */
 const FEEDS = new Set(['gather', 'hunt', 'farm', 'takeFromStore']);
-
-/**
- * Long-horizon / social investment work. Softly down-weighted under crisis
- * instead of collapsing — a society that can never court or care while mildly
- * hungry never grows.
- */
 const INVEST = new Set(['build', 'store', 'expand', 'court', 'care']);
 
-/** Maps action kinds to the deficit they most directly relieve. */
 const RELIEF = {
   eat: 'food',
   takeFromStore: 'food',
@@ -43,20 +35,10 @@ const RELIEF = {
   care: 'hurt',
 };
 
-/** Child-restricted actions (heavily penalised). */
 const CHILD_RESTRICTED = new Set(['build', 'trade', 'court', 'fight', 'hunt', 'expand']);
-
-/** Elder-penalised / elder-boosted actions. */
 const ELDER_HARD = new Set(['hunt', 'fight', 'build']);
 const ELDER_FAVOURED = new Set(['teach', 'ritual', 'makeArt']);
 
-// ── Body simulation ─────────────────────────────────────────────────────────
-
-/**
- * Advance physiological state for one tick.
- * Mutates `a.body` in place. Clothing is expected to be up-to-date via
- * `computeClothing` (or recomputed here if inventory may have changed).
- */
 export function updateBody(a, world, dt = 1) {
   const b = a.body;
   const g = a.genome;
@@ -66,7 +48,6 @@ export function updateBody(a, world, dt = 1) {
   const age = a.ageAt(world.tick);
   const young = age < 12 ? 0.55 : 1;
 
-  // Drains — tuned so a generation can learn before collapsing
   b.hunger = clamp(b.hunger + 0.0045 * g.metabolism * young * dt, 0, 1);
   b.thirst = clamp(b.thirst + 0.008 * young * dt, 0, 1);
   b.rest = clamp(b.rest - 0.0075 * dt, 0, 1);
@@ -81,7 +62,6 @@ export function updateBody(a, world, dt = 1) {
     1,
   );
 
-  // Damage from deficits + ongoing conditions
   let damage = 0;
   if (b.hunger > 0.92) damage += (b.hunger - 0.92) * 0.012;
   if (b.thirst > 0.92) damage += (b.thirst - 0.92) * 0.05;
@@ -111,7 +91,6 @@ export function updateBody(a, world, dt = 1) {
   }
 }
 
-/** Cache the best clothing value the agent currently carries. */
 function computeClothing(a, ont) {
   let best = 0;
   for (const k of a.inventory.keys()) {
@@ -120,8 +99,6 @@ function computeClothing(a, ont) {
   }
   a.bestClothing = clamp(best);
 }
-
-// ── Main cognitive tick ─────────────────────────────────────────────────────
 
 export function think(a, ctx) {
   const { world } = ctx;
@@ -159,7 +136,6 @@ export function think(a, ctx) {
 
   ctx.bias = emotionalBias(a);
 
-  // ── Continue or abort current action ────────────────────────────────────
   if (a.action) {
     const urgent =
       a.body.thirst > 0.88 ||
@@ -199,8 +175,6 @@ export function think(a, ctx) {
     a.action = null;
   }
 
-  // ── Deliberation ────────────────────────────────────────────────────────
-
   const deficits = {
     food: (a.body.hunger - 0.5) / 0.5,
     water: (a.body.thirst - 0.5) / 0.5,
@@ -221,6 +195,10 @@ export function think(a, ctx) {
 
   const isChild = a.isChild(world.tick);
   const isElder = a.isElder(world.tick);
+
+  // Survival lesson from past hungry successes
+  const hungerLesson = a.memory.belief('lesson:hunger');
+  const lessonWhat = hungerLesson?.payload?.what || null;
 
   const candidates = [];
   for (const [name, def] of ACTION_LIST) {
@@ -258,6 +236,20 @@ export function think(a, ctx) {
         }
       }
 
+      // Reinforce what worked last time they were hungry
+      if (
+        hungerLesson &&
+        hungerLesson.confidence > 0.2 &&
+        worst === 'food' &&
+        crisis > 0.15
+      ) {
+        if (p.kind === 'gather' && lessonWhat && p.payload === lessonWhat) {
+          p.u *= 1.55;
+        } else if (p.kind === 'eat' || p.kind === 'gather' || p.kind === 'hunt') {
+          p.u *= 1.2;
+        }
+      }
+
       candidates.push(p);
     }
   }
@@ -269,11 +261,15 @@ export function think(a, ctx) {
     return;
   }
 
-  const temperature = clamp(
-    0.16 + a.genome.curiosity * 0.3 + (1 - a.genome.patience) * 0.16,
-    0.08,
-    0.75,
-  );
+  // Low temperature when desperate → less random, more survival-focused
+  const temperature =
+    crisis > 0.35
+      ? clamp(0.06 + a.genome.curiosity * 0.08, 0.05, 0.2)
+      : clamp(
+          0.16 + a.genome.curiosity * 0.3 + (1 - a.genome.patience) * 0.16,
+          0.08,
+          0.75,
+        );
 
   const chosen = softmaxPick(ctx.rng, candidates, (c) => c.u, temperature);
 
@@ -293,8 +289,6 @@ export function think(a, ctx) {
     ctx.sim.voiceThought(a, chosen);
   }
 }
-
-// ── Human-readable traces ───────────────────────────────────────────────────
 
 function reasonFor(a, c, ctx) {
   const b = a.body;
