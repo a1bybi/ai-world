@@ -1,14 +1,23 @@
 // The land itself: procedurally grown terrain, renewable resource beds, a
 // climate that turns, and whatever the inhabitants choose to build on top.
+//
+// Structures can change movement: bridges cross water; paths and worn trails
+// are cheaper to walk. Social/work bonuses stay in actions/sim; the map only
+// answers "can I stand here?" and "how hard is this step?"
 
 import { clamp, lerp } from '../core/util.js';
 
-export const TERRAIN = { DEEP: 0, WATER: 1, MARSH: 2, MEADOW: 3, GRASS: 4, FOREST: 5, HILL: 6, ROCK: 7, SAND: 8 };
-export const TERRAIN_NAME = ['deep water', 'water', 'marsh', 'meadow', 'grass', 'forest', 'hill', 'rock', 'sand'];
+export const TERRAIN = {
+  DEEP: 0, WATER: 1, MARSH: 2, MEADOW: 3, GRASS: 4,
+  FOREST: 5, HILL: 6, ROCK: 7, SAND: 8,
+};
+export const TERRAIN_NAME = [
+  'deep water', 'water', 'marsh', 'meadow', 'grass',
+  'forest', 'hill', 'rock', 'sand',
+];
 
 export const SEASONS = ['spring', 'summer', 'autumn', 'winter'];
 
-// Which raw matter a terrain type can yield, and how fast it comes back.
 const YIELDS = {
   [TERRAIN.WATER]:  { water: 1.0, clay: 0.5, reed: 0.6 },
   [TERRAIN.MARSH]:  { reed: 0.9, clay: 0.8, water: 0.7, root: 0.3 },
@@ -21,18 +30,25 @@ const YIELDS = {
 };
 
 function valueNoise(rng, w, h, scale) {
-  const gw = Math.ceil(w / scale) + 2, gh = Math.ceil(h / scale) + 2;
+  const gw = Math.ceil(w / scale) + 2;
+  const gh = Math.ceil(h / scale) + 2;
   const grid = new Float32Array(gw * gh);
   for (let i = 0; i < grid.length; i++) grid[i] = rng.next();
   const out = new Float32Array(w * h);
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      const gx = x / scale, gy = y / scale;
-      const x0 = Math.floor(gx), y0 = Math.floor(gy);
-      const tx = gx - x0, ty = gy - y0;
-      const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
-      const a = grid[y0 * gw + x0], b = grid[y0 * gw + x0 + 1];
-      const c = grid[(y0 + 1) * gw + x0], d = grid[(y0 + 1) * gw + x0 + 1];
+      const gx = x / scale;
+      const gy = y / scale;
+      const x0 = Math.floor(gx);
+      const y0 = Math.floor(gy);
+      const tx = gx - x0;
+      const ty = gy - y0;
+      const sx = tx * tx * (3 - 2 * tx);
+      const sy = ty * ty * (3 - 2 * ty);
+      const a = grid[y0 * gw + x0];
+      const b = grid[y0 * gw + x0 + 1];
+      const c = grid[(y0 + 1) * gw + x0];
+      const d = grid[(y0 + 1) * gw + x0 + 1];
       out[y * w + x] = lerp(lerp(a, b, sx), lerp(c, d, sx), sy);
     }
   }
@@ -47,22 +63,105 @@ export class World {
     this.tick = 0;
     this.terrain = new Uint8Array(width * height);
     this.fertility = new Float32Array(width * height);
-    this.beds = new Map();            // tileIndex -> { key -> {amount, max, regrow} }
+    this.beds = new Map();
     this.structures = [];
     this.corpses = [];
-    this.sites = [];                  // named places: settlement, grave field, market, shrine
-    this.trails = new Float32Array(width * height); // worn paths from footfall
+    this.sites = [];
+    this.trails = new Float32Array(width * height);
     this.danger = new Float32Array(width * height);
+    // tileIndex -> structure (fast lookup for walkable / moveCost)
+    this.structureIndex = new Map();
     this.season = 'spring';
     this.weather = 'clear';
     this.temperature = 0.55;
     this.generate();
   }
 
-  idx(x, y) { return y * this.w + x; }
-  inBounds(x, y) { return x >= 0 && y >= 0 && x < this.w && y < this.h; }
-  at(x, y) { return this.terrain[this.idx(x, y)]; }
-  walkable(x, y) { return this.inBounds(x, y) && this.at(x, y) > TERRAIN.WATER; }
+  idx(x, y) {
+    return y * this.w + x;
+  }
+
+  inBounds(x, y) {
+    return x >= 0 && y >= 0 && x < this.w && y < this.h;
+  }
+
+  at(x, y) {
+    return this.terrain[this.idx(x, y)];
+  }
+
+  /**
+   * Land is walkable. Water/marsh are not, unless a bridge sits on that tile
+   * (or we treat adjacent bridge spans — see hasBridgeAccess).
+   * Deep water is never walkable.
+   */
+  walkable(x, y) {
+    if (!this.inBounds(x, y)) return false;
+    const t = this.at(x, y);
+    if (t === TERRAIN.DEEP) return false;
+    if (t > TERRAIN.WATER) return true; // marsh is 2; water is 1
+    // WATER (and optionally MARSH): need a bridge
+    if (t === TERRAIN.WATER || t === TERRAIN.MARSH) {
+      return this.hasBridgeAccess(x, y);
+    }
+    return true;
+  }
+
+  /** True if this tile has a bridge structure, or a bridge on an orthogonal neighbour (short span). */
+  hasBridgeAccess(x, y) {
+    const here = this.structureAt(x, y);
+    if (here && here.kind === 'bridge') return true;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const s = this.structureAt(x + dx, y + dy);
+      if (s && s.kind === 'bridge') return true;
+    }
+    return false;
+  }
+
+  /**
+   * Relative cost of stepping onto (x,y). Used by movement to prefer paths.
+   * 1 = normal land; lower = easier; water without bridge should not be queried.
+   */
+  moveCost(x, y) {
+    if (!this.inBounds(x, y)) return 99;
+    const t = this.at(x, y);
+    if (t === TERRAIN.DEEP) return 99;
+    if ((t === TERRAIN.WATER || t === TERRAIN.MARSH) && !this.hasBridgeAccess(x, y)) {
+      return 99;
+    }
+
+    let cost = 1;
+    if (t === TERRAIN.FOREST) cost = 1.15;
+    else if (t === TERRAIN.HILL) cost = 1.2;
+    else if (t === TERRAIN.ROCK) cost = 1.25;
+    else if (t === TERRAIN.MARSH) cost = 1.1;
+
+    const s = this.structureAt(x, y);
+    if (s) {
+      if (s.kind === 'path' || s.kind === 'road') cost *= 0.65;
+      if (s.kind === 'bridge') cost *= 0.9;
+      if (s.kind === 'plaza' || s.kind === 'hall') cost *= 0.85;
+    }
+
+    // Worn trails act as soft paths
+    const trail = this.trails[this.idx(x, y)] || 0;
+    if (trail > 0.15) cost *= 1 - clamp(trail * 0.35, 0, 0.35);
+
+    return cost;
+  }
+
+  /** Structures within radius (for plaza/workshop bonuses in actions). */
+  structuresNear(x, y, radius = 6, kind = null) {
+    const r2 = radius * radius;
+    return this.structures.filter((s) => {
+      if (kind && s.kind !== kind) return false;
+      const d = (s.x - x) ** 2 + (s.y - y) ** 2;
+      return d <= r2;
+    });
+  }
+
+  hasStructureNear(x, y, kind, radius = 6) {
+    return this.structuresNear(x, y, radius, kind).length > 0;
+  }
 
   generate() {
     const { rng, w, h } = this;
@@ -72,13 +171,13 @@ export class World {
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         const i = this.idx(x, y);
-        // Island-ish falloff so the world has edges and coasts.
-        const nx = (x / w) * 2 - 1, ny = (y / h) * 2 - 1;
+        const nx = (x / w) * 2 - 1;
+        const ny = (y / h) * 2 - 1;
         const fall = 1 - clamp(Math.hypot(nx * 0.95, ny * 1.05), 0, 1) ** 2.1;
         const e = clamp(elev[i] * 0.65 + detail[i] * 0.35) * 0.55 + fall * 0.6;
         const m = clamp(moist[i] * 0.7 + detail[i] * 0.3);
         let t;
-        if (e < 0.30) t = TERRAIN.DEEP;
+        if (e < 0.3) t = TERRAIN.DEEP;
         else if (e < 0.38) t = TERRAIN.WATER;
         else if (e < 0.42) t = m > 0.55 ? TERRAIN.MARSH : TERRAIN.SAND;
         else if (e < 0.62) t = m > 0.62 ? TERRAIN.FOREST : m > 0.36 ? TERRAIN.MEADOW : TERRAIN.GRASS;
@@ -100,14 +199,21 @@ export class World {
       let dx = rng.float(-0.4, 0.4);
       for (let step = 0; step < h * 1.6; step++) {
         dx = clamp(dx + rng.float(-0.35, 0.35), -0.9, 0.9);
-        x += dx; y += 1;
-        const ix = Math.round(x), iy = Math.round(y);
+        x += dx;
+        y += 1;
+        const ix = Math.round(x);
+        const iy = Math.round(y);
         if (!this.inBounds(ix, iy)) break;
-        for (let oy = 0; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
-          if (!this.inBounds(ix + ox, iy + oy)) continue;
-          const i = this.idx(ix + ox, iy + oy);
-          if (this.terrain[i] !== TERRAIN.DEEP) this.terrain[i] = Math.abs(ox) === 1 && rng.bool(0.4) ? TERRAIN.MARSH : TERRAIN.WATER;
-          this.fertility[i] = clamp(this.fertility[i] + 0.25);
+        for (let oy = 0; oy <= 1; oy++) {
+          for (let ox = -1; ox <= 1; ox++) {
+            if (!this.inBounds(ix + ox, iy + oy)) continue;
+            const i = this.idx(ix + ox, iy + oy);
+            if (this.terrain[i] !== TERRAIN.DEEP) {
+              this.terrain[i] =
+                Math.abs(ox) === 1 && rng.bool(0.4) ? TERRAIN.MARSH : TERRAIN.WATER;
+            }
+            this.fertility[i] = clamp(this.fertility[i] + 0.25);
+          }
         }
       }
     }
@@ -124,9 +230,13 @@ export class World {
         for (const [key, density] of Object.entries(y2)) {
           if (!rng.bool(density * 0.55)) continue;
           const max = 6 + Math.round(density * this.fertility[i] * 22 * rng.float(0.6, 1.4));
-          const slow = (key === 'stone' || key === 'ore') ? 0.15 : key === 'game' ? 0.5 : 1;
+          const slow = key === 'stone' || key === 'ore' ? 0.15 : key === 'game' ? 0.5 : 1;
           const edible = key === 'berry' || key === 'root' || key === 'grain';
-          bed[key] = { amount: max * rng.float(0.5, 1), max, regrow: 0.009 * density * slow * (edible ? 6 : 1) };
+          bed[key] = {
+            amount: max * rng.float(0.5, 1),
+            max,
+            regrow: 0.009 * density * slow * (edible ? 6 : 1),
+          };
         }
         if (Object.keys(bed).length) this.beds.set(i, bed);
       }
@@ -134,15 +244,14 @@ export class World {
     this.indexBeds();
   }
 
-  /** Coarse spatial index so "where is the nearest stone?" is a handful of checks
-   *  rather than a sweep of the whole map, every person, every hour. */
   indexBeds() {
     this.cell = 8;
     this.cw = Math.ceil(this.w / this.cell);
     this.ch = Math.ceil(this.h / this.cell);
-    this.bedIndex = new Map();          // key -> Map(cellIdx -> [tileIdx])
+    this.bedIndex = new Map();
     for (const [i, bed] of this.beds) {
-      const x = i % this.w, y = (i - (i % this.w)) / this.w;
+      const x = i % this.w;
+      const y = (i - (i % this.w)) / this.w;
       const ci = Math.floor(y / this.cell) * this.cw + Math.floor(x / this.cell);
       for (const key of Object.keys(bed)) {
         let m = this.bedIndex.get(key);
@@ -154,20 +263,24 @@ export class World {
     }
   }
 
-  /** Breadth-first field: for any land tile, the nearest drinkable tile. Water is
-   *  never hidden from a thirsty person — finding it is a matter of walking. */
   buildWaterField() {
     const n = this.w * this.h;
     this.waterFrom = new Int32Array(n).fill(-1);
     const q = [];
     for (let i = 0; i < n; i++) {
       const t = this.terrain[i];
-      if (t === TERRAIN.WATER || t === TERRAIN.MARSH) { this.waterFrom[i] = i; q.push(i); }
+      if (t === TERRAIN.WATER || t === TERRAIN.MARSH) {
+        this.waterFrom[i] = i;
+        q.push(i);
+      }
     }
     for (let h = 0; h < q.length; h++) {
-      const i = q[h], x = i % this.w, y = (i - x) / this.w;
-      for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
-        const nx = x + dx, ny = y + dy;
+      const i = q[h];
+      const x = i % this.w;
+      const y = (i - x) / this.w;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx;
+        const ny = y + dy;
         if (!this.inBounds(nx, ny)) continue;
         const j = this.idx(nx, ny);
         if (this.waterFrom[j] !== -1 || this.terrain[j] === TERRAIN.DEEP) continue;
@@ -185,34 +298,41 @@ export class World {
     return { x: wx, y: (i - wx) / this.w };
   }
 
-  bedAt(x, y) { return this.beds.get(this.idx(x, y)); }
+  bedAt(x, y) {
+    return this.beds.get(this.idx(x, y));
+  }
 
-  /** Find the nearest tile offering a resource the agent can perceive. */
   findResource(key, from, radius = 18) {
     const m = this.bedIndex?.get(key);
     if (!m) return null;
     const cell = this.cell;
-    const cx = Math.floor(from.x / cell), cy = Math.floor(from.y / cell);
+    const cx = Math.floor(from.x / cell);
+    const cy = Math.floor(from.y / cell);
     const rings = Math.ceil(radius / cell);
-    let best = null, bestD = Infinity;
+    let best = null;
+    let bestD = Infinity;
     for (let r = 0; r <= rings; r++) {
       for (let gy = cy - r; gy <= cy + r; gy++) {
         if (gy < 0 || gy >= this.ch) continue;
         for (let gx = cx - r; gx <= cx + r; gx++) {
           if (gx < 0 || gx >= this.cw) continue;
-          if (r > 0 && Math.abs(gy - cy) !== r && Math.abs(gx - cx) !== r) continue;  // ring only
+          if (r > 0 && Math.abs(gy - cy) !== r && Math.abs(gx - cx) !== r) continue;
           const list = m.get(gy * this.cw + gx);
           if (!list) continue;
           for (const i of list) {
             const bed = this.beds.get(i);
             if (!bed || !bed[key] || bed[key].amount < 1) continue;
-            const x = i % this.w, y = (i - (i % this.w)) / this.w;
+            const x = i % this.w;
+            const y = (i - (i % this.w)) / this.w;
             const d = (x - from.x) ** 2 + (y - from.y) ** 2;
-            if (d < bestD && d <= radius * radius) { bestD = d; best = { x, y, amount: bed[key].amount }; }
+            if (d < bestD && d <= radius * radius) {
+              bestD = d;
+              best = { x, y, amount: bed[key].amount };
+            }
           }
         }
       }
-      if (best) break;   // nearest ring with a hit is good enough
+      if (best) break;
     }
     return best;
   }
@@ -228,12 +348,27 @@ export class World {
   addStructure(s) {
     this.structures.push(s);
     const i = this.idx(s.x, s.y);
+    this.structureIndex.set(i, s);
     this.trails[i] = 1;
+    // Bridges / paths wear a bit of trail onto neighbours
+    if (s.kind === 'bridge' || s.kind === 'path' || s.kind === 'road') {
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        if (!this.inBounds(s.x + dx, s.y + dy)) continue;
+        const j = this.idx(s.x + dx, s.y + dy);
+        this.trails[j] = clamp(this.trails[j] + 0.35, 0, 1);
+      }
+    }
     return s;
   }
 
-  structureAt(x, y) { return this.structures.find((s) => s.x === x && s.y === y); }
-  structuresOfKind(kind) { return this.structures.filter((s) => s.kind === kind); }
+  structureAt(x, y) {
+    if (!this.inBounds(x, y)) return null;
+    return this.structureIndex.get(this.idx(x, y)) || null;
+  }
+
+  structuresOfKind(kind) {
+    return this.structures.filter((s) => s.kind === kind);
+  }
 
   step(dt = 1) {
     this.tick += dt;
@@ -248,17 +383,21 @@ export class World {
 
     if (this.tick % 6 === 0) {
       const roll = this.rng.next();
-      this.weather = roll < 0.06 ? 'storm' : roll < 0.24 ? 'rain' : roll < 0.34 ? 'overcast' : 'clear';
+      this.weather =
+        roll < 0.06 ? 'storm' : roll < 0.24 ? 'rain' : roll < 0.34 ? 'overcast' : 'clear';
     }
-    const growth = (this.weather === 'rain' ? 1.5 : this.weather === 'storm' ? 1.2 : 1) * (0.35 + seasonal);
+    const growth =
+      (this.weather === 'rain' ? 1.5 : this.weather === 'storm' ? 1.2 : 1) *
+      (0.35 + seasonal);
 
-    // Resource regrowth, sampled so huge maps stay cheap.
     const keys = [...this.beds.keys()];
     const sampleCount = Math.max(1, Math.floor(keys.length / 6));
     for (let n = 0; n < sampleCount; n++) {
       const i = keys[(this.tick * 7 + n * 6) % keys.length];
       const bed = this.beds.get(i);
-      for (const r of Object.values(bed)) r.amount = Math.min(r.max, r.amount + r.regrow * growth * 6 * dt);
+      for (const r of Object.values(bed)) {
+        r.amount = Math.min(r.max, r.amount + r.regrow * growth * 6 * dt);
+      }
     }
     for (let i = 0; i < this.trails.length; i += 3) {
       const j = (i + this.tick) % this.trails.length;
@@ -267,11 +406,20 @@ export class World {
     }
   }
 
-  get dayNumber() { return Math.floor(this.tick / 24) + 1; }
-  get hour() { return this.tick % 24; }
+  get dayNumber() {
+    return Math.floor(this.tick / 24) + 1;
+  }
+
+  get hour() {
+    return this.tick % 24;
+  }
+
   timeString() {
     const h = String(Math.floor(this.hour)).padStart(2, '0');
     return `Day ${this.dayNumber} · ${h}:00`;
   }
-  get year() { return Math.floor(this.tick / (24 * 30)) + 1; }
+
+  get year() {
+    return Math.floor(this.tick / (24 * 30)) + 1;
+  }
 }
