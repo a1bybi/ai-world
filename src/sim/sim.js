@@ -4,6 +4,7 @@
 // Norms are not decrees. They are statistical shadows of what minds have learned.
 // Language is native-first; plain + gloss layers exist so an observer can follow.
 // Structures (bridge/path/plaza/…) change movement and social pressure via world + needs.
+// learningSummary / inventionSummary / resourceSummary make culture inspectable.
 
 import { RNG } from '../core/rng.js';
 import { Language } from '../core/language.js';
@@ -18,9 +19,9 @@ import { clamp, dist, mean, topN, hueFor } from '../core/util.js';
 import { STRUCTURE_KINDS } from './actions.js';
 
 const BALANCE = {
-  conceptionChance: 0.032,
+  conceptionChance: 0.04,
   pregnancyTerm: 0.7,
-  birthHealthCost: 0.12,
+  birthHealthCost: 0.08,
   grievanceInterval: 6,
   normsInterval: 24,
   spoilInterval: 24,
@@ -215,8 +216,8 @@ export class Simulation {
           });
         }
       }
-      a.add('water', 1);
-      a.add(rng.pick(['berry', 'root']), rng.int(1, 3));
+      a.add('water', 3);
+      a.add(rng.pick(['berry', 'root', 'grain']), rng.int(5, 10));
       this.addAgent(a);
     }
   }
@@ -830,11 +831,25 @@ export class Simulation {
 
     for (const parent of [mother, father].filter(Boolean)) {
       for (const b of parent.memory.semantic.values()) {
-        if (b.kind !== 'norm' || b.confidence < 0.25) continue;
-        if (this.rng.bool(0.4 + child.genome.learning * 0.3)) {
+        if (b.confidence < 0.25) continue;
+        if (b.kind === 'norm') {
+          if (this.rng.bool(0.4 + child.genome.learning * 0.3)) {
+            child.memory.learn(b.key, {
+              kind: 'norm', confidence: b.confidence * 0.35, valence: b.valence * 0.8,
+              source: `upbringing:${parent.name}`, payload: b.payload,
+            });
+          }
+        } else if (
+          (b.kind === 'matter' || b.kind === 'recipe' || b.kind === 'place') &&
+          b.confidence >= 0.35 &&
+          this.rng.bool(0.35 + child.genome.learning * 0.25)
+        ) {
           child.memory.learn(b.key, {
-            kind: 'norm', confidence: b.confidence * 0.35, valence: b.valence * 0.8,
-            source: `upbringing:${parent.name}`, payload: b.payload,
+            kind: b.kind,
+            confidence: b.confidence * 0.3,
+            valence: b.valence * 0.8,
+            source: `upbringing:${parent.name}`,
+            payload: b.payload,
           });
         }
       }
@@ -1529,6 +1544,112 @@ export class Simulation {
       for (const v of s.stock.values()) t += v;
     }
     return Math.round(t);
+  }
+
+  inventionSummary(limit = 30) {
+    const rows = [];
+    for (const [key, tick] of this.inventionTicks) {
+      const c = this.ont.get(key);
+      if (!c) continue;
+      const word = c.word || key;
+      const lex = this.lexicon.get(word);
+      rows.push({
+        tick,
+        key,
+        word,
+        gloss: lex?.gloss || c.bestFn || c.kind || 'invention',
+        function: c.bestFn || null,
+        tier: c.tier ?? null,
+        uses: c.uses || 0,
+        holders: this.living.filter((a) => a.memory.knows(key, 0.25)).length,
+      });
+    }
+    return rows.sort((a, b) => b.tick - a.tick).slice(0, limit);
+  }
+
+  learningSummary() {
+    const recipes = new Map();
+    const matter = new Map();
+    const norms = new Map();
+    const places = new Map();
+
+    for (const a of this.living) {
+      for (const b of a.memory.semantic.values()) {
+        if (b.confidence < 0.2) continue;
+        let m = null;
+        if (b.kind === 'recipe') m = recipes;
+        else if (b.kind === 'matter' || b.kind === 'concept') m = matter;
+        else if (b.kind === 'norm') m = norms;
+        else if (b.kind === 'place') m = places;
+        if (!m) continue;
+        const cur = m.get(b.key) || { holders: 0, conf: 0, valence: 0 };
+        cur.holders++;
+        cur.conf += b.confidence;
+        cur.valence += b.valence || 0;
+        m.set(b.key, cur);
+      }
+    }
+
+    const top = (map, n = 12) =>
+      [...map.entries()]
+        .map(([key, v]) => {
+          const c = this.ont.get(key);
+          const word = c?.word || key.replace(/^norm:/, '').replace(/^where:/, '');
+          const lex = this.lexicon.get(c?.word || word);
+          return {
+            key,
+            word,
+            gloss: lex?.gloss || c?.bestFn || null,
+            holders: v.holders,
+            confidence: +(v.conf / v.holders).toFixed(2),
+            valence: +(v.valence / v.holders).toFixed(2),
+          };
+        })
+        .sort((a, b) => b.holders - a.holders || b.confidence - a.confidence)
+        .slice(0, n);
+
+    return {
+      tick: this.world.tick,
+      day: this.world.dayNumber,
+      population: this.living.length,
+      food: this.totalFood(),
+      topRecipes: top(recipes, 15),
+      topMatter: top(matter, 15),
+      topNorms: top(norms, 12),
+      topPlaces: top(places, 8),
+      inventions: this.inventionSummary(15),
+      lost: this.lostKnowledge.slice(-12).map((L) => ({
+        word: L.word, key: L.key, lastKeeper: L.lastKeeper, tick: L.tick,
+      })),
+    };
+  }
+
+  resourceSummary() {
+    const inv = new Map();
+    const add = (k, v) => inv.set(k, (inv.get(k) || 0) + v);
+
+    for (const a of this.living) {
+      for (const [k, v] of a.inventory) add(k, v);
+    }
+    for (const s of this.world.structuresOfKind('store')) {
+      if (!s.stock) continue;
+      for (const [k, v] of s.stock) add(k, v);
+    }
+
+    return [...inv.entries()]
+      .map(([key, amount]) => {
+        const c = this.ont.get(key);
+        const word = c?.word || key;
+        return {
+          key,
+          word,
+          gloss: this.lexicon.get(word)?.gloss || c?.bestFn || null,
+          amount: Math.round(amount * 10) / 10,
+          sustenance: +(c?.serves('sustenance') || 0).toFixed(2),
+          holders: this.living.filter((a) => a.count(key) > 0).length,
+        };
+      })
+      .sort((a, b) => b.amount - a.amount);
   }
 
   inspectBeliefs(a) {
