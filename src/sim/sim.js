@@ -25,6 +25,7 @@ const BALANCE = {
   spoilInterval: 24,
   rolesInterval: 12,
   chronicleInterval: 24,
+  tiersInterval: 24,
   corpseDesiccation: 24 * 12,
   tradeCooldown: 30,
   fightCooldown: 60,
@@ -44,6 +45,18 @@ const NORM_SEEDS = [
   { key: 'teaching', label: 'what one knows, all may learn', polarity: 1 },
   { key: 'craft', label: 'a thing well made is owed respect', polarity: 1 },
 ];
+
+// Growth is shown, not scripted: a settlement's tier is just a read-out of how
+// much is actually there. Nothing caps this list from growing further — it's
+// just the ranks named so far.
+const SETTLEMENT_TIERS = [
+  { min: 0, name: 'camp' },
+  { min: 6, name: 'hamlet' },
+  { min: 16, name: 'village' },
+  { min: 32, name: 'town' },
+  { min: 60, name: 'city' },
+];
+function article(word) { return /^[aeiou]/i.test(word) ? 'an' : 'a'; }
 
 export class Simulation {
   constructor(seed = 'aurorae', opts = {}) {
@@ -296,6 +309,7 @@ export class Simulation {
       this.updateRoles();
       this.updateWants();
     }
+    if (w.tick % BALANCE.tiersInterval === 0) this.updateSettlementTiers();
     if (w.tick % BALANCE.chronicleInterval === 0) {
       this.chronicle.sample(this);
       this.chronicle.maybeAdvanceEra(this);
@@ -1111,6 +1125,28 @@ export class Simulation {
     return clamp((pop - 16) / 12, 0, 1);
   }
 
+  /** How grown each settlement is, expressed the same way to everyone: a tier
+   *  name, derived fresh each time from living population and structures built
+   *  nearby — never assigned directly, so it can only ever reflect what's
+   *  actually there. */
+  updateSettlementTiers() {
+    for (const s of this.settlements) {
+      const pop = this.living.filter((a) => dist(a, s) < 22).length;
+      const built = this.world.structures.filter((st) => dist(st, s) < 22).length;
+      const score = pop + built * 0.5;
+      let tier = SETTLEMENT_TIERS[0].name, rank = 0;
+      SETTLEMENT_TIERS.forEach((t, i) => { if (score >= t.min) { tier = t.name; rank = i; } });
+      if (tier !== s.tier) {
+        const priorRank = SETTLEMENT_TIERS.findIndex((t) => t.name === s.tier);
+        const grew = rank > priorRank;
+        s.tier = tier;
+        this.record(null, grew ? 'growth' : 'decline', `${s.name} became ${article(tier)} ${tier}`, {
+          valence: grew ? 0.4 : -0.3, intensity: 0.6, landmark: true,
+        });
+      }
+    }
+  }
+
   updateWants() {
     const want = new Map();
     for (const settlement of this.settlements) {
@@ -1573,4 +1609,4 @@ export class Simulation {
   }
 }
 
-export { YEAR_TICKS, SKILLS, moodWord, BALANCE, NORM_SEEDS };
+export { YEAR_TICKS, SKILLS, moodWord, BALANCE, NORM_SEEDS, SETTLEMENT_TIERS };
