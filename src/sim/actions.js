@@ -4,8 +4,7 @@
 // (with some temperament-driven noise) wins.
 //
 // Norms enter only as learned beliefs (sim.effectiveNorm / personalNorm).
-// normsFor(tags) averages pressure across any matching situation keys, including
-// emergent norm:* beliefs formed by memory consolidation.
+// Structures can change movement (bridge/path) and social/work utility (plaza/workshop).
 
 import { clamp, dist, topN } from '../core/util.js';
 import { TERRAIN } from '../world/world.js';
@@ -17,6 +16,7 @@ function stepToward(agent, world, target) {
   const dx = Math.sign(target.x - agent.x);
   const dy = Math.sign(target.y - agent.y);
   if (dx === 0 && dy === 0) return true;
+
   const tries = [
     T(agent.x + dx, agent.y + dy),
     T(agent.x + dx, agent.y),
@@ -24,15 +24,22 @@ function stepToward(agent, world, target) {
     T(agent.x + dx, agent.y - dy),
     T(agent.x - dx, agent.y + dy),
   ];
+
+  const scored = [];
   for (const t of tries) {
-    if (world.walkable(t.x, t.y)) {
-      agent.x = t.x;
-      agent.y = t.y;
-      agent.stats.steps++;
-      const idx = world.idx(t.x, t.y);
-      world.trails[idx] = clamp(world.trails[idx] + 0.02, 0, 1);
-      return agent.x === target.x && agent.y === target.y;
-    }
+    if (!world.walkable(t.x, t.y)) continue;
+    const cost = typeof world.moveCost === 'function' ? world.moveCost(t.x, t.y) : 1;
+    scored.push({ t, cost });
+  }
+  scored.sort((a, b) => a.cost - b.cost);
+
+  for (const { t } of scored) {
+    agent.x = t.x;
+    agent.y = t.y;
+    agent.stats.steps++;
+    const idx = world.idx(t.x, t.y);
+    world.trails[idx] = clamp(world.trails[idx] + 0.02, 0, 1);
+    return agent.x === target.x && agent.y === target.y;
   }
   return false;
 }
@@ -68,10 +75,6 @@ function beside(world, t) {
   return t;
 }
 
-/**
- * Average norm pressure for any of the given situation tags.
- * Works with seeded keys and emergent norm:<situation> beliefs.
- */
 function normsFor(a, ctx, tags = []) {
   if (!tags.length) return 0;
   let sum = 0;
@@ -110,6 +113,14 @@ function normPull(a, ctx, key) {
   return normsFor(a, ctx, [key]);
 }
 
+function plazaBoost(ctx, a, mult = 1.25) {
+  if (typeof ctx.world.hasStructureNear === 'function' &&
+      ctx.world.hasStructureNear(a.x, a.y, 'plaza', 6)) {
+    return mult;
+  }
+  return 1;
+}
+
 const U = {
   thirstBase: 2.6,
   thirstCrisis: 6,
@@ -130,6 +141,9 @@ const STRUCTURE_KINDS = {
   shrine:   { fn: 'art',        cost: 6,  need: (s) => s.shrineDeficit,   desc: 'a place for the dead and the questions' },
   wall:     { fn: 'shelter',    cost: 14, need: (s) => s.wallDeficit,     desc: 'a boundary against what is out there' },
   hall:     { fn: 'shelter',    cost: 18, need: (s) => s.hallDeficit,     desc: 'one roof big enough for everyone' },
+  bridge:   { fn: 'shelter',    cost: 10, need: (s) => s.bridgeDeficit,   desc: 'a way across water' },
+  path:     { fn: 'shelter',    cost: 3,  need: (s) => s.pathDeficit,     desc: 'beaten ground that is easier to walk' },
+  plaza:    { fn: 'art',        cost: 8,  need: (s) => s.plazaDeficit,    desc: 'open ground where people meet' },
 };
 
 export const ACTIONS = {
@@ -363,6 +377,11 @@ export const ACTIONS = {
       if (a.carried() > a.carryLimit * 0.95) return [];
       const out = [];
       const hungryHousehold = a.body.hunger > 0.35 || ctx.sim.totalFood() < ctx.sim.living.length * 2;
+      const shopBoost =
+        typeof ctx.world.hasStructureNear === 'function' &&
+        ctx.world.hasStructureNear(a.x, a.y, 'workshop', 5)
+          ? 1.15
+          : 1;
       let looked = 0;
       for (const key of a.memory.knownKeys('recipe')) {
         if (++looked > 24) break;
@@ -375,7 +394,8 @@ export const ACTIONS = {
         const craftNorm = normsFor(a, ctx, ['craft', 'invention']);
         out.push({
           kind: 'craft',
-          u: desire * 1.3 * ctx.bias.work * (0.5 + a.skills.craft) * (1 + Math.max(0, craftNorm) * 0.25),
+          u: desire * 1.3 * ctx.bias.work * (0.5 + a.skills.craft) *
+            (1 + Math.max(0, craftNorm) * 0.25) * shopBoost,
           payload: key,
           dur: 2 + c.tier,
         });
@@ -615,11 +635,13 @@ export const ACTIONS = {
       const near = ctx.nearby(a, 6).filter((o) => o.id !== a.id);
       if (!near.length) return [];
       const out = [];
+      const boost = plazaBoost(ctx, a, 1.25);
       for (const o of near.slice(0, 4)) {
         const r = a.rel(o);
         const lonely = 1 - clamp(r.familiarity);
         const u = (0.2 + a.genome.sociability * 0.8) * ctx.bias.social * (1 - a.body.hunger * 0.6) *
-          (0.4 + lonely * 0.6 + r.affection * 0.5 + a.genome.expressive * 0.3) / (1 + dist(a, o) * 0.12);
+          (0.4 + lonely * 0.6 + r.affection * 0.5 + a.genome.expressive * 0.3) /
+          (1 + dist(a, o) * 0.12) * boost;
         out.push({ kind: 'converse', u, targetId: o.id, dur: 2 });
       }
       return topN(out, 2, (o) => o.u);
@@ -669,6 +691,7 @@ export const ACTIONS = {
     propose(a, ctx) {
       const near = ctx.nearby(a, 7).filter((o) => o.id !== a.id && !o.isChild(ctx.world.tick));
       const out = [];
+      const boost = plazaBoost(ctx, a, 1.2);
       for (const o of near) {
         const r = a.rel(o);
         if (ctx.world.tick - (r.lastTrade || -999) < 30) continue;
@@ -676,7 +699,7 @@ export const ACTIONS = {
         if (!deal) continue;
         out.push({
           kind: 'trade',
-          u: deal.gain * 0.6 * (0.5 + r.trust) * (0.5 + a.skills.trade + a.genome.sociability * 0.5),
+          u: deal.gain * 0.6 * (0.5 + r.trust) * (0.5 + a.skills.trade + a.genome.sociability * 0.5) * boost,
           targetId: o.id,
           deal,
           dur: 2,
