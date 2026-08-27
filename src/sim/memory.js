@@ -3,9 +3,9 @@
 // landmark experiences are flagged permanent and are never pruned. Every event
 // also goes into the world Chronicle, which forgets nothing, ever.
 //
-// Norms are ordinary beliefs with kind === 'norm'. They form from any repeated
-// lived pattern (kind and/or concept), not a fixed whitelist. Seeds may give
-// faint priors; evidence owns the rest.
+// Norms are ordinary beliefs with kind === 'norm'. They form only from
+// social/moral situations (theft, violence, gift, …), not from gather/craft
+// matter concepts. Seeds may give faint priors; evidence owns the rest.
 
 import { clamp, topN } from '../core/util.js';
 
@@ -55,6 +55,7 @@ const SITUATION_ALIASES = {
 function situationKey(m) {
   const kind = m.kind || '';
   if (!NORMABLE_KINDS.has(kind)) return null;
+
   let raw = kind;
 
   if (kind === 'witness') {
@@ -64,8 +65,7 @@ function situationKey(m) {
     else raw = 'neglect';
   }
 
-  // Optional: social concept only when the kind is already normable
-  // (e.g. concept "theft" on a betrayal episode) — still not matter keys
+  // Social concept only when the kind is already normable — still not matter keys
   if (m.concept && NORMABLE_KINDS.has(String(m.concept))) {
     raw = String(m.concept);
   }
@@ -343,8 +343,8 @@ export class MemoryStore {
   }
 
   /**
-   * Open norm formation: any repeated situation (kind and/or concept) with
-   * non-trivial valence can become norm:<situation>. No fixed whitelist.
+   * Norm formation from repeated social/moral situations only.
+   * Gather/craft matter never becomes norm:*.
    */
   _consolidateNorms(candidates) {
     const buckets = new Map();
@@ -362,7 +362,11 @@ export class MemoryStore {
       };
       b.n++;
       b.v += m.valence;
-      if (m.text && m.text.length > (b.sampleText?.length || 0) && m.text.length < 120) {
+      if (
+        m.text &&
+        m.text.length > (b.sampleText?.length || 0) &&
+        m.text.length < 120
+      ) {
         b.sampleText = m.text;
       }
       buckets.set(sitKey, b);
