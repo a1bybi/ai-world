@@ -175,7 +175,7 @@ export const ACTIONS = {
   eat: {
     category: 'body',
     propose(a, ctx) {
-      if (a.body.hunger < 0.3) return [];
+      if (a.body.hunger < 0.28) return [];
       let best = null;
       for (const key of a.inventory.keys()) {
         const c = ctx.ont.get(key);
@@ -188,7 +188,7 @@ export const ACTIONS = {
         if (store) {
           return [{
             kind: 'takeFromStore',
-            u: a.body.hunger * U.hungerBase + Math.max(0, a.body.hunger - 0.45) * 10,
+            u: a.body.hunger * U.hungerBase + Math.max(0, a.body.hunger - 0.35) * 12,
             target: store,
             dur: 1,
           }];
@@ -196,8 +196,9 @@ export const ACTIONS = {
         return [];
       }
       const u =
-        (a.body.hunger * U.hungerBase + Math.max(0, a.body.hunger - 0.35) * U.hungerCrisis) *
-        (0.5 + best.n);
+        (a.body.hunger * U.hungerBase + Math.max(0, a.body.hunger - 0.25) * U.hungerCrisis) *
+        (0.5 + best.n) *
+        (a.body.hunger > 0.4 ? 2.5 : 1);
       return [{ kind: 'eat', u, payload: best.key, dur: 1 }];
     },
     run(a, ctx, act) {
@@ -229,11 +230,16 @@ export const ACTIONS = {
   takeFromStore: {
     category: 'body',
     propose(a, ctx) {
-      if (a.body.hunger < 0.45) return [];
+      if (a.body.hunger < 0.3) return [];
       const store = ctx.world.structuresOfKind('store')
         .find((s) => s.stock && [...s.stock.values()].some((v) => v > 0));
       if (!store) return [];
-      return [{ kind: 'takeFromStore', u: a.body.hunger * 1.8, target: store, dur: 1 }];
+      return [{
+        kind: 'takeFromStore',
+        u: a.body.hunger * 2.2 + Math.max(0, a.body.hunger - 0.4) * 8,
+        target: store,
+        dur: 1,
+      }];
     },
     run(a, ctx, act) {
       if (!stepToward(a, ctx.world, act.target) && dist(a, act.target) > 1.5) return 'continue';
@@ -307,7 +313,7 @@ export const ACTIONS = {
     propose(a, ctx) {
       const laden = a.carried() > a.carryLimit;
       const out = [];
-      const hungry = a.body.hunger > 0.45;
+      const hungry = a.body.hunger > 0.4;
       const known = new Set(
         a.memory.knownKeys('matter').concat([...a.memory.semantic.keys()]),
       );
@@ -321,7 +327,7 @@ export const ACTIONS = {
         if (laden && !(isFood && hungry)) continue;
         const desire =
           a.desireFor(c.key, ctx.ont, ctx.sim) +
-          (hungry && isFood ? a.body.hunger * 1.5 : 0);
+          (hungry && isFood ? a.body.hunger * 1.8 : 0);
         scored.push({ c, desire });
       }
 
@@ -335,9 +341,9 @@ export const ACTIONS = {
             : null);
         if (!spot) continue;
         const travel = dist(a, spot);
-        const feedsMe = (c.functions?.sustenance || 0) > 0.15 ? 1 + a.body.hunger * 2.2 : 1;
+        const feedsMe = (c.functions?.sustenance || 0) > 0.15 ? 1 + a.body.hunger * 2.5 : 1;
         const u =
-          ((desire * 1.9 * feedsMe * ctx.bias.work) / (1 + travel * 0.06)) *
+          ((desire * 1.9 * feedsMe * (ctx.bias?.work ?? 1)) / (1 + travel * 0.06)) *
           (0.6 + a.skills.forage);
         out.push({
           kind: 'gather',
@@ -406,7 +412,7 @@ export const ACTIONS = {
       const capability = 0.25 + a.skills.hunt * 0.9 + (weapon ? weapon.score * 0.9 : 0);
       const risk = clamp(0.5 - capability * 0.4);
       const u =
-        (hungerPull * capability * ctx.bias.work * (1 - risk * (1 - a.genome.risk))) /
+        (hungerPull * capability * (ctx.bias?.work ?? 1) * (1 - risk * (1 - a.genome.risk))) /
         (1 + dist(a, spot) * 0.05);
       return [{
         kind: 'hunt',
@@ -455,7 +461,9 @@ export const ACTIONS = {
         const hurt = ctx.rng.float(0.05, 0.3) / Math.max(0.2, a.genome.resilience);
         a.body.injury = clamp(a.body.injury + hurt, 0, 1);
         const idx = ctx.world.idx(act.site.x, act.site.y);
-        ctx.world.danger[idx] = clamp(ctx.world.danger[idx] + 0.3, 0, 1);
+        if (ctx.world.danger) {
+          ctx.world.danger[idx] = clamp((ctx.world.danger[idx] || 0) + 0.3, 0, 1);
+        }
         ctx.sim.record(a, 'injury', `${a.name} was hurt hunting and came back with nothing`, {
           valence: -0.7, intensity: 0.7,
         });
@@ -470,6 +478,7 @@ export const ACTIONS = {
   craft: {
     category: 'work',
     propose(a, ctx) {
+      if (a.body.hunger > 0.55) return [];
       if (a.carried() > a.carryLimit * 0.95) return [];
       const out = [];
       const hungryHousehold =
@@ -499,7 +508,7 @@ export const ACTIONS = {
           u:
             desire *
             1.3 *
-            ctx.bias.work *
+            (ctx.bias?.work ?? 1) *
             (0.5 + a.skills.craft) *
             (1 + Math.max(0, craftNorm) * 0.25) *
             shopBoost,
@@ -530,12 +539,12 @@ export const ACTIONS = {
   experiment: {
     category: 'thought',
     propose(a, ctx) {
-      if (a.body.hunger > 0.72 || a.body.energy < 0.25) return [];
+      if (a.body.hunger > 0.45 || a.body.energy < 0.25) return [];
       const owned = [...a.inventory.keys()].filter((k) => ctx.ont.get(k));
       if (owned.length < 1) return [];
       const u =
         (0.55 + a.genome.curiosity * 1.9) *
-        ctx.bias.explore *
+        (ctx.bias?.explore ?? 1) *
         (0.7 + a.skills.craft) *
         (1 - a.body.hunger * 0.5) *
         (a.affect.e.awe * 0.5 + 0.95) *
@@ -552,23 +561,35 @@ export const ACTIONS = {
       if (!owned.length) return 'abort';
       const procs = ctx.ont.availableProcesses();
       const gaps = ctx.sim.capabilityGaps(a);
-      const short = a.body.hunger > 0.35 || ctx.sim.totalFood() < ctx.sim.living.length * 2;
+      const short = a.body.hunger > 0.4;
       const weight = (k) => {
         const c = ctx.ont.get(k);
         let w = 0.3 + (a.memory.belief(k)?.confidence || 0) * 0.6;
-        if (short && c.serves('sustenance') > 0.2) w *= 0.08;
+        if (short && c.serves('sustenance') > 0.2) w *= 0.05;
         for (const g of gaps) {
           w += (c.functions[g] || 0) * 1.5 + (c.props.hard + c.props.flexible) * 0.1;
         }
         return w;
       };
-      const aKey = ctx.rng.weighted(owned.map((k) => [k, weight(k)]));
-      const bKey = ctx.rng.bool(0.78)
+      const aKey = ctx.rng.weighted
         ? ctx.rng.weighted(owned.map((k) => [k, weight(k)]))
+        : ctx.rng.pick(owned);
+      const bKey = ctx.rng.bool(0.78)
+        ? (ctx.rng.weighted
+            ? ctx.rng.weighted(owned.map((k) => [k, weight(k)]))
+            : ctx.rng.pick(owned))
         : null;
-      const proc = ctx.rng.weighted(
-        procs.map((p) => [p, 1 + (a.memory.belief(`proc:${p}`)?.confidence || 0) * 1.5]),
-      );
+      const proc = ctx.rng.weighted
+        ? ctx.rng.weighted(
+            procs.map((p) => [p, 1 + (a.memory.belief(`proc:${p}`)?.confidence || 0) * 1.5]),
+          )
+        : ctx.rng.pick(procs);
+
+      const isFood = (k) => (ctx.ont.get(k)?.serves('sustenance') || 0) > 0.15;
+      if (a.body.hunger > 0.4 && (isFood(aKey) || (bKey && isFood(bKey)))) {
+        return 'abort';
+      }
+
       a.memory.learn(`proc:${proc}`, { kind: 'process', confidence: 0.08, valence: 0 });
       const res = ctx.ont.attempt(a, aKey, bKey && bKey !== aKey ? bKey : null, proc);
       a.stats.ideas++;
@@ -609,6 +630,7 @@ export const ACTIONS = {
     category: 'work',
     propose(a, ctx) {
       if (a.isChild(ctx.world.tick)) return [];
+      if (a.body.hunger > 0.65) return [];
       const settlement = ctx.sim.nearestSettlement(a.x, a.y);
       const s = ctx.sim.settlementNeeds(settlement);
       const out = [];
@@ -623,7 +645,7 @@ export const ACTIONS = {
           if (spot && a.carried() <= a.carryLimit) {
             out.push({
               kind: 'gather',
-              u: need * 1.25 * ctx.bias.work * (0.5 + a.genome.industry),
+              u: need * 1.25 * (ctx.bias?.work ?? 1) * (0.5 + a.genome.industry),
               payload: material.key,
               target: beside(ctx.world, spot),
               site: spot,
@@ -633,7 +655,7 @@ export const ACTIONS = {
           continue;
         }
         const u =
-          need * 1.5 * ctx.bias.work * (0.65 + a.skills.build * 0.5) * (0.5 + a.genome.industry);
+          need * 1.5 * (ctx.bias?.work ?? 1) * (0.65 + a.skills.build * 0.5) * (0.5 + a.genome.industry);
         out.push({
           kind: 'build',
           u,
@@ -670,6 +692,7 @@ export const ACTIONS = {
     category: 'work',
     propose(a, ctx) {
       if (a.isChild(ctx.world.tick) || a.ageAt(ctx.world.tick) < 16) return [];
+      if (a.body.hunger > 0.6) return [];
       const home = ctx.sim.nearestSettlement(a.x, a.y);
       const pressure = ctx.sim.settlementPressure(home);
       if (pressure < 0.35) return [];
@@ -696,7 +719,7 @@ export const ACTIONS = {
       const u =
         pressure *
         (0.4 + a.genome.risk + a.genome.industry * 0.5) *
-        ctx.bias.work *
+        (ctx.bias?.work ?? 1) *
         (0.3 + bestScore);
       if (u < 0.4) return [];
       return [{ kind: 'expand', u, target: T(best.x, best.y), dur: 1 }];
@@ -720,7 +743,7 @@ export const ACTIONS = {
       if (!f) return [];
       const ripe = f.ripeness || 0;
       const u =
-        ((ripe > 0.85 ? 1.9 + a.body.hunger : 0.5) * ctx.bias.work * (0.4 + a.skills.farm)) /
+        ((ripe > 0.85 ? 1.9 + a.body.hunger : 0.5) * (ctx.bias?.work ?? 1) * (0.4 + a.skills.farm)) /
         (1 + dist(a, f) * 0.05);
       return [{ kind: 'farm', u, target: T(f.x, f.y), field: f, dur: 2 }];
     },
@@ -734,7 +757,7 @@ export const ACTIONS = {
         const got =
           2 +
           Math.round(
-            a.skills.farm * 5 + ctx.world.fertility[ctx.world.idx(f.x, f.y)] * 4,
+            a.skills.farm * 5 + (ctx.world.fertility?.[ctx.world.idx(f.x, f.y)] || 0.5) * 4,
           );
         a.add('grain', got);
         f.ripeness = 0;
@@ -760,6 +783,7 @@ export const ACTIONS = {
   store: {
     category: 'work',
     propose(a, ctx) {
+      if (a.body.hunger > 0.55) return [];
       const stores = ctx.world.structuresOfKind('store');
       if (!stores.length) return [];
       let surplus = 0;
@@ -769,7 +793,7 @@ export const ACTIONS = {
       }
       if (surplus < 2) return [];
       const s = topN(stores, 1, (x) => -dist(a, x))[0];
-      const u = surplus * 0.16 * (0.5 + a.genome.patience) * ctx.bias.hoard;
+      const u = surplus * 0.16 * (0.5 + a.genome.patience) * (ctx.bias?.hoard ?? 1);
       return [{ kind: 'store', u, target: T(s.x, s.y), store: s, dur: 1 }];
     },
     run(a, ctx, act) {
@@ -811,7 +835,7 @@ export const ACTIONS = {
         const lonely = 1 - clamp(r.familiarity);
         const u =
           ((0.2 + a.genome.sociability * 0.8) *
-            ctx.bias.social *
+            (ctx.bias?.social ?? 1) *
             (1 - a.body.hunger * 0.6) *
             (0.4 + lonely * 0.6 + r.affection * 0.5 + a.genome.expressive * 0.3) *
             boost) /
@@ -848,7 +872,7 @@ export const ACTIONS = {
         const kinBonus = a.children.includes(o.id) ? 1.4 : 0;
         const u =
           (0.25 + a.genome.empathy * 0.9 + kinBonus) *
-          ctx.bias.social *
+          (ctx.bias?.social ?? 1) *
           (0.4 + a.skills.teach) *
           (a.isElder(ctx.world.tick) ? 1.5 : 1) *
           (o.isChild(ctx.world.tick) ? 1.4 : 1) *
@@ -949,7 +973,7 @@ export const ACTIONS = {
             r.affection * 1.2 +
             r.kin * 1.5 +
             (r.debt < 0 ? 0.6 : 0)) *
-          ctx.bias.social *
+          (ctx.bias?.social ?? 1) *
           (1 + Math.max(0, shareNorm) * 0.5);
         out.push({ kind: 'give', u, targetId: o.id, payload: gift, dur: 1 });
       }
@@ -1085,7 +1109,7 @@ export const ACTIONS = {
         const u =
           (a.affect.e.anger * 1.1 + grudge * 0.9) *
           (0.15 + a.genome.aggression * 1.2) *
-          ctx.bias.aggress *
+          (ctx.bias?.aggress ?? 1) *
           (1 - a.genome.empathy * 0.7) *
           (1 + violenceNorm * 1.2);
         if (u < 0.95) continue;
@@ -1277,13 +1301,14 @@ export const ACTIONS = {
   makeArt: {
     category: 'thought',
     propose(a, ctx) {
+      if (a.body.hunger > 0.55) return [];
       const medium = a.bestToolFor('art', ctx.ont) || a.bestToolFor('record', ctx.ont);
       const u =
         (a.genome.expressive * 1.3 +
           a.affect.e.awe +
           a.affect.e.grief * 0.8 +
           a.affect.e.love * 0.6) *
-          ctx.bias.create *
+          (ctx.bias?.create ?? 1) *
           (medium ? 1.4 : 0.6) -
         a.body.hunger;
       if (u < 0.6) return [];
@@ -1300,9 +1325,10 @@ export const ACTIONS = {
   explore: {
     category: 'thought',
     propose(a, ctx) {
+      if (a.body.hunger > 0.6) return [];
       const u =
         (0.25 + a.genome.curiosity * 1.1) *
-        ctx.bias.explore *
+        (ctx.bias?.explore ?? 1) *
         (1 - a.body.hunger * 0.8) *
         a.body.energy;
       const r = 8 + Math.round(a.genome.curiosity * 26);
