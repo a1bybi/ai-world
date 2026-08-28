@@ -46,8 +46,9 @@ export function updateBody(a, world, dt = 1) {
   const age = a.ageAt(world.tick);
   const young = age < 12 ? 0.55 : 1;
 
-  b.hunger = clamp(b.hunger + 0.0035 * g.metabolism * young * dt, 0, 1);
-  b.thirst = clamp(b.thirst + 0.006 * young * dt, 0, 1);
+  // Gentle drain — founders must survive long enough to eat and teach
+  b.hunger = clamp(b.hunger + 0.0032 * g.metabolism * young * dt, 0, 1);
+  b.thirst = clamp(b.thirst + 0.0055 * young * dt, 0, 1);
   b.rest = clamp(b.rest - 0.0075 * dt, 0, 1);
   b.energy = clamp(
     b.energy - 0.006 * dt + (b.rest > 0.6 ? 0.007 : 0),
@@ -61,8 +62,8 @@ export function updateBody(a, world, dt = 1) {
   );
 
   let damage = 0;
-  if (b.hunger > 0.94) damage += (b.hunger - 0.94) * 0.008;
-  if (b.thirst > 0.94) damage += (b.thirst - 0.94) * 0.025;
+  if (b.hunger > 0.94) damage += (b.hunger - 0.94) * 0.006;
+  if (b.thirst > 0.94) damage += (b.thirst - 0.94) * 0.02;
   if (b.warmth < 0.15) damage += (0.15 - b.warmth) * 0.05;
   if (b.rest < 0.05) damage += 0.004;
   damage += b.illness * 0.02 + b.injury * 0.015;
@@ -96,6 +97,13 @@ function computeClothing(a, ont) {
     if (c) best = Math.max(best, c.serves('clothing'));
   }
   a.bestClothing = clamp(best);
+}
+
+function holdingFood(a, ont) {
+  for (const k of a.inventory.keys()) {
+    if ((ont.get(k)?.serves('sustenance') || 0) > 0.15) return true;
+  }
+  return false;
 }
 
 export function think(a, ctx) {
@@ -134,6 +142,7 @@ export function think(a, ctx) {
 
   ctx.bias = emotionalBias(a);
 
+  // Continue current action unless crisis requires abort
   if (a.action) {
     const urgent =
       a.body.thirst > 0.88 ||
@@ -152,7 +161,16 @@ export function think(a, ctx) {
         a.action.kind === 'farm') &&
         a.body.hunger > 0.55);
 
-    if (!urgent || relieving) {
+    // If hungry with food in hand, abandon non-eating actions
+    if (
+      a.body.hunger > 0.4 &&
+      holdingFood(a, ctx.ont) &&
+      a.action.kind !== 'eat' &&
+      a.action.kind !== 'drink' &&
+      a.action.kind !== 'takeFromStore'
+    ) {
+      a.action = null;
+    } else if (!urgent || relieving) {
       let res;
       try {
         res = ACTIONS[a.action.kind].run(a, ctx, a.action);
@@ -168,9 +186,9 @@ export function think(a, ctx) {
       if (res === 'abort') a.frustration = (a.frustration || 0) + 1;
       else a.frustration = 0;
       return;
+    } else {
+      a.action = null;
     }
-
-    a.action = null;
   }
 
   const deficits = {
@@ -205,6 +223,8 @@ export function think(a, ctx) {
     const paired = adults.filter((x) => x.partner).length;
     if (adults.length && paired < adults.length * 0.4) pairBoost = 1.45;
   }
+
+  const hasFood = holdingFood(a, ctx.ont);
 
   const candidates = [];
   for (const [name, def] of ACTION_LIST) {
@@ -248,16 +268,33 @@ export function think(a, ctx) {
         }
       }
 
-      // Survival overrides: eat and gather must win when hungry
+      // Soft survival bias
       if (a.body.hunger > 0.4 && p.kind === 'eat') p.u *= 3.5;
       if (a.body.hunger > 0.4 && p.kind === 'takeFromStore') p.u *= 2.5;
-      if (a.body.hunger > 0.55 && p.kind === 'gather') p.u *= 1.8;
-      if (a.body.hunger > 0.55 && p.kind === 'hunt') p.u *= 1.4;
+      if (a.body.hunger > 0.5 && p.kind === 'gather') p.u *= 1.8;
+      if (a.body.hunger > 0.5 && p.kind === 'hunt') p.u *= 1.4;
       if (
-        a.body.hunger > 0.5 &&
+        a.body.hunger > 0.4 &&
         (p.kind === 'experiment' || p.kind === 'craft' || p.kind === 'makeArt')
       ) {
-        p.u *= 0.12;
+        p.u *= 0.08;
+      }
+
+      // HARD GATE: hungry + food in inventory → almost only eat/drink
+      if (a.body.hunger > 0.35 && hasFood) {
+        if (p.kind === 'eat') p.u *= 10;
+        else if (p.kind === 'drink' || p.kind === 'takeFromStore') p.u *= 1.2;
+        else p.u *= 0.04;
+      }
+
+      // No food in hand but hungry → push gather / store draw
+      if (a.body.hunger > 0.4 && !hasFood) {
+        if (p.kind === 'gather' || p.kind === 'takeFromStore' || p.kind === 'farm') {
+          p.u *= 2.2;
+        }
+        if (p.kind === 'experiment' || p.kind === 'craft' || p.kind === 'makeArt') {
+          p.u *= 0.05;
+        }
       }
 
       if (
@@ -275,6 +312,13 @@ export function think(a, ctx) {
 
       if (p.kind === 'court') p.u *= pairBoost;
 
+      // Children: strongly prefer follow + receive food paths
+      if (isChild) {
+        if (p.kind === 'follow') p.u *= 2.5;
+        if (p.kind === 'gather') p.u *= 1.6;
+        if (p.kind === 'eat') p.u *= 4;
+      }
+
       candidates.push(p);
     }
   }
@@ -287,13 +331,15 @@ export function think(a, ctx) {
   }
 
   const temperature =
-    crisis > 0.35
-      ? clamp(0.06 + a.genome.curiosity * 0.08, 0.05, 0.2)
-      : clamp(
-          0.16 + a.genome.curiosity * 0.3 + (1 - a.genome.patience) * 0.16,
-          0.08,
-          0.75,
-        );
+    a.body.hunger > 0.45 || a.body.thirst > 0.45
+      ? clamp(0.05 + a.genome.curiosity * 0.05, 0.04, 0.15)
+      : crisis > 0.35
+        ? clamp(0.06 + a.genome.curiosity * 0.08, 0.05, 0.2)
+        : clamp(
+            0.16 + a.genome.curiosity * 0.3 + (1 - a.genome.patience) * 0.16,
+            0.08,
+            0.75,
+          );
 
   const chosen = softmaxPick(ctx.rng, candidates, (c) => c.u, temperature);
 
