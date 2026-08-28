@@ -1,6 +1,4 @@
 // One mind, one tick. Perceive → feel → weigh every option → act.
-// The agent's own reasoning is kept on `agent.reasoning` so an observer can open
-// anybody's head and see exactly why they did what they did.
 
 import { clamp, softmaxPick, topN } from '../core/util.js';
 import { ACTIONS } from './actions.js';
@@ -24,7 +22,8 @@ const SKILL_FOR = {
 };
 
 const FEEDS = new Set(['gather', 'hunt', 'farm', 'takeFromStore']);
-const INVEST = new Set(['build', 'store', 'expand', 'court', 'care']);
+/** Court is NOT here — pairing must stay possible while mildly hungry. */
+const INVEST = new Set(['build', 'store', 'expand', 'care']);
 
 const RELIEF = {
   eat: 'food',
@@ -196,9 +195,18 @@ export function think(a, ctx) {
   const isChild = a.isChild(world.tick);
   const isElder = a.isElder(world.tick);
 
-  // Survival lesson from past hungry successes
   const hungerLesson = a.memory.belief('lesson:hunger');
   const lessonWhat = hungerLesson?.payload?.what || null;
+
+  // How paired is the adult population? (for court boost)
+  let pairBoost = 1;
+  if (!a.partner && !isChild) {
+    const adults = ctx.sim.living.filter(
+      (x) => !x.isChild(world.tick) && x.ageAt(world.tick) > 16,
+    );
+    const paired = adults.filter((x) => x.partner).length;
+    if (adults.length && paired < adults.length * 0.4) pairBoost = 1.45;
+  }
 
   const candidates = [];
   for (const [name, def] of ACTION_LIST) {
@@ -236,7 +244,6 @@ export function think(a, ctx) {
         }
       }
 
-      // Reinforce what worked last time they were hungry
       if (
         hungerLesson &&
         hungerLesson.confidence > 0.2 &&
@@ -250,6 +257,8 @@ export function think(a, ctx) {
         }
       }
 
+      if (p.kind === 'court') p.u *= pairBoost;
+
       candidates.push(p);
     }
   }
@@ -261,7 +270,6 @@ export function think(a, ctx) {
     return;
   }
 
-  // Low temperature when desperate → less random, more survival-focused
   const temperature =
     crisis > 0.35
       ? clamp(0.06 + a.genome.curiosity * 0.08, 0.05, 0.2)
