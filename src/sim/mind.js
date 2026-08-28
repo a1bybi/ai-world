@@ -22,7 +22,6 @@ const SKILL_FOR = {
 };
 
 const FEEDS = new Set(['gather', 'hunt', 'farm', 'takeFromStore']);
-/** Court is NOT here — pairing must stay possible while mildly hungry. */
 const INVEST = new Set(['build', 'store', 'expand', 'care']);
 
 const RELIEF = {
@@ -47,8 +46,8 @@ export function updateBody(a, world, dt = 1) {
   const age = a.ageAt(world.tick);
   const young = age < 12 ? 0.55 : 1;
 
-  b.hunger = clamp(b.hunger + 0.0045 * g.metabolism * young * dt, 0, 1);
-  b.thirst = clamp(b.thirst + 0.008 * young * dt, 0, 1);
+  b.hunger = clamp(b.hunger + 0.0035 * g.metabolism * young * dt, 0, 1);
+  b.thirst = clamp(b.thirst + 0.006 * young * dt, 0, 1);
   b.rest = clamp(b.rest - 0.0075 * dt, 0, 1);
   b.energy = clamp(
     b.energy - 0.006 * dt + (b.rest > 0.6 ? 0.007 : 0),
@@ -62,8 +61,8 @@ export function updateBody(a, world, dt = 1) {
   );
 
   let damage = 0;
-  if (b.hunger > 0.92) damage += (b.hunger - 0.92) * 0.012;
-  if (b.thirst > 0.92) damage += (b.thirst - 0.92) * 0.05;
+  if (b.hunger > 0.94) damage += (b.hunger - 0.94) * 0.008;
+  if (b.thirst > 0.94) damage += (b.thirst - 0.94) * 0.025;
   if (b.warmth < 0.15) damage += (0.15 - b.warmth) * 0.05;
   if (b.rest < 0.05) damage += 0.004;
   damage += b.illness * 0.02 + b.injury * 0.015;
@@ -241,13 +240,24 @@ export function think(a, ctx) {
           p.kind === 'converse' ||
           p.kind === 'follow'
         ) {
-          // Mild only — pairing must stay possible while mildly hungry
           p.u *= 1 - crisis * 0.12;
         } else if (INVEST.has(p.kind)) {
           p.u *= 1 - crisis * 0.25;
         } else {
           p.u *= 1 - crisis * 0.8;
         }
+      }
+
+      // Survival overrides: eat and gather must win when hungry
+      if (a.body.hunger > 0.4 && p.kind === 'eat') p.u *= 3.5;
+      if (a.body.hunger > 0.4 && p.kind === 'takeFromStore') p.u *= 2.5;
+      if (a.body.hunger > 0.55 && p.kind === 'gather') p.u *= 1.8;
+      if (a.body.hunger > 0.55 && p.kind === 'hunt') p.u *= 1.4;
+      if (
+        a.body.hunger > 0.5 &&
+        (p.kind === 'experiment' || p.kind === 'craft' || p.kind === 'makeArt')
+      ) {
+        p.u *= 0.12;
       }
 
       if (
