@@ -1029,26 +1029,27 @@ export const ACTIONS = {
     category: 'social',
     propose(a, ctx) {
       const age = a.ageAt(ctx.world.tick);
-      if (age < 15 || age > 52 || a.partner) return [];
-      const near = ctx.nearby(a, 8).filter(
+      if (age < 15 || age > 55 || a.partner) return [];
+      const near = ctx.nearby(a, 12).filter(
         (o) =>
           o.id !== a.id &&
           !o.partner &&
-          o.ageAt(ctx.world.tick) > 16 &&
-          o.ageAt(ctx.world.tick) < 50 &&
-          a.rel(o).kin < 0.4,
+          o.ageAt(ctx.world.tick) > 15 &&
+          o.ageAt(ctx.world.tick) < 55 &&
+          a.rel(o).kin < 0.5,
       );
       const out = [];
       for (const o of near) {
         const r = a.rel(o);
         const u =
-          (r.affection * 1.6 +
-            r.familiarity * 1.1 +
-            a.genome.fertility * 0.7 +
-            a.affect.e.love +
-            0.25) *
-          ctx.bias.social;
-        if (u < 0.3) continue;
+          (0.4 +
+            r.affection * 1.6 +
+            r.familiarity * 1.2 +
+            a.genome.fertility * 0.9 +
+            a.genome.sociability * 0.5 +
+            a.affect.e.love * 0.5) *
+          (ctx.bias?.social ?? 1);
+        if (u < 0.18) continue;
         out.push({ kind: 'court', u, targetId: o.id, dur: 3 });
       }
       return topN(out, 1, (o) => o.u);
@@ -1060,8 +1061,8 @@ export const ACTIONS = {
         stepToward(a, ctx.world, T(o.x, o.y));
         return 'continue';
       }
-      a.adjustRel(o, { affection: 0.12, familiarity: 0.1 });
-      o.adjustRel(a, { affection: 0.1, familiarity: 0.1 });
+      a.adjustRel(o, { affection: 0.18, familiarity: 0.12 });
+      o.adjustRel(a, { affection: 0.15, familiarity: 0.12 });
       a.lastCourtTarget = { id: o.id, tick: ctx.world.tick };
       if (--act.dur > 0) return 'continue';
       ctx.sim.tryBond(a, o);
