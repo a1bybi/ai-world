@@ -1,9 +1,5 @@
 // The society layer: who knows whom, who owes whom, what is held to be wrong,
 // who is buried where, and what the whole thing adds up to.
-//
-// Norms are not decrees. They are statistical shadows of what minds have learned.
-// Language is native-first; plain + gloss layers exist so an observer can follow.
-// Structures (bridge/path/plaza/…) change movement and social pressure via world + needs.
 
 import { RNG } from '../core/rng.js';
 import { Language } from '../core/language.js';
@@ -18,7 +14,7 @@ import { clamp, dist, mean, topN, hueFor } from '../core/util.js';
 import { STRUCTURE_KINDS } from './actions.js';
 
 const BALANCE = {
-  conceptionChance: 0.04,
+  conceptionChance: 0.15,
   pregnancyTerm: 0.7,
   birthHealthCost: 0.08,
   grievanceInterval: 6,
@@ -762,7 +758,8 @@ export class Simulation {
   tryBond(a, o) {
     const r = a.rel(o);
     const r2 = o.rel(a);
-    if (r.affection < 0.28 || r2.affection < 0.24) return;
+    if (r.affection < 0.18 || r2.affection < 0.15) return;
+    if (a.partner || o.partner) return;
 
     a.partner = o.id;
     o.partner = a.id;
@@ -805,15 +802,15 @@ export class Simulation {
       if (
         !a.body.pregnant &&
         a.partner &&
-        a.ageAt(w.tick) > 16 &&
-        a.ageAt(w.tick) < 45
+        a.ageAt(w.tick) > 15 &&
+        a.ageAt(w.tick) < 50
       ) {
         const p = this.byId(a.partner);
         if (
           p && p.alive && !p.body.pregnant &&
-          dist(a, p) < 7 &&
-          a.body.health > 0.55 && a.body.hunger < 0.78 &&
-          p.body.health > 0.55 && p.body.hunger < 0.78 &&
+          dist(a, p) < 14 &&
+          a.body.health > 0.45 && a.body.hunger < 0.9 &&
+          p.body.health > 0.45 && p.body.hunger < 0.9 &&
           a.id < p.id &&
           this.rng.bool(
             BALANCE.conceptionChance * ((a.genome.fertility + p.genome.fertility) / 2),
@@ -827,7 +824,7 @@ export class Simulation {
       }
       if (a.body.pregnant) {
         const term = BALANCE.pregnancyTerm * YEAR_TICKS;
-        a.body.hunger = clamp(a.body.hunger + 0.004, 0, 1);
+        a.body.hunger = clamp(a.body.hunger + 0.003, 0, 1);
         if (w.tick - a.body.pregnant.since > term) this.birth(a);
       }
     }
