@@ -198,7 +198,6 @@ export function think(a, ctx) {
   const hungerLesson = a.memory.belief('lesson:hunger');
   const lessonWhat = hungerLesson?.payload?.what || null;
 
-  // How paired is the adult population? (for court boost)
   let pairBoost = 1;
   if (!a.partner && !isChild) {
     const adults = ctx.sim.living.filter(
@@ -237,6 +236,13 @@ export function think(a, ctx) {
           p.u *= 1 + crisis * 0.4;
         } else if (FEEDS.has(p.kind) && worst === 'food') {
           p.u *= 1 + crisis * 1.4;
+        } else if (
+          p.kind === 'court' ||
+          p.kind === 'converse' ||
+          p.kind === 'follow'
+        ) {
+          // Mild only — pairing must stay possible while mildly hungry
+          p.u *= 1 - crisis * 0.12;
         } else if (INVEST.has(p.kind)) {
           p.u *= 1 - crisis * 0.25;
         } else {
