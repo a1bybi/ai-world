@@ -4,7 +4,6 @@
 // Norms are not decrees. They are statistical shadows of what minds have learned.
 // Language is native-first; plain + gloss layers exist so an observer can follow.
 // Structures (bridge/path/plaza/…) change movement and social pressure via world + needs.
-// learningSummary / inventionSummary / resourceSummary make culture inspectable.
 
 import { RNG } from '../core/rng.js';
 import { Language } from '../core/language.js';
@@ -188,6 +187,9 @@ export class Simulation {
         name: personName, genome: g, x, y, tick: 0, world, culture: this.lang.name,
       });
       a.bornTick = -rng.int(16, 34) * YEAR_TICKS;
+      a.body.hunger = 0.12;
+      a.body.thirst = 0.1;
+      a.body.health = 1;
 
       for (const c of this.ont.all()) {
         if (c.kind !== 'matter') continue;
@@ -199,7 +201,7 @@ export class Simulation {
       }
       for (const food of ['berry', 'root', 'grain']) {
         a.memory.learn(food, {
-          kind: 'matter', confidence: rng.float(0.5, 0.9), valence: 0.4, source: 'upbringing',
+          kind: 'matter', confidence: 0.85, valence: 0.5, source: 'upbringing',
         });
       }
       for (const seed of NORM_SEEDS) {
@@ -216,10 +218,30 @@ export class Simulation {
           });
         }
       }
-      a.add('water', 3);
-      a.add(rng.pick(['berry', 'root', 'grain']), rng.int(5, 10));
+      a.add('water', 5);
+      a.add('berry', 10);
+      a.add('root', 8);
+      a.add('grain', 8);
       this.addAgent(a);
     }
+
+    const storeWord = this.lang.word('struct:store');
+    this.registerLex(storeWord, 'store', 'structure');
+    this.world.addStructure({
+      kind: 'store',
+      x: cx,
+      y: cy,
+      word: storeWord,
+      builtBy: 'founders',
+      builtTick: 0,
+      material: 'wood',
+      condition: 1,
+      stock: new Map([
+        ['grain', 50],
+        ['berry', 40],
+        ['root', 30],
+      ]),
+    });
   }
 
   addAgent(a) {
@@ -319,7 +341,7 @@ export class Simulation {
         const food = c.serves('sustenance');
         if (food <= 0.15) continue;
         const keeps = (c.props.dry || 0) * 0.6 + (c.functions.storage || 0) * 0.4;
-        const left = v * (1 - 0.02 * (1 - keeps));
+        const left = v * (1 - 0.015 * (1 - keeps));
         if (left < 0.05) map.delete(k);
         else map.set(k, left);
       }
@@ -827,6 +849,8 @@ export class Simulation {
       world: this.world, culture: this.lang.name,
     });
     child.home = mother.home;
+    child.motherId = mother.id;
+    if (father) child.fatherId = father.id;
     this.addAgent(child);
 
     for (const parent of [mother, father].filter(Boolean)) {
@@ -1541,7 +1565,9 @@ export class Simulation {
       }
     }
     for (const s of this.world.structuresOfKind('store')) {
-      for (const v of s.stock.values()) t += v;
+      for (const [k, v] of s.stock) {
+        if (this.ont.get(k)?.functions.sustenance) t += v;
+      }
     }
     return Math.round(t);
   }
@@ -1554,9 +1580,7 @@ export class Simulation {
       const word = c.word || key;
       const lex = this.lexicon.get(word);
       rows.push({
-        tick,
-        key,
-        word,
+        tick, key, word,
         gloss: lex?.gloss || c.bestFn || c.kind || 'invention',
         function: c.bestFn || null,
         tier: c.tier ?? null,
@@ -1597,8 +1621,7 @@ export class Simulation {
           const word = c?.word || key.replace(/^norm:/, '').replace(/^where:/, '');
           const lex = this.lexicon.get(c?.word || word);
           return {
-            key,
-            word,
+            key, word,
             gloss: lex?.gloss || c?.bestFn || null,
             holders: v.holders,
             confidence: +(v.conf / v.holders).toFixed(2),
@@ -1641,8 +1664,7 @@ export class Simulation {
         const c = this.ont.get(key);
         const word = c?.word || key;
         return {
-          key,
-          word,
+          key, word,
           gloss: this.lexicon.get(word)?.gloss || c?.bestFn || null,
           amount: Math.round(amount * 10) / 10,
           sustenance: +(c?.serves('sustenance') || 0).toFixed(2),
