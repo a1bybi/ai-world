@@ -131,8 +131,8 @@ function plazaBoost(ctx, a, mult = 1.25) {
 }
 
 const U = {
-  thirstBase: 2.6,
-  thirstCrisis: 6,
+  thirstBase: 2.8,
+  thirstCrisis: 8,
   hungerBase: 4,
   hungerCrisis: 22,
   sleepNeed: 1.7,
@@ -159,22 +159,50 @@ export const ACTIONS = {
   drink: {
     category: 'body',
     propose(a, ctx) {
-      if (a.body.thirst < 0.28) return [];
+      if (a.body.thirst < 0.22) return [];
       const own = a.count('water');
-      const spot = own > 0 ? null : (nearWater(ctx.world, a, 12) || ctx.world.nearestWater?.(a.x, a.y));
+      const spot =
+        own > 0
+          ? null
+          : nearWater(ctx.world, a, 18) || ctx.world.nearestWater?.(a.x, a.y);
       const well = ctx.world.structuresOfKind('well')[0];
-      const target = own > 0
-        ? T(a.x, a.y)
-        : (well && dist(a, well) < 10 ? well : spot ? beside(ctx.world, spot) : null);
+      const target =
+        own > 0
+          ? T(a.x, a.y)
+          : well && dist(a, well) < 14
+            ? well
+            : spot
+              ? beside(ctx.world, spot)
+              : null;
       if (!target) return [];
-      const u = a.body.thirst * U.thirstBase + Math.max(0, a.body.thirst - 0.6) * U.thirstCrisis;
+      const u =
+        a.body.thirst * U.thirstBase +
+        Math.max(0, a.body.thirst - 0.45) * U.thirstCrisis;
       return [{ kind: 'drink', u, target, dur: 1 }];
     },
     run(a, ctx, act) {
-      if (!stepToward(a, ctx.world, act.target) && dist(a, act.target) > 1.5) return 'continue';
-      if (a.count('water') > 0) a.take('water', 1);
-      a.body.thirst = clamp(a.body.thirst - 0.75, 0, 1);
-      appraise(a, { goalCongruence: 0.35, agency: 'self', intensity: 0.25, kind: 'drink' });
+      if (!stepToward(a, ctx.world, act.target) && dist(a, act.target) > 1.5) {
+        return 'continue';
+      }
+      if (a.count('water') > 0) {
+        a.take('water', 1);
+      } else {
+        // At natural water / well — fill inventory
+        a.add('water', 3);
+        a.memory.learn('where:water', {
+          kind: 'place',
+          confidence: 0.75,
+          valence: 0.5,
+          payload: { x: act.target.x, y: act.target.y },
+        });
+        a.memory.learn('water', {
+          kind: 'matter', confidence: 0.6, valence: 0.4, source: 'experience',
+        });
+      }
+      a.body.thirst = clamp(a.body.thirst - 0.8, 0, 1);
+      appraise(a, {
+        goalCongruence: 0.4, agency: 'self', intensity: 0.3, kind: 'drink',
+      });
       return 'done';
     },
   },
@@ -190,7 +218,8 @@ export const ACTIONS = {
         if (n > (best?.n || 0)) best = { key, n, c };
       }
       if (!best) {
-        const store = ctx.world.structuresOfKind('store')
+        const store = ctx.world
+          .structuresOfKind('store')
           .find((s) => s.stock && [...s.stock.values()].some((v) => v > 0));
         if (store) {
           return [{
@@ -203,7 +232,8 @@ export const ACTIONS = {
         return [];
       }
       const u =
-        (a.body.hunger * U.hungerBase + Math.max(0, a.body.hunger - 0.25) * U.hungerCrisis) *
+        (a.body.hunger * U.hungerBase +
+          Math.max(0, a.body.hunger - 0.25) * U.hungerCrisis) *
         (0.5 + best.n) *
         (a.body.hunger > 0.4 ? 2.5 : 1);
       return [{ kind: 'eat', u, payload: best.key, dur: 1 }];
@@ -238,27 +268,39 @@ export const ACTIONS = {
     category: 'body',
     propose(a, ctx) {
       if (a.body.hunger < 0.28 && a.body.thirst < 0.5) return [];
-      const store = ctx.world.structuresOfKind('store')
+      const store = ctx.world
+        .structuresOfKind('store')
         .find((s) => s.stock && [...s.stock.values()].some((v) => v > 0));
       if (!store) return [];
       return [{
         kind: 'takeFromStore',
-        u: a.body.hunger * 2.2 + Math.max(0, a.body.hunger - 0.4) * 8,
+        u: a.body.hunger * 2.2 + Math.max(0, a.body.hunger - 0.4) * 8 + a.body.thirst * 1.5,
         target: store,
         dur: 1,
       }];
     },
     run(a, ctx, act) {
-      if (!stepToward(a, ctx.world, act.target) && dist(a, act.target) > 1.5) return 'continue';
+      if (!stepToward(a, ctx.world, act.target) && dist(a, act.target) > 1.5) {
+        return 'continue';
+      }
       const s = act.target;
       if (!s?.stock) return 'abort';
+      // Prefer water if thirsty, else any stock
+      if (a.body.thirst > 0.4 && (s.stock.get('water') || 0) > 0) {
+        s.stock.set('water', s.stock.get('water') - 1);
+        a.add('water', 1);
+        return 'done';
+      }
       for (const [k, v] of s.stock) {
         if (v > 0) {
           s.stock.set(k, v - 1);
           a.add(k, 1);
-          ctx.sim.record(a, 'store', `${a.name} drew ${ctx.ont.get(k)?.word || k} from the ${s.word}`, {
-            valence: 0.2, intensity: 0.2,
-          });
+          ctx.sim.record(
+            a,
+            'store',
+            `${a.name} drew ${ctx.ont.get(k)?.word || k} from the ${s.word}`,
+            { valence: 0.2, intensity: 0.2 },
+          );
           return 'done';
         }
       }
@@ -289,7 +331,9 @@ export const ACTIONS = {
       }
       a.body.rest = clamp(a.body.rest + 0.2, 0, 1);
       a.body.energy = clamp(a.body.energy + 0.14, 0, 1);
-      if (a.home && dist(a, a.home) < 1.5) a.body.warmth = clamp(a.body.warmth + 0.1, 0, 1);
+      if (a.home && dist(a, a.home) < 1.5) {
+        a.body.warmth = clamp(a.body.warmth + 0.1, 0, 1);
+      }
       if (--act.dur <= 0) {
         a.memory.consolidate(a);
         return 'done';
@@ -554,7 +598,7 @@ export const ACTIONS = {
   experiment: {
     category: 'thought',
     propose(a, ctx) {
-      if (a.body.hunger > 0.45 || a.body.energy < 0.25) return [];
+      if (a.body.hunger > 0.45 || a.body.thirst > 0.5 || a.body.energy < 0.25) return [];
       const owned = [...a.inventory.keys()].filter((k) => ctx.ont.get(k));
       if (owned.length < 1) return [];
       const u =
@@ -985,6 +1029,10 @@ export const ACTIONS = {
             c.functions.sustenance &&
             v > (kinChild ? 0 : 1)
           ) {
+            gift = k;
+            break;
+          }
+          if (o.body.thirst > 0.4 && k === 'water' && v > 0) {
             gift = k;
             break;
           }
@@ -1422,7 +1470,6 @@ export const ACTIONS = {
     },
     run(a, ctx) {
       a.body.rest = clamp(a.body.rest + 0.02, 0, 1);
-      // Always move a little so the map shows activity
       const t = T(
         clamp(a.x + ctx.rng.int(-3, 3), 1, ctx.world.w - 2),
         clamp(a.y + ctx.rng.int(-3, 3), 1, ctx.world.h - 2),
