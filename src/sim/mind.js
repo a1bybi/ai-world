@@ -137,6 +137,13 @@ export function think(a, ctx) {
       a.action.kind !== 'takeFromStore'
     ) {
       a.action = null;
+    } else if (
+      a.body.thirst > 0.45 &&
+      a.count('water') > 0 &&
+      a.action.kind !== 'drink' &&
+      a.action.kind !== 'eat'
+    ) {
+      a.action = null;
     } else if (!urgent || relieving) {
       let res;
       try {
@@ -228,8 +235,15 @@ export function think(a, ctx) {
       if (a.body.hunger > 0.4 && p.kind === 'takeFromStore') p.u *= 2.5;
       if (a.body.hunger > 0.5 && p.kind === 'gather') p.u *= 1.8;
       if (a.body.hunger > 0.5 && p.kind === 'hunt') p.u *= 1.4;
+      if (a.body.thirst > 0.4 && p.kind === 'drink') p.u *= 4;
       if (
         a.body.hunger > 0.4 &&
+        (p.kind === 'experiment' || p.kind === 'craft' || p.kind === 'makeArt')
+      ) {
+        p.u *= 0.08;
+      }
+      if (
+        a.body.thirst > 0.5 &&
         (p.kind === 'experiment' || p.kind === 'craft' || p.kind === 'makeArt')
       ) {
         p.u *= 0.08;
@@ -309,12 +323,24 @@ export function think(a, ctx) {
     }
   }
 
+  // Nuclear eat
   if (a.body.hunger > 0.35 && hasFood) {
     const eatCand = candidates.find((c) => c.kind === 'eat');
     if (eatCand) {
       a.action = eatCand;
       a.goal = 'eating';
       a.reasoning = [{ kind: 'eat', u: eatCand.u, why: 'must eat' }];
+      return;
+    }
+  }
+
+  // Nuclear drink
+  if (a.body.thirst > 0.4) {
+    const drinkCand = candidates.find((c) => c.kind === 'drink');
+    if (drinkCand && (a.count('water') > 0 || a.body.thirst > 0.55)) {
+      a.action = drinkCand;
+      a.goal = 'drinking';
+      a.reasoning = [{ kind: 'drink', u: drinkCand.u, why: 'must drink' }];
       return;
     }
   }
