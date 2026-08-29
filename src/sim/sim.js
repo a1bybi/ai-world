@@ -88,6 +88,29 @@ export class Simulation {
   get origin() { return this.settlements[0]; }
   get settlementName() { return this.settlements[0]?.name; }
 
+  /** Walkable tiles reachable from (sx,sy) within maxSteps (no river crossing). */
+  landReachable(sx, sy, maxSteps = 48) {
+    const w = this.world;
+    const seen = new Set();
+    const q = [[sx, sy, 0]];
+    const out = new Set([`${sx},${sy}`]);
+    seen.add(`${sx},${sy}`);
+    while (q.length) {
+      const [x, y, d] = q.shift();
+      if (d >= maxSteps) continue;
+      for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + ox;
+        const ny = y + oy;
+        const k = `${nx},${ny}`;
+        if (seen.has(k) || !w.walkable(nx, ny)) continue;
+        seen.add(k);
+        out.add(k);
+        q.push([nx, ny, d + 1]);
+      }
+    }
+    return out;
+  }
+
   registerLex(surface, gloss, kind = 'concept', referentId = null) {
     if (!surface || this.lexicon.has(surface)) return;
     this.lexicon.set(surface, {
@@ -167,20 +190,29 @@ export class Simulation {
     this.settlements = [founding];
     world.sites.push(founding);
 
+    const reachable = this.landReachable(cx, cy, 40);
+
     for (let i = 0; i < n; i++) {
       let x = cx, y = cy, tries = 0;
       do {
         x = clamp(cx + rng.int(-4, 4), 1, world.w - 2);
         y = clamp(cy + rng.int(-4, 4), 1, world.h - 2);
         tries++;
-      } while (!world.walkable(x, y) && tries < 40);
+      } while (
+        (!world.walkable(x, y) || !reachable.has(`${x},${y}`)) &&
+        tries < 60
+      );
+      if (!world.walkable(x, y) || !reachable.has(`${x},${y}`)) {
+        x = cx;
+        y = cy;
+      }
 
       const g = randomGenome(rng);
       const personName = this.lang.personName(rng);
       this.registerLex(personName, 'founder', 'person');
 
       const a = new Agent({
-        name: personName, genome: g, x, y, tick: 0, world, culture: this.lang.name,
+        name: personName, genome: g, x, y, tick: 0, world, tongue: this.lang.name,
       });
       a.bornTick = -rng.int(16, 34) * YEAR_TICKS;
       a.body.hunger = 0.12;
@@ -214,10 +246,10 @@ export class Simulation {
           });
         }
       }
-      a.add('water', 5);
-      a.add('berry', 10);
-      a.add('root', 8);
-      a.add('grain', 8);
+      a.add('water', 8);
+      a.add('berry', 16);
+      a.add('root', 12);
+      a.add('grain', 12);
       this.addAgent(a);
     }
 
@@ -233,9 +265,9 @@ export class Simulation {
       material: 'wood',
       condition: 1,
       stock: new Map([
-        ['grain', 50],
-        ['berry', 40],
-        ['root', 30],
+        ['grain', 80],
+        ['berry', 60],
+        ['root', 50],
       ]),
     });
   }
@@ -399,6 +431,8 @@ export class Simulation {
     return ev;
   }
 
+  // ── Conversation / teaching ───────────────────────────────────────────────
+
   converse(a, o) {
     const rng = this.rng;
     a.gainSkill('speak', 0.012);
@@ -490,779 +524,539 @@ export class Simulation {
         valence: a.memory.belief(k)?.valence ?? 0,
       });
     }
-    const strongMem = a.memory.recall((m) => m.salience > 0.5, 3)[0];
-    if (strongMem) options.push({ type: 'memory', memory: strongMem, valence: strongMem.valence });
-
-    const rels = [...a.relationships.values()].filter(
-      (r) => r.id !== o.id && Math.abs(r.affection) > 0.25 && this.byId(r.id)?.alive,
-    );
-    if (rels.length && a.genome.sociability > 0.4) {
-      const r = rng.pick(rels);
-      options.push({ type: 'gossip', gossipAbout: r.id, valence: r.affection, transfer: null });
+    for (const other of this.nearby(a, 10)) {
+      if (other === o || other === a) continue;
+      const r = a.rel(other);
+      if (Math.abs(r.trust) > 0.25 || Math.abs(r.affection) > 0.3) {
+        options.push({
+          type: 'gossip', key: other.id, gossipAbout: other, valence: r.affection, transfer: null,
+        });
+      }
     }
-    if (a.affect.e.grief > 0.3) options.push({ type: 'grief', valence: -0.6 });
-    if (a.affect.e.awe > 0.3) options.push({ type: 'awe', valence: 0.5 });
-    if (a.body.hunger > 0.6) options.push({ type: 'hunger', valence: -0.4 });
-
     if (!options.length) return null;
     return rng.pick(options);
   }
 
   utterance(a, o, topic) {
-    const W = (k) => this.ont.get(k)?.word || this.lang.word(k);
+    const w = (k) => this.ont.get(k)?.word || k;
     switch (topic.type) {
-      case 'place': {
-        const key = topic.key.replace('where:', '');
-        const b = a.memory.belief(topic.key);
-        const p = b?.payload;
-        return `${o.name}. ${W(key)} — ${
-          p
-            ? `${p.x > a.x ? 'east' : 'west'} of here, ${p.y > a.y ? 'downstream' : 'upstream'}`
-            : 'I have seen it somewhere'
-        }.`;
-      }
+      case 'place':
+        return `${a.name} spoke of a place they knew beyond the ${this.world.season} ground`;
       case 'recipe':
-        return `${o.name}, listen. ${W(topic.key)} — it is made, not found. I will show you.`;
+        return `${a.name} told ${o.name} how ${w(topic.key)} is made`;
       case 'matter':
-        return `There is ${W(topic.key)} in this country. I did not know that either, once.`;
+        return `${a.name} spoke of ${w(topic.key)} with ${o.name}`;
       case 'norm': {
         const b = a.memory.belief(topic.key);
-        const label = b?.payload?.label || topic.key.replace(/^norm:/, '');
-        return (b?.valence ?? 0) < 0
-          ? `${o.name}, this is not to be done — ${label}. I have seen what follows.`
-          : `${o.name}, this is how we hold together — ${label}.`;
+        return `${a.name} said to ${o.name}: ${b?.payload?.label || topic.key}`;
       }
-      case 'memory':
-        return `I still think of it. ${topic.memory.text}.`;
-      case 'gossip': {
-        const s = this.byId(topic.gossipAbout);
-        const r = a.rel(s);
-        return r.affection > 0
-          ? `${s.name} is sound. ${r.debt > 0 ? 'I owe them.' : 'I would stand beside them.'}`
-          : `Be careful with ${s.name}. ${r.conflicts ? 'We have had words.' : 'Something is not right there.'}`;
-      }
-      case 'grief': return `I keep turning to speak and there is no one there.`;
-      case 'awe': return `Does it not strike you — that any of this holds together at all?`;
-      case 'hunger':
-        return `${o.name}, I have not eaten. Is there anything in the ${
-          this.world.structuresOfKind('store')[0]?.word || 'stores'
-        }?`;
-      default: return `${o.name}.`;
+      case 'gossip':
+        return `${a.name} spoke of ${topic.gossipAbout.name} to ${o.name}`;
+      default:
+        return `${a.name} spoke with ${o.name}`;
     }
-  }
-
-  voiceThought(a, act) {
-    const lines = {
-      experiment: [`If I put these together... something must come of it.`, `No one has tried this. That is reason enough.`],
-      gather: [`Enough of this and we last the week.`, `Hands first. Thinking after.`],
-      hunt: [`Quiet now.`, `We eat tonight or we do not.`],
-      build: [`It should stand longer than I will.`, `Straight. It has to be straight.`],
-      expand: [`This ground is too crowded for what we are becoming.`, `There is room past here. I mean to see it settled.`],
-      teach: [`It dies with me otherwise.`],
-      ritual: [`Say the words. Say them properly.`],
-      makeArt: [`There. That is what it felt like.`],
-      explore: [`What is past that ridge?`],
-      steal: [`I am not proud. I am hungry.`],
-      fight: [`Enough.`],
-      sleep: [`Enough for today.`],
-    };
-    const pool = lines[act.kind];
-    if (!pool) return;
-    const text = this.rng.pick(pool);
-    a.say(text, 'thought');
-    this.record(a, 'thought', text, {
-      actors: [a.id], intensity: 0.2, valence: a.affect.valence * 0.3, voice: a.name, quiet: false,
-    });
   }
 
   teach(a, o, key) {
     const b = a.memory.belief(key);
     if (!b) return;
-    const gain = (0.3 + a.skills.teach * 0.6) * o.genome.learning;
     o.memory.learn(key, {
-      kind: b.kind, confidence: gain, valence: b.valence,
-      source: `taught by ${a.name}`, payload: b.payload,
+      kind: b.kind,
+      confidence: b.confidence * 0.55 * o.genome.learning,
+      valence: b.valence * 0.8,
+      source: `taught by ${a.name}`,
+      payload: b.payload,
     });
-    for (const e of a.memory.related(key)) o.memory.link(key, e.rel, e.key, e.weight * 0.6);
-    a.gainSkill('teach', 0.05);
-    o.gainSkill('craft', 0.02);
     a.stats.taught++;
     o.stats.learned++;
     this.counters.lessons++;
-    o.adjustRel(a, { respect: 0.14, trust: 0.1, familiarity: 0.06 });
-    a.adjustRel(o, { affection: 0.06, familiarity: 0.06 });
-    const word = this.ont.get(key)?.word || key;
-    this.record(a, 'teach', `${a.name} taught ${o.name} how ${word} is made`, {
-      actors: [a.id, o.id], valence: 0.55, intensity: 0.55, concept: key,
+    a.gainSkill('teach', 0.04);
+    a.adjustRel(o, { affection: 0.04, respect: 0.03 });
+    o.adjustRel(a, { affection: 0.06, trust: 0.05, respect: 0.08 });
+    this.record(a, 'teach', `${a.name} taught ${o.name} of ${this.ont.get(key)?.word || key}`, {
+      valence: 0.45, intensity: 0.4, actors: [a.id, o.id], concept: key,
     });
-    appraise(a, { goalCongruence: 0.5, agency: 'self', intensity: 0.5, kind: 'teach', norm: 1, social: o.id });
-    appraise(o, { goalCongruence: 0.6, agency: 'other', intensity: 0.6, kind: 'teach', novelty: 0.6, social: a.id });
-    this.upholdNorm('teaching', 0.02);
-    this.reputationDelta(a, 0.03);
+    appraise(a, { goalCongruence: 0.35, agency: 'self', intensity: 0.35, kind: 'teach', social: o.id });
+    appraise(o, { goalCongruence: 0.4, agency: 'other', intensity: 0.4, kind: 'teach', social: a.id });
   }
 
-  findDeal(a, o) {
-    let bestGive = null, bestGet = null;
-    for (const [k, v] of a.inventory) {
-      if (v < 1) continue;
-      const mine = a.desireFor(k, this.ont, this);
-      if (!bestGive || mine < bestGive.value) bestGive = { key: k, value: mine };
-    }
-    for (const [k, v] of o.inventory) {
-      if (v < 1) continue;
-      const want = a.desireFor(k, this.ont, this);
-      if (!bestGet || want > bestGet.value) bestGet = { key: k, value: want };
-    }
-    if (!bestGive || !bestGet || bestGive.key === bestGet.key) return null;
-    const myGain = bestGet.value - bestGive.value;
-    const theirGain = o.desireFor(bestGive.key, this.ont, this) - o.desireFor(bestGet.key, this.ont, this);
-    if (myGain <= 0.05 || theirGain <= 0.02) return null;
-    return { give: bestGive.key, get: bestGet.key, gain: myGain, theirGain };
+  voiceThought(a, chosen) {
+    const why = a.reasoning?.[0]?.why || a.goal || chosen.kind;
+    const text = `${a.name} thought: ${why}`;
+    a.utterance = text;
+    this.record(a, 'thought', text, {
+      valence: 0, intensity: 0.15, quiet: true, voice: a.name,
+    });
   }
 
-  settleTrade(a, o, deal) {
-    a.rel(o).lastTrade = this.world.tick;
-    o.rel(a).lastTrade = this.world.tick;
-    if (!a.take(deal.give, 1)) return;
-    if (!o.take(deal.get, 1)) { a.add(deal.give, 1); return; }
-    o.add(deal.give, 1);
-    a.add(deal.get, 1);
-    a.stats.trades++;
-    o.stats.trades++;
-    this.counters.trades++;
-    a.gainSkill('trade', 0.03);
-    o.gainSkill('trade', 0.03);
-    a.rel(o).exchanges++;
-    o.rel(a).exchanges++;
-    a.adjustRel(o, { trust: 0.07, familiarity: 0.05 });
-    o.adjustRel(a, { trust: 0.07, familiarity: 0.05 });
-    a.updateValue(deal.get, a.valueOf(deal.get, this.ont) * 0.96);
-    o.updateValue(deal.give, o.valueOf(deal.give, this.ont) * 0.96);
-    for (const key of [deal.give, deal.get]) {
-      const believed = mean(this.living, (x) => x.valueOf(key, this.ont));
-      const m = this.marketPrices.get(key) || { price: believed, volume: 0 };
-      m.price = m.price * 0.8 + believed * 0.2;
-      m.volume++;
-      this.marketPrices.set(key, m);
-      this.chronicle.notePrice(key, m.price, this.world.tick);
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
+
+  lifecycleTick() {
+    const w = this.world;
+    const term = Math.floor(YEAR_TICKS * BALANCE.pregnancyTerm);
+
+    for (const a of this.living) {
+      // Pregnancy progress
+      if (a.body.pregnant) {
+        a.body.pregnantTicks = (a.body.pregnantTicks || 0) + 1;
+        if (a.body.pregnantTicks >= term) {
+          this.birth(a);
+        }
+      }
+
+      // Conception for bonded pairs
+      if (
+        !a.body.pregnant &&
+        a.partner &&
+        a.ageAt(w.tick) > 16 &&
+        a.ageAt(w.tick) < 45
+      ) {
+        const p = this.byId(a.partner);
+        if (
+          p &&
+          p.alive &&
+          !p.body.pregnant &&
+          dist(a, p) < 14 &&
+          a.body.health > 0.45 &&
+          a.body.hunger < 0.9 &&
+          p.body.hunger < 0.9 &&
+          this.rng.bool(
+            BALANCE.conceptionChance *
+              ((a.genome.fertility + p.genome.fertility) / 2),
+          )
+        ) {
+          // Either partner can carry
+          const carrier = this.rng.bool(0.5) ? a : p;
+          if (!carrier.body.pregnant) {
+            carrier.body.pregnant = true;
+            carrier.body.pregnantTicks = 0;
+            carrier.body.otherParentId = carrier === a ? p.id : a.id;
+          }
+        }
+      }
     }
-    const gw = this.ont.get(deal.give)?.word;
-    const tw = this.ont.get(deal.get)?.word;
-    this.record(a, 'trade', `${a.name} traded ${gw} to ${o.name} for ${tw}`, {
-      actors: [a.id, o.id], valence: 0.4, intensity: 0.4,
-    });
-    appraise(a, { goalCongruence: clamp(deal.gain, 0, 1), agency: 'self', intensity: 0.4, kind: 'trade', social: o.id });
-    appraise(o, { goalCongruence: clamp(deal.theirGain, 0, 1), agency: 'other', intensity: 0.4, kind: 'trade', social: a.id });
-  }
 
-  onTheft(a, o, key, n) {
-    this.counters.thefts++;
-    const word = this.ont.get(key)?.word || key;
-    o.adjustRel(a, { trust: -0.5, affection: -0.4, respect: -0.2 });
-    o.rel(a).conflicts++;
-    this.record(a, 'theft', `${a.name} took ${Math.round(n * 10) / 10} ${word} from ${o.name}`, {
-      actors: [a.id, o.id], valence: -0.7, intensity: 0.75, landmark: true,
-    });
-    appraise(a, {
-      goalCongruence: 0.4, agency: 'self', intensity: 0.6,
-      norm: this.personalNorm(a, 'theft'), kind: 'betrayal', social: o.id,
-    });
-    appraise(o, {
-      goalCongruence: -0.7, agency: 'other', intensity: 0.8, norm: -1, kind: 'betrayal', social: a.id,
-    });
-    a.memory.learn('norm:theft', {
-      kind: 'norm', confidence: 0.25, valence: -0.35, source: 'experience',
-      payload: { situation: 'theft', polarity: -1, evidence: 1 },
-    });
-    o.memory.learn('norm:theft', {
-      kind: 'norm', confidence: 0.45, valence: -0.75, source: 'suffering',
-      payload: { situation: 'theft', polarity: -1, evidence: 1 },
-    });
-    this.violateNorm('theft', 0.05);
-    this.reputationDelta(a, -0.09);
-    for (const w of this.nearby(a, 6)) {
-      if (w === a || w === o) continue;
-      w.adjustRel(a, { trust: -0.2, respect: -0.1, affection: -0.15 });
-      w.memory.learn('norm:theft', {
-        kind: 'norm', confidence: 0.2, valence: -0.5, source: 'witness',
-        payload: { situation: 'theft', polarity: -1, evidence: 1 },
-      });
-      appraise(w, {
-        goalCongruence: -0.2, agency: 'other', intensity: 0.4, norm: -1, kind: 'witness', social: a.id,
-      });
-    }
-  }
-
-  resolveFight(a, o) {
-    this.counters.conflicts++;
-    a.lastFightTick = this.world.tick;
-    o.lastFightTick = this.world.tick;
-    a.affect.e.anger = clamp(a.affect.e.anger * 0.25);
-    o.affect.e.anger = clamp(o.affect.e.anger * 0.5);
-
-    const power = (x) =>
-      0.2 +
-      x.skills.fight * 0.7 +
-      x.body.energy * 0.4 +
-      x.genome.aggression * 0.3 +
-      (x.bestToolFor('weapon', this.ont)?.score || 0);
-
-    const pa = power(a);
-    const po = power(o);
-    const aWins = this.rng.next() < pa / (pa + po);
-    const winner = aWins ? a : o;
-    const loser = aWins ? o : a;
-    const harm = clamp(0.08 + this.rng.float(0, 0.22) * (winner === a ? pa : po), 0, 0.55);
-    loser.body.injury = clamp(loser.body.injury + harm, 0, 1);
-    winner.gainSkill('fight', 0.06);
-    a.stats.fights++;
-    o.stats.fights++;
-    a.rel(o).conflicts++;
-    o.rel(a).conflicts++;
-    a.adjustRel(o, { affection: -0.3, trust: -0.25 });
-    o.adjustRel(a, { affection: -0.3, trust: -0.25 });
-    winner.adjustRel(loser, { respect: -0.1 });
-    loser.adjustRel(winner, { respect: 0.06 });
-
-    this.record(
-      a, 'violence',
-      `${a.name} and ${o.name} came to blows — ${winner.name} stood, ${loser.name} did not`,
-      { actors: [a.id, o.id], valence: -0.8, intensity: 0.85, landmark: true },
-    );
-    appraise(loser, {
-      goalCongruence: -0.8, agency: 'other', intensity: 0.85, kind: 'violence', norm: -1, social: winner.id,
-    });
-    appraise(winner, {
-      goalCongruence: 0.2, agency: 'self', intensity: 0.7, kind: 'violence',
-      norm: this.personalNorm(winner, 'violence'), social: loser.id,
-    });
-    for (const person of [a, o]) {
-      person.memory.learn('norm:violence', {
-        kind: 'norm', confidence: 0.3, valence: -0.6, source: 'experience',
-        payload: { situation: 'violence', polarity: -1, evidence: 1 },
-      });
-    }
-    this.violateNorm('violence', 0.06);
-    this.reputationDelta(winner, -0.05);
-    for (const w of this.nearby(a, 7)) {
-      if (w === a || w === o) continue;
-      appraise(w, { goalCongruence: -0.3, agency: 'other', intensity: 0.5, norm: -1, kind: 'witness' });
-      w.adjustRel(winner, { trust: -0.12 });
-      w.memory.learn('norm:violence', {
-        kind: 'norm', confidence: 0.2, valence: -0.55, source: 'witness',
-        payload: { situation: 'violence', polarity: -1, evidence: 1 },
-      });
+    // Soft parental feeding
+    for (const a of this.living) {
+      if (a.isChild(w.tick) || a.body.hunger > 0.6) continue;
+      for (const cid of a.children || []) {
+        const c = this.byId(cid);
+        if (!c || !c.alive || !c.isChild(w.tick)) continue;
+        if (c.body.hunger < 0.4) continue;
+        if (dist(a, c) > 8) continue;
+        let foodKey = null;
+        for (const [k, v] of a.inventory) {
+          if (v > 0 && (this.ont.get(k)?.serves('sustenance') || 0) > 0.15) {
+            foodKey = k;
+            break;
+          }
+        }
+        if (!foodKey) continue;
+        if (a.take(foodKey, 1)) {
+          c.add(foodKey, 1);
+          c.body.hunger = clamp(c.body.hunger - 0.35, 0, 1);
+        }
+      }
     }
   }
 
   tryBond(a, o) {
-    const r = a.rel(o);
-    const r2 = o.rel(a);
-    if (r.affection < 0.18 || r2.affection < 0.15) return;
-    if (a.partner || o.partner) return;
+    if (a.partner || o.partner) return false;
+    if (a.rel(o).kin > 0.5 || o.rel(a).kin > 0.5) return false;
+    const ra = a.rel(o);
+    const ro = o.rel(a);
+    if (ra.affection < 0.18 || ro.affection < 0.15) return false;
 
     a.partner = o.id;
     o.partner = a.id;
-    const household = {
-      id: `h${this.households.length + 1}`,
-      members: [a.id, o.id],
-      foundedTick: this.world.tick,
-      home: a.home || o.home,
-    };
-    this.households.push(household);
-    a.household = household.id;
-    o.household = household.id;
-
+    a.adjustRel(o, { affection: 0.2, trust: 0.1, familiarity: 0.15 });
+    o.adjustRel(a, { affection: 0.2, trust: 0.1, familiarity: 0.15 });
     this.record(a, 'bond', `${a.name} and ${o.name} bound themselves to one another`, {
-      actors: [a.id, o.id], valence: 0.9, intensity: 0.9, landmark: true,
+      valence: 0.7, intensity: 0.85, actors: [a.id, o.id], landmark: true,
     });
-    appraise(a, { goalCongruence: 0.9, agency: 'self', intensity: 0.9, kind: 'bond', social: o.id });
-    appraise(o, { goalCongruence: 0.9, agency: 'self', intensity: 0.9, kind: 'bond', social: a.id });
-    a.adjustRel(o, { affection: 0.4, trust: 0.3, kin: 0.8 });
-    o.adjustRel(a, { affection: 0.4, trust: 0.3, kin: 0.8 });
-    this.ritualPull = clamp(this.ritualPull + 0.3, 0, 2);
-
-    for (const riv of this.living) {
-      if (riv === a || riv === o) continue;
-      const target = riv.lastCourtTarget;
-      if (!target || this.world.tick - target.tick > 200) continue;
-      if (target.id !== a.id && target.id !== o.id) continue;
-      const other = target.id === a.id ? a : o;
-      appraise(riv, {
-        goalCongruence: -0.5, agency: 'other',
-        intensity: 0.5 + riv.genome.aggression * 0.2, kind: 'spurned', social: other.id,
-      });
-      riv.adjustRel(other, { affection: -0.15, trust: -0.1 });
-    }
-  }
-
-  lifecycleTick() {
-    const w = this.world;
-    for (const a of this.living) {
-      if (
-        !a.body.pregnant &&
-        a.partner &&
-        a.ageAt(w.tick) > 15 &&
-        a.ageAt(w.tick) < 50
-      ) {
-        const p = this.byId(a.partner);
-        if (
-          p && p.alive && !p.body.pregnant &&
-          dist(a, p) < 14 &&
-          a.body.health > 0.45 && a.body.hunger < 0.9 &&
-          p.body.health > 0.45 && p.body.hunger < 0.9 &&
-          a.id < p.id &&
-          this.rng.bool(
-            BALANCE.conceptionChance * ((a.genome.fertility + p.genome.fertility) / 2),
-          )
-        ) {
-          const aChance = a.genome.fertility / Math.max(0.01, a.genome.fertility + p.genome.fertility);
-          const carrier = this.rng.next() < aChance ? a : p;
-          const other = carrier === a ? p : a;
-          carrier.body.pregnant = { since: w.tick, otherId: other.id };
-        }
-      }
-      if (a.body.pregnant) {
-        const term = BALANCE.pregnancyTerm * YEAR_TICKS;
-        a.body.hunger = clamp(a.body.hunger + 0.003, 0, 1);
-        if (w.tick - a.body.pregnant.since > term) this.birth(a);
-      }
-    }
+    appraise(a, {
+      goalCongruence: 0.8, agency: 'self', intensity: 0.7, kind: 'bond', social: o.id,
+    });
+    appraise(o, {
+      goalCongruence: 0.8, agency: 'self', intensity: 0.7, kind: 'bond', social: a.id,
+    });
+    // Seed a personal “bond” norm memory
+    a.memory.learn(`norm:bond:${a.id}:${o.id}`, {
+      kind: 'norm', confidence: 0.25, valence: 0.5, source: 'experience',
+      payload: {
+        situation: 'bond', polarity: 1,
+        label: `${a.name} and ${o.name} bound themselves to one another`,
+        evidence: 1,
+      },
+    });
+    return true;
   }
 
   birth(mother) {
-    const father = this.byId(mother.body.pregnant.otherId);
-    mother.body.pregnant = null;
-    if (mother.body.health < 0.25) return;
+    const w = this.world;
+    const otherId = mother.body.otherParentId;
+    const other = otherId ? this.byId(otherId) : null;
+    const g = inherit(
+      this.rng,
+      mother.genome,
+      other?.genome || mother.genome,
+      0.09,
+    );
+    const name = this.lang.personName(this.rng);
+    this.registerLex(name, 'child', 'person');
 
-    const g = father ? inherit(this.rng, mother.genome, father.genome) : randomGenome(this.rng);
-    const childName = this.lang.personName(this.rng);
-    this.registerLex(childName, `child of ${mother.name}`, 'person');
+    let x = mother.x;
+    let y = mother.y;
+    for (const [ox, oy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      if (w.walkable(mother.x + ox, mother.y + oy)) {
+        x = mother.x + ox;
+        y = mother.y + oy;
+        break;
+      }
+    }
 
     const child = new Agent({
-      name: childName, genome: g, x: mother.x, y: mother.y,
-      tick: this.world.tick,
-      parents: [mother.id, father?.id].filter(Boolean),
-      world: this.world, culture: this.lang.name,
+      name, genome: g, x, y, tick: w.tick, world: w, tongue: this.lang.name,
     });
-    child.home = mother.home;
+    child.bornTick = w.tick;
     child.motherId = mother.id;
-    if (father) child.fatherId = father.id;
-    this.addAgent(child);
+    child.fatherId = other?.id || null;
+    child.body.hunger = 0.2;
+    child.body.thirst = 0.15;
+    child.body.health = 0.95;
 
-    for (const parent of [mother, father].filter(Boolean)) {
-      for (const b of parent.memory.semantic.values()) {
-        if (b.confidence < 0.25) continue;
-        if (b.kind === 'norm') {
-          if (this.rng.bool(0.4 + child.genome.learning * 0.3)) {
-            child.memory.learn(b.key, {
-              kind: 'norm', confidence: b.confidence * 0.35, valence: b.valence * 0.8,
-              source: `upbringing:${parent.name}`, payload: b.payload,
-            });
-          }
-        } else if (
-          (b.kind === 'matter' || b.kind === 'recipe' || b.kind === 'place') &&
-          b.confidence >= 0.35 &&
-          this.rng.bool(0.35 + child.genome.learning * 0.25)
-        ) {
-          child.memory.learn(b.key, {
-            kind: b.kind,
-            confidence: b.confidence * 0.3,
-            valence: b.valence * 0.8,
-            source: `upbringing:${parent.name}`,
-            payload: b.payload,
-          });
-        }
+    // Inherit some knowledge
+    for (const food of ['berry', 'root', 'grain', 'water']) {
+      child.memory.learn(food, {
+        kind: 'matter', confidence: 0.5, valence: 0.4, source: 'upbringing',
+      });
+    }
+    for (const b of mother.memory.semantic.values()) {
+      if (b.kind === 'recipe' && this.rng.bool(0.25)) {
+        child.memory.learn(b.key, {
+          kind: b.kind, confidence: b.confidence * 0.3, valence: b.valence,
+          source: 'upbringing', payload: b.payload,
+        });
       }
     }
 
+    // Starter food for infant
+    child.add('berry', 4);
+    child.add('root', 2);
+
+    mother.children = mother.children || [];
     mother.children.push(child.id);
-    if (father) father.children.push(child.id);
-    mother.stats.births++;
-    this.counters.births++;
-    mother.body.health = clamp(mother.body.health - BALANCE.birthHealthCost, 0, 1);
+    if (other) {
+      other.children = other.children || [];
+      other.children.push(child.id);
+    }
 
-    for (const p of [mother, father].filter(Boolean)) {
-      p.adjustRel(child, { affection: 0.7, trust: 0.6, kin: 1, familiarity: 0.4 });
-      child.adjustRel(p, { affection: 0.6, trust: 0.7, kin: 1, familiarity: 0.4 });
-      appraise(p, { goalCongruence: 0.95, agency: 'self', intensity: 0.95, kind: 'birth', social: child.id });
+    mother.body.pregnant = false;
+    mother.body.pregnantTicks = 0;
+    mother.body.otherParentId = null;
+    mother.body.health = clamp(mother.body.health - BALANCE.birthHealthCost, 0.2, 1);
+    mother.body.hunger = clamp(mother.body.hunger + 0.15, 0, 1);
+
+    mother.adjustRel(child, { kin: 1, affection: 0.6, familiarity: 0.5 });
+    child.adjustRel(mother, { kin: 1, affection: 0.5, familiarity: 0.4 });
+    if (other) {
+      other.adjustRel(child, { kin: 1, affection: 0.5, familiarity: 0.4 });
+      child.adjustRel(other, { kin: 1, affection: 0.45, familiarity: 0.35 });
     }
-    for (const sibId of mother.children) {
-      const s = this.byId(sibId);
-      if (s && s !== child) {
-        s.adjustRel(child, { kin: 0.8, affection: 0.3 });
-        child.adjustRel(s, { kin: 0.8, affection: 0.3 });
-      }
-    }
-    this.record(
-      mother, 'birth',
-      `${child.name} was born to ${mother.name}${father ? ` and ${father.name}` : ''}`,
-      {
-        actors: [mother.id, child.id].concat(father ? [father.id] : []),
-        valence: 0.9, intensity: 0.9, landmark: true,
-      },
-    );
-    this.ritualPull = clamp(this.ritualPull + 0.2, 0, 2);
-    return child;
+
+    this.addAgent(child);
+    this.counters.births++;
+    const parentNames = other
+      ? `${mother.name} and ${other.name}`
+      : mother.name;
+    this.record(mother, 'birth', `${child.name} was born to ${parentNames}`, {
+      valence: 0.8, intensity: 0.9, actors: [mother.id, child.id].concat(other ? [other.id] : []),
+      landmark: true,
+    });
+    appraise(mother, {
+      goalCongruence: 0.7, agency: 'self', intensity: 0.8, kind: 'birth',
+    });
   }
 
-  die(a, cause) {
+  die(a, cause = 'failing health') {
     if (!a.alive) return;
     a.alive = false;
+    a.diedTick = this.world.tick;
     a.deathCause = cause;
-    a.deathTick = this.world.tick;
-    a.action = null;
     this.livingCache = null;
     this.counters.deaths++;
-    this.chronicle.noteCause(cause);
 
-    const age = a.ageAt(a.deathTick).toFixed(0);
-    this.record(a, 'death', `${a.name} died of ${cause} at ${age}`, {
-      actors: [a.id], valence: -0.9, intensity: 1, landmark: true,
-    });
-
+    // Clear partner
     if (a.partner) {
       const p = this.byId(a.partner);
-      if (p) {
-        p.partner = null;
-        appraise(p, { goalCongruence: -1, agency: 'world', intensity: 1, kind: 'death', social: a.id });
-      }
+      if (p) p.partner = null;
+      a.partner = null;
     }
 
-    let mourners = 0;
-    for (const o of this.living) {
-      const r = o.relationships.get(a.id);
-      if (!r) continue;
-      const closeness = r.affection * 0.5 + r.kin * 0.7 + r.familiarity * 0.4 + r.trust * 0.3;
-      if (closeness < 0.15) continue;
-      mourners++;
-      appraise(o, {
-        goalCongruence: -clamp(closeness), agency: 'world', intensity: clamp(closeness),
-        kind: 'death', social: a.id,
-      });
-      o.memory.remember({
-        tick: this.world.tick, kind: 'death', text: `${a.name} died of ${cause}`,
-        actors: [a.id, o.id], valence: -0.9, intensity: clamp(closeness),
-      });
-    }
-    a.mourners = mourners;
-    this.ritualPull = clamp(this.ritualPull + 0.25 + mourners * 0.05, 0, 2);
+    // Corpse
+    this.world.corpses = this.world.corpses || [];
+    this.world.corpses.push({
+      id: a.id, name: a.name, x: a.x, y: a.y, tick: this.world.tick, cause,
+    });
 
-    const heirs = a.children.map((id) => this.byId(id)).filter((c) => c && c.alive);
-    if (heirs.length) {
-      for (const [k, v] of a.inventory) {
-        const base = Math.floor(v / heirs.length);
-        let remainder = v - base * heirs.length;
-        for (const h of heirs) {
-          const share = base + (remainder > 0 ? 1 : 0);
-          if (share > 0) h.add(k, share);
-          if (remainder > 0) remainder--;
-        }
-      }
-      this.record(a, 'inherit', `${heirs.map((h) => h.name).join(' and ')} took what ${a.name} left`, {
-        actors: heirs.map((h) => h.id), valence: 0.1, intensity: 0.4,
-      });
-    }
-    a.inventory.clear();
-
-    for (const key of a.memory.knownKeys('recipe')) {
-      const stillKnown = this.living.some((o) => o.memory.knows(key, 0.25));
-      if (!stillKnown) {
-        const c = this.ont.get(key);
+    // Lost knowledge
+    for (const b of a.memory.semantic.values()) {
+      if (b.kind !== 'recipe') continue;
+      const holders = this.living.filter(
+        (o) => o.id !== a.id && o.memory.knows(b.key, 0.25),
+      );
+      if (!holders.length) {
+        const c = this.ont.get(b.key);
         this.lostKnowledge.push({
-          key, word: c?.word || key, tick: this.world.tick, lastKeeper: a.name, fn: c?.bestFn,
+          key: b.key, word: c?.word || b.key, lastKeeper: a.name, tick: this.world.tick,
         });
         if (this.lostKnowledge.length > BALANCE.maxLostKnowledge) {
           this.lostKnowledge.splice(0, this.lostKnowledge.length - BALANCE.maxLostKnowledge);
         }
-        this.record(a, 'loss', `How to make ${c?.word || key} was lost — ${a.name} was the last who knew`, {
-          actors: [a.id], valence: -0.7, intensity: 0.8, landmark: true, concept: key,
+        this.record(a, 'loss', `How to make ${c?.word || b.key} was lost — ${a.name} was the last who knew`, {
+          valence: -0.5, intensity: 0.7, concept: b.key, landmark: true,
         });
       }
     }
 
-    this.world.corpses.push({
-      id: a.id, name: a.name, x: a.x, y: a.y, tick: this.world.tick, cause,
+    const age = Math.floor(a.ageAt(this.world.tick));
+    this.record(a, 'death', `${a.name} died of ${cause} at ${age}`, {
+      valence: -0.8, intensity: 0.9, landmark: true,
     });
   }
 
   bury(a, corpse) {
-    const i = this.world.corpses.indexOf(corpse);
-    if (i >= 0) this.world.corpses.splice(i, 1);
-    const dead = this.byId(corpse.id);
-    if (dead) dead.buried = true;
-
-    let field = this.world.sites.find((s) => s.kind === 'graves');
-    if (!field) {
-      const fieldName = `${this.lang.coinRaw(2)} Field`;
-      this.registerLex(fieldName, 'first burial ground', 'place');
-      field = {
-        kind: 'graves', name: fieldName, x: corpse.x, y: corpse.y,
-        foundedTick: this.world.tick, graves: 0,
-      };
-      this.world.sites.push(field);
-      this.record(a, 'first', `${a.name} opened ${field.name}, the first ground given to the dead`, {
-        valence: -0.2, intensity: 0.8, landmark: true,
-      });
-    }
-    field.graves = (field.graves || 0) + 1;
-    a.stats.buried++;
-    a.memory.learn('norm:burial', {
-      kind: 'norm', confidence: 0.35, valence: 0.55, source: 'experience',
-      payload: { situation: 'burial', polarity: 1, evidence: 1 },
+    const idx = this.world.corpses.indexOf(corpse);
+    if (idx >= 0) this.world.corpses.splice(idx, 1);
+    this.upholdNorm('burial', 0.04);
+    this.record(a, 'ritual', `${a.name} buried ${corpse.name} with words`, {
+      valence: 0.3, intensity: 0.5, actors: [a.id],
     });
-    this.upholdNorm('burial', 0.05);
-    this.record(a, 'ritual', `${a.name} buried ${corpse.name} in ${field.name}`, {
-      actors: [a.id, corpse.id], valence: -0.3, intensity: 0.7, landmark: true,
+    appraise(a, {
+      goalCongruence: 0.3, agency: 'self', intensity: 0.4, kind: 'burial', norm: 1,
     });
-    appraise(a, { goalCongruence: 0.3, agency: 'self', intensity: 0.6, norm: 1, kind: 'ritual' });
-    a.affect.e.grief = clamp(a.affect.e.grief * 0.7);
-    this.reputationDelta(a, 0.03);
   }
 
-  performRitual(a, site) {
-    this.counters.rituals++;
-    a.affect.e.grief = clamp(a.affect.e.grief * 0.75);
-    a.affect.e.awe = clamp(a.affect.e.awe + 0.15);
-    a.affect.mood = clamp(a.affect.mood + 0.06, -1, 1);
-    const attendees = this.nearby(a, 4);
-    for (const o of attendees) {
-      o.affect.mood = clamp(o.affect.mood + 0.03, -1, 1);
-      o.adjustRel(a, { familiarity: 0.03, respect: 0.03 });
-    }
-    let rit = this.rituals.find((r) => r.site === (site.name || site.word));
-    if (!rit) {
-      const ritName = `the ${this.lang.coinRaw(2)}`;
-      this.registerLex(ritName, 'named ritual practice', 'ritual');
-      rit = {
-        name: ritName, site: site.name || site.word,
-        foundedTick: this.world.tick, observances: 0, founder: a.name,
-      };
-      this.rituals.push(rit);
-      if (this.rituals.length > BALANCE.maxRituals) {
-        this.rituals.splice(0, this.rituals.length - BALANCE.maxRituals);
-      }
-      this.record(a, 'ritual', `${a.name} began ${rit.name} at ${rit.site}`, {
-        valence: 0.4, intensity: 0.8, landmark: true,
-      });
-    }
-    rit.observances++;
-    if (rit.observances === 12) {
-      const belief = {
-        text: `that ${rit.name} keeps the dead from being nothing`,
-        since: this.world.tick, holders: attendees.length + 1,
-      };
-      this.beliefs.push(belief);
-      if (this.beliefs.length > BALANCE.maxBeliefs) {
-        this.beliefs.splice(0, this.beliefs.length - BALANCE.maxBeliefs);
-      }
-      this.record(a, 'belief', `They began to hold ${belief.text}`, {
-        valence: 0.3, intensity: 0.8, landmark: true,
-      });
-    }
-  }
+  // ── Trade / conflict / invention hooks ────────────────────────────────────
 
-  makeArt(a, mediumKey) {
-    this.counters.artworks++;
-    const subject = a.memory.recall((m) => m.salience > 0.45, 1)[0];
-    const name = this.lang.coinRaw(2);
-    this.registerLex(name, 'artwork', 'concept');
-    const work = {
-      name, by: a.name, tick: this.world.tick,
-      medium: mediumKey ? this.ont.get(mediumKey)?.word : 'earth and hands',
-      about: subject ? subject.text : 'the look of the country in this season',
-      emotion: dominantEmotion(a),
-    };
-    this.artworks.push(work);
-    if (this.artworks.length > BALANCE.maxArtworks) {
-      this.artworks.splice(0, this.artworks.length - BALANCE.maxArtworks);
-    }
-    a.affect.mood = clamp(a.affect.mood + 0.08, -1, 1);
-    a.affect.e.grief = clamp(a.affect.e.grief * 0.85);
-    if (!a.titles.includes('maker of images') && a.stats.crafted > 3 && a.skills.art > 0.4) {
-      a.titles.push('maker of images');
-    }
-    this.record(
-      a, 'art',
-      `${a.name} made ${name}, ${
-        work.medium === 'earth and hands' ? 'from earth and hands' : `in ${work.medium}`
-      } — about ${work.about}`,
-      { valence: 0.5, intensity: 0.6, landmark: true },
-    );
-    appraise(a, { goalCongruence: 0.6, agency: 'self', intensity: 0.6, kind: 'first', novelty: 0.5 });
-    if (mediumKey) a.take(mediumKey, 0.5);
-  }
-
-  onInvention(a, record, concept) {
-    this.inventionTicks.set(record.key, this.world.tick);
-    if (concept?.word) {
-      this.registerLex(
-        concept.word,
-        record.advance ? `new ${record.fn}` : `variant ${record.fn}`,
-        'concept',
-      );
-    }
-    const fnWord = record.fn;
-    const text = record.advance
-      ? `${a.name} made ${concept.word} — nothing they had served ${fnWord} so well`
-      : `${a.name} made ${concept.word}, a ${fnWord} of sorts, no better than what they had`;
-    this.record(a, 'invention', text, {
-      valence: record.advance ? 0.9 : 0.3,
-      intensity: record.advance ? 0.95 : 0.4,
-      landmark: record.advance,
-      concept: concept.key,
-      advance: record.advance,
-      quiet: !record.advance && !this.rng.bool(0.12),
-    });
-    if (record.advance) {
-      if (!a.titles.includes('maker')) a.titles.push('maker');
-      this.reputationDelta(a, 0.08);
-      a.memory.learn('norm:craft', {
-        kind: 'norm', confidence: 0.3, valence: 0.5, source: 'experience',
-        payload: { situation: 'craft', polarity: 1, evidence: 1 },
-      });
-      for (const o of this.nearby(a, 8)) {
-        o.adjustRel(a, { respect: 0.12 });
-        appraise(o, {
-          goalCongruence: 0.3, agency: 'other', intensity: 0.5, novelty: 0.9, kind: 'witness', social: a.id,
-        });
-        if (this.rng.bool(0.4 * o.genome.learning)) {
-          o.memory.learn(concept.key, {
-            kind: 'recipe', confidence: 0.3, valence: 0.5, source: `watched ${a.name}`,
-          });
-          o.stats.learned++;
+  findDeal(a, o) {
+    let best = null;
+    for (const [k, v] of a.inventory) {
+      if (v < 2) continue;
+      const ca = this.ont.get(k);
+      if (!ca) continue;
+      for (const [ok, ov] of o.inventory) {
+        if (ok === k || ov < 1) continue;
+        const co = this.ont.get(ok);
+        if (!co) continue;
+        const wantA = a.desireFor(ok, this.ont, this) - a.desireFor(k, this.ont, this);
+        const wantO = o.desireFor(k, this.ont, this) - o.desireFor(ok, this.ont, this);
+        if (wantA > 0.15 && wantO > 0.1) {
+          const gain = wantA + wantO * 0.5;
+          if (!best || gain > best.gain) {
+            best = { give: k, take: ok, giveN: 1, takeN: 1, gain };
+          }
         }
       }
-      this.upholdNorm('craft', 0.03);
-    }
-  }
-
-  nearestSettlement(x, y) {
-    let best = this.settlements[0], bd = Infinity;
-    for (const s of this.settlements) {
-      const d = (s.x - x) ** 2 + (s.y - y) ** 2;
-      if (d < bd) { bd = d; best = s; }
     }
     return best;
   }
 
-  settlementPressure(settlement, radius = 22) {
-    const pop = this.living.filter((a) => dist(a, settlement) < radius).length;
-    return clamp((pop - 16) / 12, 0, 1);
+  settleTrade(a, o, deal) {
+    if (!deal) return;
+    if (a.count(deal.give) < deal.giveN || o.count(deal.take) < deal.takeN) return;
+    a.take(deal.give, deal.giveN);
+    o.take(deal.take, deal.takeN);
+    a.add(deal.take, deal.takeN);
+    o.add(deal.give, deal.giveN);
+    a.stats.trades++;
+    o.stats.trades++;
+    this.counters.trades++;
+    a.rel(o).lastTrade = this.world.tick;
+    o.rel(a).lastTrade = this.world.tick;
+    a.adjustRel(o, { trust: 0.04, familiarity: 0.03 });
+    o.adjustRel(a, { trust: 0.04, familiarity: 0.03 });
+    this.record(a, 'trade', `${a.name} traded ${this.ont.get(deal.give)?.word || deal.give} with ${o.name} for ${this.ont.get(deal.take)?.word || deal.take}`, {
+      valence: 0.3, intensity: 0.35, actors: [a.id, o.id],
+    });
+    // Update crude market prices
+    for (const k of [deal.give, deal.take]) {
+      const cur = this.marketPrices.get(k) || { price: 1, n: 0 };
+      cur.n++;
+      cur.price = cur.price * 0.9 + (deal.gain || 1) * 0.1;
+      this.marketPrices.set(k, cur);
+    }
   }
 
-  updateWants() {
-    const want = new Map();
-    for (const settlement of this.settlements) {
-      const s = this.settlementNeeds(settlement);
-      for (const [kind, def] of Object.entries(STRUCTURE_KINDS)) {
-        const need = def.need(s);
-        if (need <= 0.05) continue;
-        let bk = null, bs = 0;
-        for (const c of this.ont.all()) {
-          if (c.kind !== 'matter') continue;
-          const sc = Math.max(c.serves(def.fn), c.props.durable * 0.5 + c.props.hard * 0.4);
-          if (sc > bs) { bs = sc; bk = c.key; }
-        }
-        if (bk) want.set(bk, Math.max(want.get(bk) || 0, need));
-      }
-    }
-    this.wantedMaterials = want;
+  onTheft(a, o, key, n) {
+    this.counters.thefts++;
+    a.adjustRel(o, { affection: -0.2, trust: -0.25 });
+    o.adjustRel(a, { affection: -0.35, trust: -0.4 });
+    this.violateNorm('theft', 0.06);
+    this.record(a, 'theft', `${a.name} took ${this.ont.get(key)?.word || key} from ${o.name}`, {
+      valence: -0.6, intensity: 0.7, actors: [a.id, o.id], concept: key,
+    });
+    appraise(o, {
+      goalCongruence: -0.7, agency: 'other', intensity: 0.7, kind: 'theft', social: a.id, norm: -1,
+    });
+    appraise(a, {
+      goalCongruence: 0.3, agency: 'self', intensity: 0.5, kind: 'theft', social: o.id, norm: -1,
+    });
   }
 
-  settlementNeeds(settlement, radius = 22) {
-    const w = this.world;
-    const pop = Math.max(1, this.living.filter((a) => dist(a, settlement) < radius).length);
-    const count = (k) => w.structuresOfKind(k).filter((s) => dist(s, settlement) < radius).length;
-    const need = (have, per) => clamp((pop / per - have) / Math.max(1, pop / per));
+  resolveFight(a, o) {
+    a.lastFightTick = this.world.tick;
+    o.lastFightTick = this.world.tick;
+    this.counters.conflicts++;
+    const aPower = 0.3 + a.skills.fight + a.body.energy * 0.3 + a.genome.aggression * 0.4;
+    const oPower = 0.3 + o.skills.fight + o.body.energy * 0.3 + o.genome.aggression * 0.4;
+    const aWin = this.rng.next() < aPower / (aPower + oPower);
+    const winner = aWin ? a : o;
+    const loser = aWin ? o : a;
+    loser.body.injury = clamp(loser.body.injury + this.rng.float(0.1, 0.35), 0, 1);
+    loser.body.health = clamp(loser.body.health - 0.08, 0, 1);
+    winner.gainSkill('fight', 0.04);
+    a.adjustRel(o, { affection: -0.25, trust: -0.2 });
+    o.adjustRel(a, { affection: -0.25, trust: -0.2 });
+    a.rel(o).conflicts = (a.rel(o).conflicts || 0) + 1;
+    o.rel(a).conflicts = (o.rel(a).conflicts || 0) + 1;
+    this.violateNorm('violence', 0.05);
+    this.record(a, 'violence', `${a.name} and ${o.name} came to blows; ${winner.name} prevailed`, {
+      valence: -0.6, intensity: 0.8, actors: [a.id, o.id],
+    });
+    appraise(a, {
+      goalCongruence: aWin ? 0.3 : -0.5, agency: 'self', intensity: 0.7, kind: 'violence', social: o.id,
+    });
+    appraise(o, {
+      goalCongruence: aWin ? -0.5 : 0.3, agency: 'self', intensity: 0.7, kind: 'violence', social: a.id,
+    });
+  }
 
-    let waterTiles = 0;
-    for (let y = settlement.y - 8; y <= settlement.y + 8; y++) {
-      for (let x = settlement.x - 8; x <= settlement.x + 8; x++) {
-        if (!w.inBounds(x, y)) continue;
-        const t = w.at(x, y);
-        if (t === TERRAIN.WATER || t === TERRAIN.MARSH) waterTiles++;
-      }
+  onInvention(a, record, concept) {
+    this.inventionTicks.set(concept.key, this.world.tick);
+    this.record(a, 'invention',
+      record?.advance
+        ? `${a.name} made ${concept.word} — nothing they had served ${concept.bestFn} so well`
+        : `${a.name} made ${concept.word}, a ${concept.bestFn} of sorts, no better than what they had`,
+      {
+        valence: record?.advance ? 0.7 : 0.35,
+        intensity: record?.advance ? 0.85 : 0.4,
+        concept: concept.key,
+        advance: !!record?.advance,
+        landmark: !!record?.advance,
+      },
+    );
+  }
+
+  makeArt(a, mediumKey) {
+    const piece = {
+      maker: a.name, makerId: a.id, tick: this.world.tick,
+      medium: mediumKey, word: this.lang.word('art'),
+    };
+    this.artworks.push(piece);
+    if (this.artworks.length > BALANCE.maxArtworks) {
+      this.artworks.splice(0, this.artworks.length - BALANCE.maxArtworks);
     }
-    const wantsBridge = waterTiles > 6 && count('bridge') < 1;
+    this.counters.artworks++;
+    a.stats.crafted++;
+    this.record(a, 'art', `${a.name} made something for its own sake`, {
+      valence: 0.4, intensity: 0.35, quiet: true,
+    });
+    appraise(a, {
+      goalCongruence: 0.4, agency: 'self', intensity: 0.4, kind: 'makeArt',
+    });
+  }
 
-    let trailSum = 0;
-    let trailN = 0;
-    for (let y = settlement.y - 6; y <= settlement.y + 6; y++) {
-      for (let x = settlement.x - 6; x <= settlement.x + 6; x++) {
-        if (!w.inBounds(x, y) || !w.walkable(x, y)) continue;
-        trailSum += w.trails[w.idx(x, y)] || 0;
-        trailN++;
-      }
+  performRitual(a, site) {
+    this.rituals.push({ agent: a.name, site: site?.word || 'ground', tick: this.world.tick });
+    if (this.rituals.length > BALANCE.maxRituals) {
+      this.rituals.splice(0, this.rituals.length - BALANCE.maxRituals);
     }
-    const avgTrail = trailN ? trailSum / trailN : 0;
-    const pathDeficit =
-      count('path') < 2 && avgTrail > 0.2 ? clamp(avgTrail * 1.2) : need(count('path'), 12);
+    this.counters.rituals++;
+    this.ritualPull = clamp(this.ritualPull + 0.15, 0, 2);
+    a.affect.e.grief = clamp(a.affect.e.grief - 0.2, 0, 1);
+    a.affect.e.awe = clamp(a.affect.e.awe + 0.15, 0, 1);
+    this.record(a, 'ritual', `${a.name} stood in ritual at the ${site?.word || 'ground'}`, {
+      valence: 0.25, intensity: 0.4,
+    });
+  }
 
+  // ── Settlements / structures ──────────────────────────────────────────────
+
+  nearestSettlement(x, y) {
+    return topN(this.settlements, 1, (s) => -dist({ x, y }, s))[0] || this.settlements[0];
+  }
+
+  settlementPressure(s) {
+    if (!s) return 0;
+    const near = this.living.filter((a) => dist(a, s) < 16).length;
+    const capacity = 8 + this.world.structuresOfKind('shelter').filter((x) => dist(x, s) < 12).length * 3;
+    return clamp(near / Math.max(1, capacity) - 0.5);
+  }
+
+  settlementNeeds(s) {
+    if (!s) {
+      return {
+        shelterDeficit: 1, hearthDeficit: 1, storeDeficit: 1, workshopDeficit: 0.5,
+        fieldDeficit: 0.5, wellDeficit: 0.4, shrineDeficit: 0.3, wallDeficit: 0.1,
+        hallDeficit: 0.1, bridgeDeficit: 0.2, pathDeficit: 0.3, plazaDeficit: 0.2,
+      };
+    }
+    const near = (kind) =>
+      this.world.structuresOfKind(kind).filter((x) => dist(x, s) < 14).length;
+    const pop = this.living.filter((a) => dist(a, s) < 16).length;
     return {
-      shelterDeficit: need(count('shelter'), 2.2),
-      hearthDeficit: need(count('hearth'), 6) * (w.temperature < 0.5 ? 1.6 : 0.7),
-      storeDeficit: need(count('store'), 10) * (w.season === 'autumn' ? 1.7 : 1),
-      workshopDeficit: need(count('workshop'), 8) * (this.ont.bestScoreFor('cutting') > 0.2 ? 1.4 : 0.4),
-      fieldDeficit: need(count('field'), 5) * (this.ont.bestScoreFor('cutting') > 0.25 ? 1.3 : 0.3),
-      wellDeficit: need(count('well'), 14) * (this.ont.bestScoreFor('vessel') > 0.3 ? 1.2 : 0.2),
-      shrineDeficit: need(count('shrine'), 16) * clamp(this.ritualPull),
-      wallDeficit: need(count('wall'), 26) * clamp(mean(this.living, (x) => x.affect.e.fear) * 2),
-      hallDeficit: pop > 18 && count('hall') < 1 ? 0.9 : 0,
-      bridgeDeficit: wantsBridge ? 0.85 : 0,
-      pathDeficit,
-      plazaDeficit: pop > 8 ? need(count('plaza'), 14) : 0,
+      shelterDeficit: clamp(1 - near('shelter') / Math.max(1, pop * 0.4)),
+      hearthDeficit: clamp(1 - near('hearth') / Math.max(1, pop * 0.3)),
+      storeDeficit: clamp(1 - near('store') / Math.max(1, 1 + pop * 0.1)),
+      workshopDeficit: clamp(0.8 - near('workshop') * 0.5),
+      fieldDeficit: clamp(0.9 - near('field') * 0.35),
+      wellDeficit: clamp(0.7 - near('well') * 0.6),
+      shrineDeficit: clamp(0.5 - near('shrine') * 0.5),
+      wallDeficit: clamp(0.3 - near('wall') * 0.3),
+      hallDeficit: clamp(0.25 - near('hall') * 0.5),
+      bridgeDeficit: clamp(0.4 - near('bridge') * 0.5),
+      pathDeficit: clamp(0.5 - near('path') * 0.2),
+      plazaDeficit: clamp(0.35 - near('plaza') * 0.5),
     };
   }
 
   bestBuildMaterial(a, fn) {
     let best = null;
-    for (const key of a.inventory.keys()) {
-      const c = this.ont.get(key);
+    for (const [k, v] of a.inventory) {
+      if (v < 1) continue;
+      const c = this.ont.get(k);
       if (!c) continue;
-      const score = Math.max(c.serves(fn), c.props.durable * 0.5 + c.props.hard * 0.4);
-      if (score < 0.12) continue;
-      if (!best || score > best.score) best = { key, score };
+      const score = c.serves(fn) || c.props.hard * 0.4 || c.props.flexible * 0.3;
+      if (score > (best?.score || 0.05)) best = { key: k, score };
     }
     return best;
   }
 
-  pickBuildSite(a, kind, settlement = this.nearestSettlement(a.x, a.y)) {
-    const w = this.world;
-    const anchor =
-      kind === 'field'
-        ? topN(
-            [...Array(40)].map(() => ({
-              x: clamp(settlement.x + this.rng.int(-10, 10), 1, w.w - 2),
-              y: clamp(settlement.y + this.rng.int(-10, 10), 1, w.h - 2),
-            })),
-            1,
-            (p) => (w.walkable(p.x, p.y) ? w.fertility[w.idx(p.x, p.y)] : -1),
-          )[0]
-        : settlement;
-
-    for (let r = 1; r < 16; r++) {
-      for (let i = 0; i < 14; i++) {
-        const x = clamp(anchor.x + this.rng.int(-r, r), 1, w.w - 2);
-        const y = clamp(anchor.y + this.rng.int(-r, r), 1, w.h - 2);
-        if (w.structureAt(x, y)) continue;
-
-        if (kind === 'bridge') {
-          const t = w.at(x, y);
-          if (t !== TERRAIN.WATER && t !== TERRAIN.MARSH) continue;
-          return { x, y };
+  pickBuildSite(a, kind, settlement) {
+    const s = settlement || this.nearestSettlement(a.x, a.y);
+    for (let i = 0; i < 30; i++) {
+      const x = clamp(s.x + this.rng.int(-6, 6), 1, this.world.w - 2);
+      const y = clamp(s.y + this.rng.int(-6, 6), 1, this.world.h - 2);
+      if (!this.world.walkable(x, y)) continue;
+      if (this.world.structuresAt?.(x, y)?.length) continue;
+      if (kind === 'bridge') {
+        // Prefer beside water
+        let nearW = false;
+        for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const t = this.world.at(x + ox, y + oy);
+          if (t === TERRAIN.WATER || t === TERRAIN.MARSH) nearW = true;
         }
-
-        if (!w.walkable(x, y)) continue;
-        return { x, y };
+        if (!nearW) continue;
       }
+      return { x, y };
     }
-    return null;
+    return { x: a.x, y: a.y };
   }
 
   foundSettlement(a, spot) {
     const name = this.lang.placeName(this.rng);
-    this.registerLex(name, `settlement founded by ${a.name}`, 'place');
+    this.registerLex(name, 'settlement', 'place');
     const settlement = {
       kind: 'settlement', name, x: spot.x, y: spot.y,
       foundedTick: this.world.tick, color: hueFor(this.settlements.length), tier: 'camp',
@@ -1323,7 +1117,7 @@ export class Simulation {
 
   corpseTick() {
     if (this.world.tick % 24) return;
-    for (const c of [...this.world.corpses]) {
+    for (const c of [...(this.world.corpses || [])]) {
       if (this.world.tick - c.tick > BALANCE.corpseDesiccation) {
         const idx = this.world.corpses.indexOf(c);
         if (idx >= 0) this.world.corpses.splice(idx, 1);
@@ -1528,12 +1322,21 @@ export class Simulation {
     }
   }
 
+  updateWants() {
+    this.wantedMaterials.clear();
+    for (const a of this.living) {
+      for (const g of this.capabilityGaps(a)) {
+        this.wantedMaterials.set(g, (this.wantedMaterials.get(g) || 0) + 1);
+      }
+    }
+  }
+
   dailyReflection() {
     for (const a of this.living) {
       if (this.rng.bool(0.3)) a.memory.consolidate(a);
       for (const [k] of a.inventory) {
         const m = this.marketPrices.get(k);
-        if (m) a.updateValue(k, m.price, 0.08);
+        if (m) a.updateValue?.(k, m.price, 0.08);
       }
     }
   }
@@ -1562,7 +1365,7 @@ export class Simulation {
       }
     }
     for (const s of this.world.structuresOfKind('store')) {
-      for (const [k, v] of s.stock) {
+      for (const [k, v] of s.stock || []) {
         if (this.ont.get(k)?.functions.sustenance) t += v;
       }
     }
