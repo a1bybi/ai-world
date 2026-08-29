@@ -12,6 +12,10 @@ import { appraise } from './emotion.js';
 
 const T = (x, y) => ({ x, y });
 
+/**
+ * Step one tile toward target. Prefer low moveCost tiles, then any walkable
+ * neighbour so agents do not freeze against rivers / blocked diagonals.
+ */
 function stepToward(agent, world, target) {
   const dx = Math.sign(target.x - agent.x);
   const dy = Math.sign(target.y - agent.y);
@@ -23,6 +27,9 @@ function stepToward(agent, world, target) {
     T(agent.x, agent.y + dy),
     T(agent.x + dx, agent.y - dy),
     T(agent.x - dx, agent.y + dy),
+    T(agent.x - dx, agent.y),
+    T(agent.x, agent.y - dy),
+    T(agent.x - dx, agent.y - dy),
   ];
 
   const scored = [];
@@ -40,6 +47,21 @@ function stepToward(agent, world, target) {
     const idx = world.idx(t.x, t.y);
     world.trails[idx] = clamp(world.trails[idx] + 0.02, 0, 1);
     return agent.x === target.x && agent.y === target.y;
+  }
+
+  // Unstick: any adjacent walkable tile
+  for (const [ox, oy] of [
+    [1, 0], [-1, 0], [0, 1], [0, -1],
+    [1, 1], [-1, -1], [1, -1], [-1, 1],
+  ]) {
+    const t = T(agent.x + ox, agent.y + oy);
+    if (!world.walkable(t.x, t.y)) continue;
+    agent.x = t.x;
+    agent.y = t.y;
+    agent.stats.steps++;
+    const idx = world.idx(t.x, t.y);
+    world.trails[idx] = clamp(world.trails[idx] + 0.02, 0, 1);
+    return false;
   }
   return false;
 }
@@ -230,7 +252,7 @@ export const ACTIONS = {
   takeFromStore: {
     category: 'body',
     propose(a, ctx) {
-      if (a.body.hunger < 0.3) return [];
+      if (a.body.hunger < 0.28 && a.body.thirst < 0.5) return [];
       const store = ctx.world.structuresOfKind('store')
         .find((s) => s.stock && [...s.stock.values()].some((v) => v > 0));
       if (!store) return [];
@@ -942,22 +964,34 @@ export const ACTIONS = {
   give: {
     category: 'social',
     propose(a, ctx) {
-      const near = ctx.nearby(a, 5).filter((o) => o.id !== a.id);
+      const near = ctx.nearby(a, 6).filter((o) => o.id !== a.id);
       const shareNorm = normsFor(a, ctx, ['sharing', 'gift', 'neglect']);
       const out = [];
       for (const o of near) {
         const r = a.rel(o);
+        const isKid = o.isChild(ctx.world.tick);
         const kinChild =
-          o.isChild(ctx.world.tick) && (r.kin > 0.3 || a.household === o.household);
-        const theirNeed = o.body.hunger * 1.4 + o.body.illness + (kinChild ? 0.5 : 0);
-        if (theirNeed < (kinChild ? 0.35 : 0.6) || a.body.hunger > (kinChild ? 0.72 : 0.5)) {
-          continue;
-        }
+          isKid &&
+          (r.kin > 0.25 ||
+            a.household === o.household ||
+            a.children.includes(o.id));
+        const theirNeed =
+          o.body.hunger * 1.6 +
+          o.body.thirst * 0.8 +
+          o.body.illness +
+          (kinChild ? 0.8 : 0);
+        if (theirNeed < (kinChild ? 0.25 : 0.55)) continue;
+        if (a.body.hunger > (kinChild ? 0.78 : 0.55)) continue;
+
         let gift = null;
         for (const [k, v] of a.inventory) {
           const c = ctx.ont.get(k);
           if (!c) continue;
-          if (o.body.hunger > 0.6 && c.functions.sustenance && v > 1) {
+          if (
+            (o.body.hunger > 0.35 || kinChild) &&
+            c.functions.sustenance &&
+            v > (kinChild ? 0 : 1)
+          ) {
             gift = k;
             break;
           }
@@ -967,14 +1001,17 @@ export const ACTIONS = {
           }
         }
         if (!gift) continue;
+
         const u =
           theirNeed *
           (a.genome.empathy * 1.5 +
             r.affection * 1.2 +
-            r.kin * 1.5 +
+            r.kin * 1.8 +
+            (kinChild ? 1.5 : 0) +
             (r.debt < 0 ? 0.6 : 0)) *
           (ctx.bias?.social ?? 1) *
-          (1 + Math.max(0, shareNorm) * 0.5);
+          (1 + Math.max(0, shareNorm) * 0.5) *
+          (kinChild ? 2.0 : 1);
         out.push({ kind: 'give', u, targetId: o.id, payload: gift, dur: 1 });
       }
       return topN(out, 1, (o) => o.u);
