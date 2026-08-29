@@ -56,7 +56,6 @@ export function updateBody(a, world, dt = 1) {
   b.illness = clamp(b.illness - 0.004 * g.resilience * dt, 0, 1);
   b.injury = clamp(b.injury - 0.004 * g.resilience * dt, 0, 1);
 
-  // Real old age — elders decline and eventually die
   const span = 55 * g.longevity;
   if (age > span * 0.7) {
     const t = (age - span * 0.7) / Math.max(1, span * 0.3);
@@ -125,10 +124,10 @@ export function think(a, ctx) {
       a.action.kind === 'seekWarmth' ||
       a.action.kind === 'sleep' ||
       a.action.kind === 'care' ||
-      ((a.action.kind === 'gather' ||
-        a.action.kind === 'hunt' ||
-        a.action.kind === 'farm') &&
-        a.body.hunger > 0.55);
+      a.action.kind === 'explore' ||
+      a.action.kind === 'gather' ||
+      a.action.kind === 'idle' ||
+      ((a.action.kind === 'hunt' || a.action.kind === 'farm') && a.body.hunger > 0.55);
 
     if (
       a.body.hunger > 0.4 &&
@@ -277,12 +276,8 @@ export function think(a, ctx) {
     }
   }
 
-  // Endgame / well-fed: do not only sleep — walk the map
-  if (
-    a.body.hunger < 0.4 &&
-    a.body.thirst < 0.4 &&
-    a.body.rest > 0.6
-  ) {
+  // Well-fed: prefer movement over endless sleep
+  if (a.body.hunger < 0.4 && a.body.thirst < 0.4 && a.body.rest > 0.6) {
     const lonely = ctx.sim.living.length <= 2;
     for (const p of candidates) {
       if (p.kind === 'sleep') p.u *= lonely ? 0.12 : 0.35;
@@ -293,7 +288,27 @@ export function think(a, ctx) {
     }
   }
 
-  // Nuclear: hungry + food in hand → eat now
+  // Stagnant agents: force walk the map
+  const stagnant = (a.stats.steps || 0) < world.tick * 0.05;
+  if (stagnant && a.body.hunger < 0.7 && a.body.thirst < 0.7) {
+    for (const p of candidates) {
+      if (p.kind === 'explore') p.u = Math.max(p.u, 8);
+      if (p.kind === 'gather') p.u = Math.max(p.u, 5);
+      if (p.kind === 'idle') p.u = Math.max(p.u, 4);
+      if (p.kind === 'sleep') p.u *= 0.05;
+    }
+    if (!candidates.some((c) => c.kind === 'explore')) {
+      const tx = clamp(a.x + ctx.rng.int(-14, 14), 1, world.w - 2);
+      const ty = clamp(a.y + ctx.rng.int(-14, 14), 1, world.h - 2);
+      candidates.push({
+        kind: 'explore',
+        u: 8,
+        target: { x: tx, y: ty },
+        dur: 12,
+      });
+    }
+  }
+
   if (a.body.hunger > 0.35 && hasFood) {
     const eatCand = candidates.find((c) => c.kind === 'eat');
     if (eatCand) {
