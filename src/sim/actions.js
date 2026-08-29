@@ -1,10 +1,4 @@
-// Everything an inhabitant can choose to do. Each action proposes itself with a
-// utility derived from the agent's own body, feelings, beliefs and relationships,
-// so behaviour is never scripted — it is argued for, and the strongest argument
-// (with some temperament-driven noise) wins.
-//
-// Norms enter only as learned beliefs (sim.effectiveNorm / personalNorm).
-// Structures can change movement (bridge/path) and social/work utility (plaza/workshop).
+// Everything an inhabitant can choose to do.
 
 import { clamp, dist, topN } from '../core/util.js';
 import { TERRAIN } from '../world/world.js';
@@ -12,10 +6,6 @@ import { appraise } from './emotion.js';
 
 const T = (x, y) => ({ x, y });
 
-/**
- * Step one tile toward target. Prefer low moveCost tiles, then any walkable
- * neighbour so agents do not freeze against rivers / blocked diagonals.
- */
 function stepToward(agent, world, target) {
   const dx = Math.sign(target.x - agent.x);
   const dy = Math.sign(target.y - agent.y);
@@ -49,7 +39,6 @@ function stepToward(agent, world, target) {
     return agent.x === target.x && agent.y === target.y;
   }
 
-  // Unstick: any adjacent walkable tile
   for (const [ox, oy] of [
     [1, 0], [-1, 0], [0, 1], [0, -1],
     [1, 1], [-1, -1], [1, -1], [-1, 1],
@@ -101,7 +90,6 @@ function normsFor(a, ctx, tags = []) {
   if (!tags.length) return 0;
   let sum = 0;
   let n = 0;
-
   const consider = (key) => {
     let v = 0;
     if (typeof ctx.sim?.effectiveNorm === 'function') v = ctx.sim.effectiveNorm(a, key);
@@ -115,9 +103,7 @@ function normsFor(a, ctx, tags = []) {
       n++;
     }
   };
-
   for (const tag of tags) consider(tag);
-
   if (typeof a.memory.knownNorms === 'function') {
     for (const b of a.memory.knownNorms(0.12)) {
       const sit = b.payload?.situation || b.key.replace(/^norm:/, '');
@@ -127,7 +113,6 @@ function normsFor(a, ctx, tags = []) {
       }
     }
   }
-
   return n ? sum / n : 0;
 }
 
@@ -152,7 +137,7 @@ const U = {
   hungerCrisis: 22,
   sleepNeed: 1.7,
   warmth: 3.2,
-  idle: 0.08,
+  idle: 0.12,
 };
 
 const STRUCTURE_KINDS = {
@@ -284,10 +269,19 @@ export const ACTIONS = {
   sleep: {
     category: 'body',
     propose(a, ctx) {
-      const need = (1 - a.body.rest) + (ctx.world.isNight ? 0.55 : 0) + (1 - a.body.energy) * 0.5;
-      if (need < 0.55) return [];
+      // Do not sleep the map into stillness when already rested
+      if (a.body.rest > 0.85 && a.body.energy > 0.7) return [];
+      const night = ctx.world.isNight ? 0.35 : 0;
+      const need =
+        (1 - a.body.rest) * 1.2 + night + (1 - a.body.energy) * 0.4;
+      if (need < 0.45) return [];
       const target = a.home ? T(a.home.x, a.home.y) : T(a.x, a.y);
-      return [{ kind: 'sleep', u: need * U.sleepNeed, target, dur: 5 + Math.round(ctx.rng.float(0, 3)) }];
+      return [{
+        kind: 'sleep',
+        u: need * U.sleepNeed,
+        target,
+        dur: 4 + Math.round(ctx.rng.float(0, 2)),
+      }];
     },
     run(a, ctx, act) {
       if (dist(a, act.target) > 1.2) {
@@ -1364,13 +1358,13 @@ export const ACTIONS = {
     propose(a, ctx) {
       if (a.body.hunger > 0.6) return [];
       const u =
-        (0.25 + a.genome.curiosity * 1.1) *
+        (0.35 + a.genome.curiosity * 1.2) *
         (ctx.bias?.explore ?? 1) *
-        (1 - a.body.hunger * 0.8) *
-        a.body.energy;
-      const r = 8 + Math.round(a.genome.curiosity * 26);
+        (1 - a.body.hunger * 0.7) *
+        Math.max(0.3, a.body.energy);
+      const r = 10 + Math.round(a.genome.curiosity * 28);
       let target = null;
-      for (let i = 0; i < 12 && !target; i++) {
+      for (let i = 0; i < 16 && !target; i++) {
         const t = T(
           clamp(a.x + ctx.rng.int(-r, r), 1, ctx.world.w - 2),
           clamp(a.y + ctx.rng.int(-r, r), 1, ctx.world.h - 2),
@@ -1378,7 +1372,7 @@ export const ACTIONS = {
         if (ctx.world.walkable(t.x, t.y)) target = t;
       }
       if (!target) return [];
-      return [{ kind: 'explore', u, target, dur: 12 }];
+      return [{ kind: 'explore', u, target, dur: 14 }];
     },
     run(a, ctx, act) {
       const arrived = stepToward(a, ctx.world, act.target);
@@ -1429,10 +1423,11 @@ export const ACTIONS = {
     },
     run(a, ctx) {
       a.body.rest = clamp(a.body.rest + 0.02, 0, 1);
-      if (ctx.rng.bool(0.25)) {
+      // Always take a small wander step so the map shows movement
+      if (ctx.rng.bool(0.55)) {
         const t = T(
-          clamp(a.x + ctx.rng.int(-1, 1), 1, ctx.world.w - 2),
-          clamp(a.y + ctx.rng.int(-1, 1), 1, ctx.world.h - 2),
+          clamp(a.x + ctx.rng.int(-2, 2), 1, ctx.world.w - 2),
+          clamp(a.y + ctx.rng.int(-2, 2), 1, ctx.world.h - 2),
         );
         stepToward(a, ctx.world, t);
       }
