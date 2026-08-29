@@ -88,7 +88,6 @@ export class Simulation {
   get origin() { return this.settlements[0]; }
   get settlementName() { return this.settlements[0]?.name; }
 
-  /** Walkable tiles reachable from (sx,sy) within maxSteps (no river crossing). */
   landReachable(sx, sy, maxSteps = 48) {
     const w = this.world;
     const seen = new Set();
@@ -215,8 +214,8 @@ export class Simulation {
         name: personName, genome: g, x, y, tick: 0, world, tongue: this.lang.name,
       });
       a.bornTick = -rng.int(16, 34) * YEAR_TICKS;
-      a.body.hunger = 0.12;
-      a.body.thirst = 0.1;
+      a.body.hunger = 0.1;
+      a.body.thirst = 0.08;
       a.body.health = 1;
 
       for (const c of this.ont.all()) {
@@ -227,9 +226,9 @@ export class Simulation {
           });
         }
       }
-      for (const food of ['berry', 'root', 'grain']) {
+      for (const food of ['berry', 'root', 'grain', 'water']) {
         a.memory.learn(food, {
-          kind: 'matter', confidence: 0.85, valence: 0.5, source: 'upbringing',
+          kind: 'matter', confidence: 0.9, valence: 0.5, source: 'upbringing',
         });
       }
       for (const seed of NORM_SEEDS) {
@@ -246,10 +245,11 @@ export class Simulation {
           });
         }
       }
-      a.add('water', 8);
-      a.add('berry', 16);
-      a.add('root', 12);
-      a.add('grain', 12);
+      // Strong starter packs — survive the first weeks
+      a.add('water', 14);
+      a.add('berry', 20);
+      a.add('root', 14);
+      a.add('grain', 14);
       this.addAgent(a);
     }
 
@@ -265,9 +265,10 @@ export class Simulation {
       material: 'wood',
       condition: 1,
       stock: new Map([
-        ['grain', 80],
-        ['berry', 60],
-        ['root', 50],
+        ['grain', 120],
+        ['berry', 80],
+        ['root', 70],
+        ['water', 40],
       ]),
     });
   }
@@ -431,8 +432,6 @@ export class Simulation {
     return ev;
   }
 
-  // ── Conversation / teaching ───────────────────────────────────────────────
-
   converse(a, o) {
     const rng = this.rng;
     a.gainSkill('speak', 0.012);
@@ -589,22 +588,16 @@ export class Simulation {
     });
   }
 
-  // ── Lifecycle ─────────────────────────────────────────────────────────────
-
   lifecycleTick() {
     const w = this.world;
     const term = Math.floor(YEAR_TICKS * BALANCE.pregnancyTerm);
 
     for (const a of this.living) {
-      // Pregnancy progress
       if (a.body.pregnant) {
         a.body.pregnantTicks = (a.body.pregnantTicks || 0) + 1;
-        if (a.body.pregnantTicks >= term) {
-          this.birth(a);
-        }
+        if (a.body.pregnantTicks >= term) this.birth(a);
       }
 
-      // Conception for bonded pairs
       if (
         !a.body.pregnant &&
         a.partner &&
@@ -625,7 +618,6 @@ export class Simulation {
               ((a.genome.fertility + p.genome.fertility) / 2),
           )
         ) {
-          // Either partner can carry
           const carrier = this.rng.bool(0.5) ? a : p;
           if (!carrier.body.pregnant) {
             carrier.body.pregnant = true;
@@ -636,25 +628,31 @@ export class Simulation {
       }
     }
 
-    // Soft parental feeding
+    // Parental feed: food + water to children
     for (const a of this.living) {
-      if (a.isChild(w.tick) || a.body.hunger > 0.6) continue;
+      if (a.isChild(w.tick) || a.body.hunger > 0.65) continue;
       for (const cid of a.children || []) {
         const c = this.byId(cid);
         if (!c || !c.alive || !c.isChild(w.tick)) continue;
-        if (c.body.hunger < 0.4) continue;
-        if (dist(a, c) > 8) continue;
-        let foodKey = null;
-        for (const [k, v] of a.inventory) {
-          if (v > 0 && (this.ont.get(k)?.serves('sustenance') || 0) > 0.15) {
-            foodKey = k;
-            break;
+        if (c.body.hunger < 0.35 && c.body.thirst < 0.4) continue;
+        if (dist(a, c) > 10) continue;
+
+        if (c.body.hunger >= 0.35) {
+          let foodKey = null;
+          for (const [k, v] of a.inventory) {
+            if (v > 0 && (this.ont.get(k)?.serves('sustenance') || 0) > 0.15) {
+              foodKey = k;
+              break;
+            }
+          }
+          if (foodKey && a.take(foodKey, 1)) {
+            c.add(foodKey, 1);
+            c.body.hunger = clamp(c.body.hunger - 0.4, 0, 1);
           }
         }
-        if (!foodKey) continue;
-        if (a.take(foodKey, 1)) {
-          c.add(foodKey, 1);
-          c.body.hunger = clamp(c.body.hunger - 0.35, 0, 1);
+        if (c.body.thirst >= 0.4 && a.count('water') > 0 && a.take('water', 1)) {
+          c.add('water', 1);
+          c.body.thirst = clamp(c.body.thirst - 0.5, 0, 1);
         }
       }
     }
@@ -680,7 +678,6 @@ export class Simulation {
     appraise(o, {
       goalCongruence: 0.8, agency: 'self', intensity: 0.7, kind: 'bond', social: a.id,
     });
-    // Seed a personal “bond” norm memory
     a.memory.learn(`norm:bond:${a.id}:${o.id}`, {
       kind: 'norm', confidence: 0.25, valence: 0.5, source: 'experience',
       payload: {
@@ -721,14 +718,13 @@ export class Simulation {
     child.bornTick = w.tick;
     child.motherId = mother.id;
     child.fatherId = other?.id || null;
-    child.body.hunger = 0.2;
-    child.body.thirst = 0.15;
+    child.body.hunger = 0.15;
+    child.body.thirst = 0.1;
     child.body.health = 0.95;
 
-    // Inherit some knowledge
     for (const food of ['berry', 'root', 'grain', 'water']) {
       child.memory.learn(food, {
-        kind: 'matter', confidence: 0.5, valence: 0.4, source: 'upbringing',
+        kind: 'matter', confidence: 0.55, valence: 0.4, source: 'upbringing',
       });
     }
     for (const b of mother.memory.semantic.values()) {
@@ -740,9 +736,9 @@ export class Simulation {
       }
     }
 
-    // Starter food for infant
-    child.add('berry', 4);
-    child.add('root', 2);
+    child.add('berry', 6);
+    child.add('root', 3);
+    child.add('water', 4);
 
     mother.children = mother.children || [];
     mother.children.push(child.id);
@@ -786,20 +782,17 @@ export class Simulation {
     this.livingCache = null;
     this.counters.deaths++;
 
-    // Clear partner
     if (a.partner) {
       const p = this.byId(a.partner);
       if (p) p.partner = null;
       a.partner = null;
     }
 
-    // Corpse
     this.world.corpses = this.world.corpses || [];
     this.world.corpses.push({
       id: a.id, name: a.name, x: a.x, y: a.y, tick: this.world.tick, cause,
     });
 
-    // Lost knowledge
     for (const b of a.memory.semantic.values()) {
       if (b.kind !== 'recipe') continue;
       const holders = this.living.filter(
@@ -836,8 +829,6 @@ export class Simulation {
       goalCongruence: 0.3, agency: 'self', intensity: 0.4, kind: 'burial', norm: 1,
     });
   }
-
-  // ── Trade / conflict / invention hooks ────────────────────────────────────
 
   findDeal(a, o) {
     let best = null;
@@ -879,7 +870,6 @@ export class Simulation {
     this.record(a, 'trade', `${a.name} traded ${this.ont.get(deal.give)?.word || deal.give} with ${o.name} for ${this.ont.get(deal.take)?.word || deal.take}`, {
       valence: 0.3, intensity: 0.35, actors: [a.id, o.id],
     });
-    // Update crude market prices
     for (const k of [deal.give, deal.take]) {
       const cur = this.marketPrices.get(k) || { price: 1, n: 0 };
       cur.n++;
@@ -981,8 +971,6 @@ export class Simulation {
     });
   }
 
-  // ── Settlements / structures ──────────────────────────────────────────────
-
   nearestSettlement(x, y) {
     return topN(this.settlements, 1, (s) => -dist({ x, y }, s))[0] || this.settlements[0];
   }
@@ -1041,7 +1029,6 @@ export class Simulation {
       if (!this.world.walkable(x, y)) continue;
       if (this.world.structuresAt?.(x, y)?.length) continue;
       if (kind === 'bridge') {
-        // Prefer beside water
         let nearW = false;
         for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
           const t = this.world.at(x + ox, y + oy);
