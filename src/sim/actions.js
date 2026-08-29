@@ -137,7 +137,7 @@ const U = {
   hungerCrisis: 22,
   sleepNeed: 1.7,
   warmth: 3.2,
-  idle: 0.12,
+  idle: 0.15,
 };
 
 const STRUCTURE_KINDS = {
@@ -269,7 +269,6 @@ export const ACTIONS = {
   sleep: {
     category: 'body',
     propose(a, ctx) {
-      // Do not sleep the map into stillness when already rested
       if (a.body.rest > 0.85 && a.body.energy > 0.7) return [];
       const night = ctx.world.isNight ? 0.35 : 0;
       const need =
@@ -1356,15 +1355,15 @@ export const ACTIONS = {
   explore: {
     category: 'thought',
     propose(a, ctx) {
-      if (a.body.hunger > 0.6) return [];
+      if (a.body.hunger > 0.65) return [];
       const u =
-        (0.35 + a.genome.curiosity * 1.2) *
+        (0.4 + a.genome.curiosity * 1.3) *
         (ctx.bias?.explore ?? 1) *
-        (1 - a.body.hunger * 0.7) *
-        Math.max(0.3, a.body.energy);
-      const r = 10 + Math.round(a.genome.curiosity * 28);
+        (1 - a.body.hunger * 0.6) *
+        Math.max(0.35, a.body.energy);
+      const r = 12 + Math.round(a.genome.curiosity * 30);
       let target = null;
-      for (let i = 0; i < 16 && !target; i++) {
+      for (let i = 0; i < 20 && !target; i++) {
         const t = T(
           clamp(a.x + ctx.rng.int(-r, r), 1, ctx.world.w - 2),
           clamp(a.y + ctx.rng.int(-r, r), 1, ctx.world.h - 2),
@@ -1372,7 +1371,7 @@ export const ACTIONS = {
         if (ctx.world.walkable(t.x, t.y)) target = t;
       }
       if (!target) return [];
-      return [{ kind: 'explore', u, target, dur: 14 }];
+      return [{ kind: 'explore', u, target, dur: 16 }];
     },
     run(a, ctx, act) {
       const arrived = stepToward(a, ctx.world, act.target);
@@ -1423,14 +1422,12 @@ export const ACTIONS = {
     },
     run(a, ctx) {
       a.body.rest = clamp(a.body.rest + 0.02, 0, 1);
-      // Always take a small wander step so the map shows movement
-      if (ctx.rng.bool(0.55)) {
-        const t = T(
-          clamp(a.x + ctx.rng.int(-2, 2), 1, ctx.world.w - 2),
-          clamp(a.y + ctx.rng.int(-2, 2), 1, ctx.world.h - 2),
-        );
-        stepToward(a, ctx.world, t);
-      }
+      // Always move a little so the map shows activity
+      const t = T(
+        clamp(a.x + ctx.rng.int(-3, 3), 1, ctx.world.w - 2),
+        clamp(a.y + ctx.rng.int(-3, 3), 1, ctx.world.h - 2),
+      );
+      stepToward(a, ctx.world, t);
       return 'done';
     },
   },
