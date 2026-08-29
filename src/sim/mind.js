@@ -37,7 +37,9 @@ export function updateBody(a, world, dt = 1) {
   b.rest = clamp(b.rest - 0.0075 * dt, 0, 1);
   b.energy = clamp(b.energy - 0.006 * dt + (b.rest > 0.6 ? 0.007 : 0), 0, 1);
   b.warmth = clamp(
-    b.warmth - cold * 0.028 * dt * (1 - clothing * 0.7) + 0.022 * dt, 0, 1,
+    b.warmth - cold * 0.028 * dt * (1 - clothing * 0.7) + 0.022 * dt,
+    0,
+    1,
   );
 
   let damage = 0;
@@ -54,10 +56,14 @@ export function updateBody(a, world, dt = 1) {
   b.illness = clamp(b.illness - 0.004 * g.resilience * dt, 0, 1);
   b.injury = clamp(b.injury - 0.004 * g.resilience * dt, 0, 1);
 
-  const span = 62 * g.longevity;
-  if (age > span * 0.75) {
-    const excess = age - span * 0.75;
-    b.health = clamp(b.health - Math.min(0.004, 0.0006 * excess) * dt, 0, 1);
+  // Real old age — elders decline and eventually die
+  const span = 55 * g.longevity;
+  if (age > span * 0.7) {
+    const t = (age - span * 0.7) / Math.max(1, span * 0.3);
+    b.health = clamp(b.health - (0.001 + t * 0.004) * dt, 0, 1);
+  }
+  if (age > span) {
+    b.health = clamp(b.health - 0.008 * dt, 0, 1);
   }
 }
 
@@ -100,8 +106,10 @@ export function think(a, ctx) {
   }
   if (!near.length && a.genome.sociability > 0.5 && world.tick % 6 === 0) {
     appraise(a, {
-      goalCongruence: -0.2, agency: 'world',
-      intensity: a.genome.sociability * 0.5, kind: 'alone',
+      goalCongruence: -0.2,
+      agency: 'world',
+      intensity: a.genome.sociability * 0.5,
+      kind: 'alone',
     });
   }
 
@@ -117,7 +125,9 @@ export function think(a, ctx) {
       a.action.kind === 'seekWarmth' ||
       a.action.kind === 'sleep' ||
       a.action.kind === 'care' ||
-      ((a.action.kind === 'gather' || a.action.kind === 'hunt' || a.action.kind === 'farm') &&
+      ((a.action.kind === 'gather' ||
+        a.action.kind === 'hunt' ||
+        a.action.kind === 'farm') &&
         a.body.hunger > 0.55);
 
     if (
@@ -157,7 +167,10 @@ export function think(a, ctx) {
   let worst = null;
   let crisis = 0;
   for (const [k, v] of Object.entries(deficits)) {
-    if (v > crisis) { crisis = v; worst = k; }
+    if (v > crisis) {
+      crisis = v;
+      worst = k;
+    }
   }
   crisis = clamp(crisis);
 
@@ -180,8 +193,9 @@ export function think(a, ctx) {
 
   for (const [name, def] of ACTION_LIST) {
     let props;
-    try { props = def.propose(a, ctx) || []; }
-    catch (e) {
+    try {
+      props = def.propose(a, ctx) || [];
+    } catch (e) {
       props = [];
       if (ctx.debug) console.warn(`[think] propose ${name} threw`, e);
     }
@@ -201,7 +215,11 @@ export function think(a, ctx) {
         if (RELIEF[p.kind] === worst) p.u *= 1 + crisis * 2.6;
         else if (RELIEF[p.kind]) p.u *= 1 + crisis * 0.4;
         else if (FEEDS.has(p.kind) && worst === 'food') p.u *= 1 + crisis * 1.4;
-        else if (p.kind === 'court' || p.kind === 'converse' || p.kind === 'follow') {
+        else if (
+          p.kind === 'court' ||
+          p.kind === 'converse' ||
+          p.kind === 'follow'
+        ) {
           p.u *= 1 - crisis * 0.12;
         } else if (INVEST.has(p.kind)) p.u *= 1 - crisis * 0.25;
         else p.u *= 1 - crisis * 0.8;
@@ -225,15 +243,21 @@ export function think(a, ctx) {
       }
 
       if (a.body.hunger > 0.4 && !hasFood) {
-        if (p.kind === 'gather' || p.kind === 'takeFromStore' || p.kind === 'farm') p.u *= 2.2;
-        if (p.kind === 'experiment' || p.kind === 'craft' || p.kind === 'makeArt') p.u *= 0.05;
+        if (p.kind === 'gather' || p.kind === 'takeFromStore' || p.kind === 'farm') {
+          p.u *= 2.2;
+        }
+        if (p.kind === 'experiment' || p.kind === 'craft' || p.kind === 'makeArt') {
+          p.u *= 0.05;
+        }
       }
 
       if (!isChild && p.kind === 'give' && a.body.hunger < 0.55) p.u *= 2.2;
 
       if (
-        hungerLesson && hungerLesson.confidence > 0.2 &&
-        worst === 'food' && crisis > 0.15
+        hungerLesson &&
+        hungerLesson.confidence > 0.2 &&
+        worst === 'food' &&
+        crisis > 0.15
       ) {
         if (p.kind === 'gather' && lessonWhat && p.payload === lessonWhat) p.u *= 1.55;
         else if (p.kind === 'eat' || p.kind === 'gather' || p.kind === 'hunt') p.u *= 1.2;
@@ -253,7 +277,23 @@ export function think(a, ctx) {
     }
   }
 
-  // Nuclear: food in hand + hungry → eat now
+  // Endgame / well-fed: do not only sleep — walk the map
+  if (
+    a.body.hunger < 0.4 &&
+    a.body.thirst < 0.4 &&
+    a.body.rest > 0.6
+  ) {
+    const lonely = ctx.sim.living.length <= 2;
+    for (const p of candidates) {
+      if (p.kind === 'sleep') p.u *= lonely ? 0.12 : 0.35;
+      if (p.kind === 'explore' || p.kind === 'gather' || p.kind === 'idle') {
+        p.u *= lonely ? 2.8 : 1.6;
+      }
+      if (p.kind === 'makeArt' || p.kind === 'ritual') p.u *= 1.6;
+    }
+  }
+
+  // Nuclear: hungry + food in hand → eat now
   if (a.body.hunger > 0.35 && hasFood) {
     const eatCand = candidates.find((c) => c.kind === 'eat');
     if (eatCand) {
@@ -278,17 +318,23 @@ export function think(a, ctx) {
         ? clamp(0.06 + a.genome.curiosity * 0.08, 0.05, 0.2)
         : clamp(
             0.16 + a.genome.curiosity * 0.3 + (1 - a.genome.patience) * 0.16,
-            0.08, 0.75,
+            0.08,
+            0.75,
           );
 
   const chosen = softmaxPick(ctx.rng, candidates, (c) => c.u, temperature);
   a.reasoning = topN(candidates, 4, (c) => c.u).map((c) => ({
-    kind: c.kind, u: +c.u.toFixed(2), why: reasonFor(a, c, ctx),
+    kind: c.kind,
+    u: +c.u.toFixed(2),
+    why: reasonFor(a, c, ctx),
   }));
   a.action = chosen;
   a.goal = describeGoal(a, chosen, ctx);
 
-  if (a.genome.expressive > 0.45 && ctx.rng.bool(0.05 + a.genome.expressive * 0.06)) {
+  if (
+    a.genome.expressive > 0.45 &&
+    ctx.rng.bool(0.05 + a.genome.expressive * 0.06)
+  ) {
     ctx.sim.voiceThought(a, chosen);
   }
 }
@@ -299,7 +345,8 @@ function reasonFor(a, c, ctx) {
   switch (c.kind) {
     case 'drink': return `thirst at ${Math.round(b.thirst * 100)}%`;
     case 'eat': return `hunger at ${Math.round(b.hunger * 100)}%`;
-    case 'sleep': return `rest at ${Math.round(b.rest * 100)}%${ctx.world.isNight ? ', and it is dark' : ''}`;
+    case 'sleep':
+      return `rest at ${Math.round(b.rest * 100)}%${ctx.world.isNight ? ', and it is dark' : ''}`;
     case 'seekWarmth': return `warmth at ${Math.round(b.warmth * 100)}%`;
     case 'gather': return `wants ${ctx.ont.get(c.payload)?.word || c.payload}`;
     case 'hunt': return 'meat is worth the risk';
@@ -311,7 +358,8 @@ function reasonFor(a, c, ctx) {
     case 'store': return 'winter is a fact';
     case 'converse': return `curious about ${name(c.targetId)}`;
     case 'teach': return `${name(c.targetId)} does not know this yet`;
-    case 'trade': return `believes the exchange favours them (+${c.deal?.gain?.toFixed(2) ?? '?'})`;
+    case 'trade':
+      return `believes the exchange favours them (+${c.deal?.gain?.toFixed(2) ?? '?'})`;
     case 'give': return `${name(c.targetId)} is suffering`;
     case 'steal': return 'desperation outweighs conscience';
     case 'court': return `feels something for ${name(c.targetId)}`;
