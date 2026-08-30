@@ -195,6 +195,7 @@ export function think(a, ctx) {
   }
 
   const hasFood = holdingFood(a, ctx.ont);
+  const worldFoodTight = ctx.sim.totalFood() < ctx.sim.living.length * 2;
   const candidates = [];
 
   for (const [name, def] of ACTION_LIST) {
@@ -264,6 +265,20 @@ export function think(a, ctx) {
         }
       }
 
+      // Teaching is culture, not a meal
+      if (a.body.hunger > 0.4 || a.body.thirst > 0.5) {
+        if (p.kind === 'teach') p.u *= 0.05;
+        if (p.kind === 'converse') p.u *= 0.25;
+      }
+      if (worldFoodTight) {
+        if (p.kind === 'teach' || p.kind === 'experiment' || p.kind === 'makeArt') {
+          p.u *= 0.1;
+        }
+        if (p.kind === 'gather' || p.kind === 'farm' || p.kind === 'takeFromStore') {
+          p.u *= 2.2;
+        }
+      }
+
       if (!isChild && p.kind === 'give' && a.body.hunger < 0.55) p.u *= 2.2;
 
       if (
@@ -290,7 +305,6 @@ export function think(a, ctx) {
     }
   }
 
-  // Well-fed: prefer movement over endless sleep / chat
   if (a.body.hunger < 0.45 && a.body.thirst < 0.45 && a.body.rest > 0.55) {
     const lonely = ctx.sim.living.length <= 2;
     for (const p of candidates) {
@@ -303,7 +317,6 @@ export function think(a, ctx) {
     }
   }
 
-  // Bonded: soft choice to rejoin partner, still free to roam
   if (a.partner && !isChild && a.body.hunger < 0.45 && a.body.thirst < 0.45) {
     for (const p of candidates) {
       if (p.kind === 'follow') p.u *= 0.5;
@@ -312,7 +325,6 @@ export function think(a, ctx) {
     }
   }
 
-  // Stagnant / camp-bound: force walk
   const home = a.home || ctx.sim.origin;
   const stagnant = (a.stats.steps || 0) < world.tick * 0.05;
   const campBound =
@@ -340,7 +352,7 @@ export function think(a, ctx) {
   }
 
   // Nuclear eat
-  if (a.body.hunger > 0.35 && hasFood) {
+  if (a.body.hunger > 0.32 && hasFood) {
     const eatCand = candidates.find((c) => c.kind === 'eat');
     if (eatCand) {
       a.action = eatCand;
@@ -357,6 +369,17 @@ export function think(a, ctx) {
       a.action = drinkCand;
       a.goal = 'drinking';
       a.reasoning = [{ kind: 'drink', u: drinkCand.u, why: 'must drink' }];
+      return;
+    }
+  }
+
+  // Nuclear take from store when hungry and empty-handed
+  if (a.body.hunger > 0.45 && !hasFood) {
+    const storeCand = candidates.find((c) => c.kind === 'takeFromStore');
+    if (storeCand) {
+      a.action = storeCand;
+      a.goal = 'taking from store';
+      a.reasoning = [{ kind: 'takeFromStore', u: storeCand.u, why: 'store has food' }];
       return;
     }
   }
@@ -456,6 +479,7 @@ function describeGoal(a, c, ctx) {
     case 'farm': return 'working the field';
     case 'store': return 'storing food';
     case 'seekWarmth': return 'seeking warmth';
+    case 'takeFromStore': return 'drawing from the store';
     default: return 'idling';
   }
 }
