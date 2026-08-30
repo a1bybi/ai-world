@@ -187,7 +187,6 @@ export const ACTIONS = {
       if (a.count('water') > 0) {
         a.take('water', 1);
       } else {
-        // At natural water / well — fill inventory
         a.add('water', 3);
         a.memory.learn('where:water', {
           kind: 'place',
@@ -285,7 +284,6 @@ export const ACTIONS = {
       }
       const s = act.target;
       if (!s?.stock) return 'abort';
-      // Prefer water if thirsty, else any stock
       if (a.body.thirst > 0.4 && (s.stock.get('water') || 0) > 0) {
         s.stock.set('water', s.stock.get('water') - 1);
         a.add('water', 1);
@@ -1234,8 +1232,11 @@ export const ACTIONS = {
       } else if (a.partner) {
         const p = ctx.sim.byId(a.partner);
         if (p && p.alive) {
+          const d = dist(a, p);
+          // Only chase if actually separated
+          if (d < 6) return [];
           leader = p;
-          weight = 0.5 + a.rel(p).affection * 0.8;
+          weight = 0.35 + a.rel(p).affection * 0.5;
         }
       }
       if (!leader) return [];
