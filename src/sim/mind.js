@@ -290,25 +290,25 @@ export function think(a, ctx) {
     }
   }
 
-  // Well-fed: prefer movement over endless sleep
-  if (a.body.hunger < 0.4 && a.body.thirst < 0.4 && a.body.rest > 0.6) {
+  // Well-fed: prefer movement over endless sleep / chat
+  if (a.body.hunger < 0.45 && a.body.thirst < 0.45 && a.body.rest > 0.55) {
     const lonely = ctx.sim.living.length <= 2;
     for (const p of candidates) {
-      if (p.kind === 'sleep') p.u *= lonely ? 0.12 : 0.35;
+      if (p.kind === 'sleep') p.u *= lonely ? 0.12 : 0.3;
+      if (p.kind === 'converse') p.u *= 0.65;
       if (p.kind === 'explore' || p.kind === 'gather' || p.kind === 'idle') {
-        p.u *= lonely ? 2.8 : 1.6;
+        p.u *= lonely ? 2.8 : 1.8;
       }
-      if (p.kind === 'makeArt' || p.kind === 'ritual') p.u *= 1.6;
+      if (p.kind === 'makeArt' || p.kind === 'ritual') p.u *= 1.5;
     }
   }
 
-  // Bonded adults: don't live only on the home tile
+  // Bonded: soft choice to rejoin partner, still free to roam
   if (a.partner && !isChild && a.body.hunger < 0.45 && a.body.thirst < 0.45) {
     for (const p of candidates) {
-      if (p.kind === 'follow') p.u *= 0.35;
-      if (p.kind === 'explore') p.u = Math.max(p.u, 3.5);
-      if (p.kind === 'gather' || p.kind === 'hunt' || p.kind === 'farm') p.u *= 1.4;
-      if (p.kind === 'converse' && a.body.rest > 0.5) p.u *= 0.7;
+      if (p.kind === 'follow') p.u *= 0.5;
+      if (p.kind === 'explore') p.u = Math.max(p.u, 2.5);
+      if (p.kind === 'gather') p.u *= 1.25;
     }
   }
 
@@ -325,7 +325,7 @@ export function think(a, ctx) {
       if (p.kind === 'gather') p.u = Math.max(p.u, 5);
       if (p.kind === 'idle') p.u = Math.max(p.u, 4);
       if (p.kind === 'sleep') p.u *= 0.05;
-      if (p.kind === 'follow') p.u *= 0.2;
+      if (p.kind === 'follow') p.u *= 0.25;
     }
     if (!candidates.some((c) => c.kind === 'explore')) {
       const tx = clamp(a.x + ctx.rng.int(-14, 14), 1, world.w - 2);
