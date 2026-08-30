@@ -72,7 +72,6 @@ function stepToward(agent, world, target) {
   }
 
   if (!next) {
-    // Unstick: any walkable neighbor
     for (const [dx, dy] of dirs) {
       const nx = ax + dx;
       const ny = ay + dy;
@@ -727,6 +726,8 @@ export const ACTIONS = {
     propose(a, ctx) {
       if (a.isChild(ctx.world.tick)) return [];
       if (a.body.hunger > 0.65) return [];
+      const foodEasy =
+        a.body.hunger < 0.4 && ctx.sim.totalFood() > ctx.sim.living.length * 1.5;
       const settlement = ctx.sim.nearestSettlement(a.x, a.y);
       const s = ctx.sim.settlementNeeds(settlement);
       const out = [];
@@ -741,7 +742,12 @@ export const ACTIONS = {
           if (spot && a.carried() <= a.carryLimit) {
             out.push({
               kind: 'gather',
-              u: need * 1.25 * (ctx.bias?.work ?? 1) * (0.5 + a.genome.industry),
+              u:
+                need *
+                1.25 *
+                (ctx.bias?.work ?? 1) *
+                (0.5 + a.genome.industry) *
+                (foodEasy ? 1.4 : 1),
               payload: material.key,
               target: beside(ctx.world, spot),
               site: spot,
@@ -751,7 +757,12 @@ export const ACTIONS = {
           continue;
         }
         const u =
-          need * 1.5 * (ctx.bias?.work ?? 1) * (0.65 + a.skills.build * 0.5) * (0.5 + a.genome.industry);
+          need *
+          1.5 *
+          (ctx.bias?.work ?? 1) *
+          (0.65 + a.skills.build * 0.5) *
+          (0.5 + a.genome.industry) *
+          (foodEasy ? 1.6 : 1);
         out.push({
           kind: 'build',
           u,
@@ -956,32 +967,56 @@ export const ACTIONS = {
   teach: {
     category: 'social',
     propose(a, ctx) {
-      const near = ctx.nearby(a, 5).filter((o) => o.id !== a.id);
+      if (a.body.hunger > 0.7 || a.body.thirst > 0.7) return [];
+      const near = ctx.nearby(a, 6).filter((o) => o.id !== a.id);
       if (!near.length) return [];
+
       const mine = a.memory.knownKeys('recipe');
       if (!mine.length) return [];
+
       const teachNorm = normsFor(a, ctx, ['teaching', 'teach']);
+      const foodOk = a.body.hunger < 0.45 && a.body.thirst < 0.45;
       const out = [];
+
       for (const o of near) {
-        const unknown = mine.filter((k) => !o.memory.knows(k, 0.3));
-        if (!unknown.length) continue;
-        const kinBonus = a.children.includes(o.id) ? 1.4 : 0;
+        const candidates = [];
+        for (const k of mine) {
+          if (o.memory.knows(k, 0.3)) continue;
+          const holders = ctx.sim.living.filter(
+            (x) => x.id !== a.id && x.memory.knows(k, 0.25),
+          ).length;
+          const rarity = 1 / Math.max(1, holders);
+          candidates.push({ key: k, holders, rarity });
+        }
+        if (!candidates.length) continue;
+
+        candidates.sort((x, y) => y.rarity - x.rarity);
+        const pick = candidates[0];
+
+        const kinBonus = a.children.includes(o.id) ? 1.5 : 0;
+        const childBonus = o.isChild(ctx.world.tick) ? 1.35 : 1;
+        const elderBonus = a.isElder(ctx.world.tick) ? 1.4 : 1;
+        const rarityBoost = 1 + pick.rarity * 2.5;
+
         const u =
-          (0.25 + a.genome.empathy * 0.9 + kinBonus) *
+          (0.35 + a.genome.empathy * 0.9 + kinBonus) *
           (ctx.bias?.social ?? 1) *
-          (0.4 + a.skills.teach) *
-          (a.isElder(ctx.world.tick) ? 1.5 : 1) *
-          (o.isChild(ctx.world.tick) ? 1.4 : 1) *
+          (0.45 + a.skills.teach) *
+          elderBonus *
+          childBonus *
+          rarityBoost *
+          (foodOk ? 1.35 : 0.6) *
           (1 + Math.max(0, teachNorm) * 0.35);
+
         out.push({
           kind: 'teach',
           u,
           targetId: o.id,
-          payload: ctx.rng.pick(unknown),
+          payload: pick.key,
           dur: 3,
         });
       }
-      return topN(out, 1, (o) => o.u);
+      return topN(out, 2, (x) => x.u);
     },
     run(a, ctx, act) {
       const o = ctx.sim.byId(act.targetId);
@@ -1270,7 +1305,6 @@ export const ACTIONS = {
           }
         }
       } else if (a.partner) {
-        // Soft choice only when separated
         const p = ctx.sim.byId(a.partner);
         if (p && p.alive) {
           const d = dist(a, p);
