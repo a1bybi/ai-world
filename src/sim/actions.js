@@ -6,53 +6,92 @@ import { appraise } from './emotion.js';
 
 const T = (x, y) => ({ x, y });
 
+/** Short BFS next-step so agents walk around water/walls instead of freezing. */
 function stepToward(agent, world, target) {
-  const dx = Math.sign(target.x - agent.x);
-  const dy = Math.sign(target.y - agent.y);
-  if (dx === 0 && dy === 0) return true;
+  const ax = agent.x | 0;
+  const ay = agent.y | 0;
+  const tx = target.x | 0;
+  const ty = target.y | 0;
+  if (ax === tx && ay === ty) return true;
 
-  const tries = [
-    T(agent.x + dx, agent.y + dy),
-    T(agent.x + dx, agent.y),
-    T(agent.x, agent.y + dy),
-    T(agent.x + dx, agent.y - dy),
-    T(agent.x - dx, agent.y + dy),
-    T(agent.x - dx, agent.y),
-    T(agent.x, agent.y - dy),
-    T(agent.x - dx, agent.y - dy),
-  ];
-
-  const scored = [];
-  for (const t of tries) {
-    if (!world.walkable(t.x, t.y)) continue;
-    const cost = typeof world.moveCost === 'function' ? world.moveCost(t.x, t.y) : 1;
-    scored.push({ t, cost });
-  }
-  scored.sort((a, b) => a.cost - b.cost);
-
-  for (const { t } of scored) {
-    agent.x = t.x;
-    agent.y = t.y;
-    agent.stats.steps++;
-    const idx = world.idx(t.x, t.y);
-    world.trails[idx] = clamp(world.trails[idx] + 0.02, 0, 1);
-    return agent.x === target.x && agent.y === target.y;
-  }
-
-  for (const [ox, oy] of [
+  const maxNodes = 80;
+  const key = (x, y) => `${x},${y}`;
+  const came = new Map();
+  const q = [[ax, ay]];
+  came.set(key(ax, ay), null);
+  let found = null;
+  const dirs = [
     [1, 0], [-1, 0], [0, 1], [0, -1],
     [1, 1], [-1, -1], [1, -1], [-1, 1],
-  ]) {
-    const t = T(agent.x + ox, agent.y + oy);
-    if (!world.walkable(t.x, t.y)) continue;
-    agent.x = t.x;
-    agent.y = t.y;
-    agent.stats.steps++;
-    const idx = world.idx(t.x, t.y);
-    world.trails[idx] = clamp(world.trails[idx] + 0.02, 0, 1);
-    return false;
+  ];
+
+  while (q.length && came.size < maxNodes) {
+    const [x, y] = q.shift();
+    if (x === tx && y === ty) {
+      found = [x, y];
+      break;
+    }
+    for (const [dx, dy] of dirs) {
+      const nx = x + dx;
+      const ny = y + dy;
+      const k = key(nx, ny);
+      if (came.has(k)) continue;
+      if (!world.walkable(nx, ny)) continue;
+      came.set(k, [x, y]);
+      q.push([nx, ny]);
+    }
   }
-  return false;
+
+  let next = null;
+  if (found) {
+    let cur = found;
+    while (came.get(key(cur[0], cur[1]))) {
+      const prev = came.get(key(cur[0], cur[1]));
+      if (prev[0] === ax && prev[1] === ay) {
+        next = cur;
+        break;
+      }
+      cur = prev;
+    }
+  }
+
+  if (!next) {
+    let best = null;
+    let bestD = Infinity;
+    for (const [dx, dy] of dirs) {
+      const nx = ax + dx;
+      const ny = ay + dy;
+      if (!world.walkable(nx, ny)) continue;
+      const d = Math.abs(nx - tx) + Math.abs(ny - ty);
+      if (d < bestD) {
+        bestD = d;
+        best = [nx, ny];
+      }
+    }
+    if (best) next = best;
+  }
+
+  if (!next) {
+    // Unstick: any walkable neighbor
+    for (const [dx, dy] of dirs) {
+      const nx = ax + dx;
+      const ny = ay + dy;
+      if (!world.walkable(nx, ny)) continue;
+      next = [nx, ny];
+      break;
+    }
+  }
+
+  if (!next) return false;
+
+  agent.x = next[0];
+  agent.y = next[1];
+  agent.stats.steps = (agent.stats.steps || 0) + 1;
+  const idx = world.idx(agent.x, agent.y);
+  if (world.trails) {
+    world.trails[idx] = clamp((world.trails[idx] || 0) + 0.02, 0, 1);
+  }
+  return agent.x === tx && agent.y === ty;
 }
 
 function nearWater(world, agent, radius = 14) {
@@ -1211,6 +1250,7 @@ export const ACTIONS = {
       const age = a.ageAt(ctx.world.tick);
       let leader = null;
       let weight = 0;
+
       if (age < 11) {
         for (const id of [a.motherId, a.fatherId]) {
           const p = id && ctx.sim.byId(id);
@@ -1230,19 +1270,20 @@ export const ACTIONS = {
           }
         }
       } else if (a.partner) {
+        // Soft choice only when separated
         const p = ctx.sim.byId(a.partner);
         if (p && p.alive) {
           const d = dist(a, p);
-          // Only chase if actually separated
-          if (d < 6) return [];
+          if (d < 8) return [];
           leader = p;
-          weight = 0.35 + a.rel(p).affection * 0.5;
+          weight = 0.25 + a.rel(p).affection * 0.35;
         }
       }
+
       if (!leader) return [];
       const d = dist(a, leader);
       if (d < 3) return [];
-      const distFactor = Math.min(1.6, d * 0.16) * (d > 18 ? 0.4 : 1);
+      const distFactor = Math.min(1.4, d * 0.12);
       return [{ kind: 'follow', u: weight * distFactor, targetId: leader.id, dur: 1 }];
     },
     run(a, ctx, act) {
@@ -1412,12 +1453,15 @@ export const ACTIONS = {
         Math.max(0.35, a.body.energy);
       const r = 12 + Math.round(a.genome.curiosity * 30);
       let target = null;
-      for (let i = 0; i < 20 && !target; i++) {
+      for (let i = 0; i < 30 && !target; i++) {
         const t = T(
           clamp(a.x + ctx.rng.int(-r, r), 1, ctx.world.w - 2),
           clamp(a.y + ctx.rng.int(-r, r), 1, ctx.world.h - 2),
         );
-        if (ctx.world.walkable(t.x, t.y)) target = t;
+        if (!ctx.world.walkable(t.x, t.y)) continue;
+        const probe = { x: a.x, y: a.y, stats: { steps: 0 } };
+        stepToward(probe, ctx.world, t);
+        if (probe.stats.steps > 0) target = t;
       }
       if (!target) return [];
       return [{ kind: 'explore', u, target, dur: 16 }];
