@@ -391,8 +391,6 @@ export class Simulation {
     return 'failing health';
   }
 
-  // ── Knowledge handoff on death ────────────────────────────────────────────
-
   handOffKnowledge(a) {
     const recipes = a.memory.knownKeys('recipe');
     if (!recipes.length) return 0;
@@ -489,7 +487,6 @@ export class Simulation {
       });
     }
 
-    // Drop useful goods nearby into a light "scavenge" for the living
     for (const [k, v] of [...a.inventory]) {
       if (v <= 0) continue;
       const near = this.nearby(a, 4).filter((o) => o.alive);
@@ -575,8 +572,6 @@ export class Simulation {
     }
     return ev;
   }
-
-  // ── Talk / teach ──────────────────────────────────────────────────────────
 
   converse(a, o) {
     const rng = this.rng;
@@ -743,8 +738,6 @@ export class Simulation {
     });
   }
 
-  // ── Bonding / birth / parental care ───────────────────────────────────────
-
   tryBond(a, o) {
     if (!a.alive || !o.alive || a.partner || o.partner) return false;
     const ra = a.rel(o);
@@ -774,7 +767,6 @@ export class Simulation {
       if (!a.alive) continue;
       const age = a.ageAt(this.world.tick);
 
-      // Parental share to children
       if (!a.isChild(this.world.tick)) {
         for (const cid of a.children || []) {
           const c = this.byId(cid);
@@ -792,7 +784,6 @@ export class Simulation {
             if (food && a.take(food, 1)) {
               c.add(food, 1);
               if (c.body.hunger > 0.5) {
-                // soft auto-eat for very young
                 const nut = this.ont.get(food)?.serves('sustenance') || 0.3;
                 c.body.hunger = clamp(c.body.hunger - 0.35 - nut * 0.4, 0, 1);
                 c.take(food, 1);
@@ -804,9 +795,33 @@ export class Simulation {
             c.body.thirst = clamp(c.body.thirst - 0.5, 0, 1);
           }
         }
+
+        // Orphan / nearby-child rescue
+        if (a.body.hunger < 0.55) {
+          for (const c of this.nearby(a, 8)) {
+            if (!c.isChild(this.world.tick) || !c.alive) continue;
+            if (c.body.hunger < 0.45 && c.body.thirst < 0.45) continue;
+            if (c.body.hunger >= 0.45) {
+              let food = null;
+              for (const [k, v] of a.inventory) {
+                if (v > 0 && (this.ont.get(k)?.serves('sustenance') || 0) > 0.15) {
+                  food = k;
+                  break;
+                }
+              }
+              if (food && a.take(food, 1)) {
+                c.add(food, 1);
+                c.body.hunger = clamp(c.body.hunger - 0.45, 0, 1);
+              }
+            }
+            if (c.body.thirst >= 0.4 && a.count('water') > 0 && a.take('water', 1)) {
+              c.add('water', 1);
+              c.body.thirst = clamp(c.body.thirst - 0.5, 0, 1);
+            }
+          }
+        }
       }
 
-      // Conception
       if (
         a.partner &&
         !a.body.pregnant &&
@@ -823,9 +838,11 @@ export class Simulation {
           p.ageAt(this.world.tick) > 16 &&
           p.ageAt(this.world.tick) < 48 &&
           dist(a, p) < 4 &&
-          this.rng.bool(BALANCE.conceptionChance * ((a.genome.fertility + p.genome.fertility) / 2))
+          this.rng.bool(
+            BALANCE.conceptionChance *
+              ((a.genome.fertility + p.genome.fertility) / 2),
+          )
         ) {
-          // One of the pair carries — prefer lower id for stability
           const carrier = a.id < p.id ? a : p;
           carrier.body.pregnant = true;
           carrier.pregnantSince = this.world.tick;
@@ -833,7 +850,6 @@ export class Simulation {
         }
       }
 
-      // Birth
       if (a.body.pregnant) {
         const term = (this.world.tick - (a.pregnantSince || 0)) / YEAR_TICKS;
         if (term >= BALANCE.pregnancyTerm) {
@@ -869,7 +885,6 @@ export class Simulation {
     child.body.thirst = 0.1;
     child.body.health = 0.95;
 
-    // Basic upbringing knowledge
     for (const food of ['berry', 'root', 'grain', 'water']) {
       child.memory.learn(food, {
         kind: 'matter', confidence: 0.7, valence: 0.5, source: 'upbringing',
@@ -881,6 +896,10 @@ export class Simulation {
       father.children = father.children || [];
       father.children.push(child.id);
     }
+
+    // Birth pack so infants don't starve day 1
+    child.add('berry', 4);
+    child.add('water', 3);
 
     this.addAgent(child);
     this.counters.births++;
@@ -898,13 +917,10 @@ export class Simulation {
     return child;
   }
 
-  // ── Trade / fight / theft ─────────────────────────────────────────────────
-
   findDeal(a, o) {
     let best = null;
     for (const [k, v] of a.inventory) {
       if (v < 2) continue;
-      const ca = this.ont.get(k);
       const desireO = o.desireFor?.(k, this.ont, this) || 0;
       if (desireO < 0.15) continue;
       for (const [j, w] of o.inventory) {
@@ -992,8 +1008,6 @@ export class Simulation {
     appraise(o, { goalCongruence: !aWins ? 0.2 : -0.5, agency: 'self', intensity: 0.7, kind: 'violence' });
   }
 
-  // ── Settlements / structures ──────────────────────────────────────────────
-
   nearestSettlement(x, y) {
     let best = this.settlements[0];
     let bd = Infinity;
@@ -1047,7 +1061,6 @@ export class Simulation {
       const score = (c.serves?.(fn) || 0) + (c.props?.hard || 0) * 0.3 + (c.props?.flexible || 0) * 0.2;
       if (score > (best?.score || 0.05)) best = { key: k, score };
     }
-    // fallback common materials
     for (const k of ['wood', 'stone', 'clay', 'fibre']) {
       if (a.count(k) > 0) {
         const score = 0.2;
@@ -1209,8 +1222,6 @@ export class Simulation {
       },
     );
   }
-
-  // ── Norms ─────────────────────────────────────────────────────────────────
 
   grievanceTick() {
     if (this.world.tick % BALANCE.grievanceInterval) return;
@@ -1454,8 +1465,6 @@ export class Simulation {
     }
     return Math.round(t);
   }
-
-  // ── Inspect helpers ───────────────────────────────────────────────────────
 
   inventionSummary(limit = 30) {
     const rows = [];
