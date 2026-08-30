@@ -302,14 +302,30 @@ export function think(a, ctx) {
     }
   }
 
-  // Stagnant agents: force walk the map
+  // Bonded adults: don't live only on the home tile
+  if (a.partner && !isChild && a.body.hunger < 0.45 && a.body.thirst < 0.45) {
+    for (const p of candidates) {
+      if (p.kind === 'follow') p.u *= 0.35;
+      if (p.kind === 'explore') p.u = Math.max(p.u, 3.5);
+      if (p.kind === 'gather' || p.kind === 'hunt' || p.kind === 'farm') p.u *= 1.4;
+      if (p.kind === 'converse' && a.body.rest > 0.5) p.u *= 0.7;
+    }
+  }
+
+  // Stagnant / camp-bound: force walk
+  const home = a.home || ctx.sim.origin;
   const stagnant = (a.stats.steps || 0) < world.tick * 0.05;
-  if (stagnant && a.body.hunger < 0.7 && a.body.thirst < 0.7) {
+  const campBound =
+    home &&
+    Math.hypot(a.x - home.x, a.y - home.y) < 4 &&
+    (a.stats.steps || 0) < world.tick * 0.08;
+  if ((stagnant || campBound) && a.body.hunger < 0.7 && a.body.thirst < 0.7) {
     for (const p of candidates) {
       if (p.kind === 'explore') p.u = Math.max(p.u, 8);
       if (p.kind === 'gather') p.u = Math.max(p.u, 5);
       if (p.kind === 'idle') p.u = Math.max(p.u, 4);
       if (p.kind === 'sleep') p.u *= 0.05;
+      if (p.kind === 'follow') p.u *= 0.2;
     }
     if (!candidates.some((c) => c.kind === 'explore')) {
       const tx = clamp(a.x + ctx.rng.int(-14, 14), 1, world.w - 2);
