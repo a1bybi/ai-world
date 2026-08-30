@@ -967,7 +967,10 @@ export const ACTIONS = {
   teach: {
     category: 'social',
     propose(a, ctx) {
-      if (a.body.hunger > 0.7 || a.body.thirst > 0.7) return [];
+      // Hard stop: empty belly → no lessons
+      if (a.body.hunger > 0.4 || a.body.thirst > 0.55) return [];
+      if (ctx.sim.totalFood() < ctx.sim.living.length * 1.5) return [];
+
       const near = ctx.nearby(a, 6).filter((o) => o.id !== a.id);
       if (!near.length) return [];
 
@@ -975,7 +978,6 @@ export const ACTIONS = {
       if (!mine.length) return [];
 
       const teachNorm = normsFor(a, ctx, ['teaching', 'teach']);
-      const foodOk = a.body.hunger < 0.45 && a.body.thirst < 0.45;
       const out = [];
 
       for (const o of near) {
@@ -1005,7 +1007,6 @@ export const ACTIONS = {
           elderBonus *
           childBonus *
           rarityBoost *
-          (foodOk ? 1.35 : 0.6) *
           (1 + Math.max(0, teachNorm) * 0.35);
 
         out.push({
