@@ -31,6 +31,7 @@ const BALANCE = {
   maxRituals: 200,
   maxBeliefs: 120,
   maxLostKnowledge: 300,
+  maxBridgesPerCamp: 2,
 };
 
 const NORM_SEEDS = [
@@ -1030,8 +1031,8 @@ export class Simulation {
     const need = (have, want) => clamp((want - have) / Math.max(1, want));
 
     let waterNear = 0;
-    for (let dy = -10; dy <= 10; dy++) {
-      for (let dx = -10; dx <= 10; dx++) {
+    for (let dy = -8; dy <= 8; dy++) {
+      for (let dx = -8; dx <= 8; dx++) {
         const x = settlement.x + dx;
         const y = settlement.y + dy;
         if (!this.world.inBounds(x, y)) continue;
@@ -1039,7 +1040,9 @@ export class Simulation {
         if (t === TERRAIN.WATER || t === TERRAIN.MARSH) waterNear++;
       }
     }
-    const bridgesWanted = waterNear > 8 ? Math.max(1, Math.ceil(waterNear / 25)) : 0;
+    // Cap: at most 1–2 bridges per camp
+    const bridgesWanted =
+      waterNear < 6 ? 0 : Math.min(BALANCE.maxBridgesPerCamp, count('bridge') > 0 ? 1 : 2);
 
     return {
       people,
@@ -1081,7 +1084,6 @@ export class Simulation {
         if (score > (best?.score || 0)) best = { key: k, score };
       }
     }
-    // Also consider store stock (for scoring preference only)
     for (const s of this.world.structuresOfKind('store')) {
       if (!s.stock || dist(a, s) > 14) continue;
       for (const [k, v] of s.stock) {
@@ -1095,7 +1097,7 @@ export class Simulation {
     return best;
   }
 
-  /** Prefer a ring around the settlement; bridges sit on water. */
+  /** Ring around settlement; bridges on water, spaced ≥4 tiles. */
   pickBuildSite(a, kind, settlement) {
     const center = settlement || this.nearestSettlement(a.x, a.y);
     const ring =
@@ -1115,8 +1117,10 @@ export class Simulation {
       if (kind === 'bridge') {
         const t = this.world.at(x, y);
         if (t !== TERRAIN.WATER && t !== TERRAIN.MARSH) continue;
-        if (this.world.structureAt(x, y)?.kind === 'bridge') continue;
-        // Prefer tiles next to walkable land
+        const tooClose = this.world.structuresOfKind('bridge').some(
+          (b) => Math.hypot(b.x - x, b.y - y) < 4,
+        );
+        if (tooClose) continue;
         let landAdj = false;
         for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
           if (this.world.walkable(x + dx, y + dy) && this.world.at(x + dx, y + dy) > TERRAIN.MARSH) {
@@ -1137,13 +1141,17 @@ export class Simulation {
       return { x, y };
     }
 
-    // Fallback near agent / center
     for (let i = 0; i < 40; i++) {
       const x = clamp(center.x + this.rng.int(-8, 8), 1, this.world.w - 2);
       const y = clamp(center.y + this.rng.int(-8, 8), 1, this.world.h - 2);
       if (kind === 'bridge') {
         const t = this.world.at(x, y);
-        if (t === TERRAIN.WATER || t === TERRAIN.MARSH) return { x, y };
+        if (t === TERRAIN.WATER || t === TERRAIN.MARSH) {
+          const tooClose = this.world.structuresOfKind('bridge').some(
+            (b) => Math.hypot(b.x - x, b.y - y) < 4,
+          );
+          if (!tooClose) return { x, y };
+        }
         continue;
       }
       if (!this.world.walkable(x, y)) continue;
@@ -1189,13 +1197,14 @@ export class Simulation {
     this.world.addStructure(s);
     const existing = this.world.structuresOfKind(kind).length;
     const first = existing === 1;
+    const riverNote = kind === 'bridge' ? ' on the water' : '';
     this.record(
       a, first ? 'first' : 'build',
       first
-        ? `${a.name} raised the first ${word} of ${settlement.name} — ${kind}, out of ${
+        ? `${a.name} raised the first ${word} of ${settlement.name} — ${kind}${riverNote}, out of ${
             this.ont.get(materialKey)?.word || materialKey
           }`
-        : `${a.name} raised a ${word}`,
+        : `${a.name} raised a ${word}${riverNote}`,
       { valence: 0.7, intensity: first ? 0.95 : 0.5, landmark: first },
     );
     if (kind === 'shelter') {
