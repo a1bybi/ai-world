@@ -268,6 +268,9 @@ export class Simulation {
         ['berry', 80],
         ['root', 70],
         ['water', 40],
+        ['wood', 40],
+        ['stone', 20],
+        ['fibre', 25],
       ]),
     });
   }
@@ -1025,18 +1028,31 @@ export class Simulation {
         (s) => s.kind === kind && Math.hypot(s.x - settlement.x, s.y - settlement.y) < 16,
       ).length;
     const need = (have, want) => clamp((want - have) / Math.max(1, want));
+
+    let waterNear = 0;
+    for (let dy = -10; dy <= 10; dy++) {
+      for (let dx = -10; dx <= 10; dx++) {
+        const x = settlement.x + dx;
+        const y = settlement.y + dy;
+        if (!this.world.inBounds(x, y)) continue;
+        const t = this.world.at(x, y);
+        if (t === TERRAIN.WATER || t === TERRAIN.MARSH) waterNear++;
+      }
+    }
+    const bridgesWanted = waterNear > 8 ? Math.max(1, Math.ceil(waterNear / 25)) : 0;
+
     return {
       people,
       shelterDeficit: need(count('shelter'), Math.ceil(people / 3)),
       hearthDeficit: need(count('hearth'), Math.ceil(people / 8)),
       storeDeficit: need(count('store'), Math.max(1, Math.ceil(people / 20))),
       workshopDeficit: need(count('workshop'), people > 12 ? 1 : 0),
-      fieldDeficit: need(count('field'), Math.ceil(people / 10)),
+      fieldDeficit: need(count('field'), Math.ceil(people / 8)),
       wellDeficit: need(count('well'), people > 15 ? 1 : 0),
       shrineDeficit: need(count('shrine'), people > 20 ? 1 : 0),
       wallDeficit: need(count('wall'), people > 40 ? 1 : 0),
       hallDeficit: need(count('hall'), people > 30 ? 1 : 0),
-      bridgeDeficit: need(count('bridge'), 0.2),
+      bridgeDeficit: need(count('bridge'), bridgesWanted),
       pathDeficit: need(count('path'), people > 10 ? 1 : 0),
       plazaDeficit: need(count('plaza'), people > 25 ? 1 : 0),
     };
@@ -1046,7 +1062,7 @@ export class Simulation {
     if (!settlement) return 0;
     const n = this.settlementNeeds(settlement);
     return clamp(
-      (n.shelterDeficit + n.storeDeficit + n.fieldDeficit + n.people / 80) / 3,
+      (n.shelterDeficit + n.storeDeficit + n.fieldDeficit + n.bridgeDeficit + n.people / 80) / 4,
     );
   }
 
@@ -1059,16 +1075,27 @@ export class Simulation {
       const score = (c.serves?.(fn) || 0) + (c.props?.hard || 0) * 0.3 + (c.props?.flexible || 0) * 0.2;
       if (score > (best?.score || 0.05)) best = { key: k, score };
     }
-    for (const k of ['wood', 'stone', 'clay', 'fibre']) {
+    for (const k of ['wood', 'stone', 'clay', 'fibre', 'reed']) {
       if (a.count(k) > 0) {
         const score = 0.2;
         if (score > (best?.score || 0)) best = { key: k, score };
       }
     }
+    // Also consider store stock (for scoring preference only)
+    for (const s of this.world.structuresOfKind('store')) {
+      if (!s.stock || dist(a, s) > 14) continue;
+      for (const [k, v] of s.stock) {
+        if (v < 1) continue;
+        const c = this.ont.get(k);
+        if (!c) continue;
+        const score = (c.serves?.(fn) || 0) * 0.9 + 0.15;
+        if (score > (best?.score || 0.05)) best = { key: k, score };
+      }
+    }
     return best;
   }
 
-  /** Prefer a ring around the settlement (fields outer, shelters inner). */
+  /** Prefer a ring around the settlement; bridges sit on water. */
   pickBuildSite(a, kind, settlement) {
     const center = settlement || this.nearestSettlement(a.x, a.y);
     const ring =
@@ -1076,13 +1103,31 @@ export class Simulation {
       kind === 'shelter' || kind === 'hearth' ? 3 :
       kind === 'store' || kind === 'well' ? 4 :
       kind === 'plaza' || kind === 'shrine' ? 6 :
-      kind === 'workshop' ? 5 : 4;
+      kind === 'workshop' ? 5 :
+      kind === 'bridge' ? 8 : 4;
 
-    for (let attempt = 0; attempt < 50; attempt++) {
+    for (let attempt = 0; attempt < 60; attempt++) {
       const angle = this.rng.float(0, Math.PI * 2);
-      const rad = ring + this.rng.float(-1.2, 1.8);
+      const rad = ring + this.rng.float(-1.5, 2.2);
       const x = clamp(Math.round(center.x + Math.cos(angle) * rad), 1, this.world.w - 2);
       const y = clamp(Math.round(center.y + Math.sin(angle) * rad), 1, this.world.h - 2);
+
+      if (kind === 'bridge') {
+        const t = this.world.at(x, y);
+        if (t !== TERRAIN.WATER && t !== TERRAIN.MARSH) continue;
+        if (this.world.structureAt(x, y)?.kind === 'bridge') continue;
+        // Prefer tiles next to walkable land
+        let landAdj = false;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          if (this.world.walkable(x + dx, y + dy) && this.world.at(x + dx, y + dy) > TERRAIN.MARSH) {
+            landAdj = true;
+            break;
+          }
+        }
+        if (!landAdj) continue;
+        return { x, y };
+      }
+
       if (!this.world.walkable(x, y)) continue;
       if (this.world.structureAt(x, y)) continue;
       if (kind === 'field') {
@@ -1092,9 +1137,15 @@ export class Simulation {
       return { x, y };
     }
 
+    // Fallback near agent / center
     for (let i = 0; i < 40; i++) {
-      const x = clamp(center.x + this.rng.int(-6, 6), 1, this.world.w - 2);
-      const y = clamp(center.y + this.rng.int(-6, 6), 1, this.world.h - 2);
+      const x = clamp(center.x + this.rng.int(-8, 8), 1, this.world.w - 2);
+      const y = clamp(center.y + this.rng.int(-8, 8), 1, this.world.h - 2);
+      if (kind === 'bridge') {
+        const t = this.world.at(x, y);
+        if (t === TERRAIN.WATER || t === TERRAIN.MARSH) return { x, y };
+        continue;
+      }
       if (!this.world.walkable(x, y)) continue;
       if (this.world.structureAt(x, y)) continue;
       return { x, y };
