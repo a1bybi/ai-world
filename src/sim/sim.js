@@ -796,7 +796,6 @@ export class Simulation {
           }
         }
 
-        // Orphan / nearby-child rescue
         if (a.body.hunger < 0.55) {
           for (const c of this.nearby(a, 8)) {
             if (!c.isChild(this.world.tick) || !c.alive) continue;
@@ -897,7 +896,6 @@ export class Simulation {
       father.children.push(child.id);
     }
 
-    // Birth pack so infants don't starve day 1
     child.add('berry', 4);
     child.add('water', 3);
 
@@ -1070,14 +1068,35 @@ export class Simulation {
     return best;
   }
 
+  /** Prefer a ring around the settlement (fields outer, shelters inner). */
   pickBuildSite(a, kind, settlement) {
     const center = settlement || this.nearestSettlement(a.x, a.y);
+    const ring =
+      kind === 'field' ? 5 :
+      kind === 'shelter' || kind === 'hearth' ? 3 :
+      kind === 'store' || kind === 'well' ? 4 :
+      kind === 'plaza' || kind === 'shrine' ? 6 :
+      kind === 'workshop' ? 5 : 4;
+
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const angle = this.rng.float(0, Math.PI * 2);
+      const rad = ring + this.rng.float(-1.2, 1.8);
+      const x = clamp(Math.round(center.x + Math.cos(angle) * rad), 1, this.world.w - 2);
+      const y = clamp(Math.round(center.y + Math.sin(angle) * rad), 1, this.world.h - 2);
+      if (!this.world.walkable(x, y)) continue;
+      if (this.world.structureAt(x, y)) continue;
+      if (kind === 'field') {
+        const t = this.world.at(x, y);
+        if (t !== TERRAIN.MEADOW && t !== TERRAIN.GRASS) continue;
+      }
+      return { x, y };
+    }
+
     for (let i = 0; i < 40; i++) {
       const x = clamp(center.x + this.rng.int(-6, 6), 1, this.world.w - 2);
       const y = clamp(center.y + this.rng.int(-6, 6), 1, this.world.h - 2);
       if (!this.world.walkable(x, y)) continue;
-      const occ = this.world.structures.some((s) => s.x === x && s.y === y);
-      if (occ) continue;
+      if (this.world.structureAt(x, y)) continue;
       return { x, y };
     }
     return { x: a.x, y: a.y };
@@ -1146,6 +1165,14 @@ export class Simulation {
       const care = clamp(f.tended || 0);
       f.ripeness = clamp((f.ripeness || 0) + 0.006 * growth * (0.4 + care), 0, 1);
       f.tended = Math.max(0, (f.tended || 0) - 0.02);
+      const fi = this.world.idx(f.x, f.y);
+      if (this.world.fertility) {
+        if (care > 0.1) {
+          this.world.fertility[fi] = clamp(this.world.fertility[fi] - 0.002, 0.15, 1);
+        } else {
+          this.world.fertility[fi] = clamp(this.world.fertility[fi] + 0.001, 0.15, 1);
+        }
+      }
     }
   }
 
