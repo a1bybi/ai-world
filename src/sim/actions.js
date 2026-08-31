@@ -1,4 +1,6 @@
 // Everything an inhabitant can choose to do.
+// Craft/build pull from personal inventory first, then nearest store.
+// Bridges are proposed when open water sits near the agent.
 
 import { clamp, dist, topN } from '../core/util.js';
 import { TERRAIN } from '../world/world.js';
@@ -166,6 +168,41 @@ function plazaBoost(ctx, a, mult = 1.25) {
     return mult;
   }
   return 1;
+}
+
+/** Count material on person + nearest stores within range. */
+function availableMaterial(a, ctx, key, range = 12) {
+  let n = a.count(key);
+  for (const s of ctx.world.structuresOfKind('store')) {
+    if (dist(a, s) > range || !s.stock) continue;
+    n += s.stock.get(key) || 0;
+  }
+  return n;
+}
+
+/** Take from person first, then nearest store. Returns amount actually taken. */
+function takeMaterial(a, ctx, key, amount = 1, range = 12) {
+  let need = amount;
+  const fromPerson = Math.min(need, a.count(key));
+  if (fromPerson > 0) {
+    a.take(key, fromPerson);
+    need -= fromPerson;
+  }
+  if (need <= 0) return amount;
+  const stores = ctx.world
+    .structuresOfKind('store')
+    .filter((s) => s.stock && dist(a, s) <= range)
+    .sort((x, y) => dist(a, x) - dist(a, y));
+  for (const s of stores) {
+    const have = s.stock.get(key) || 0;
+    const take = Math.min(need, have);
+    if (take > 0) {
+      s.stock.set(key, have - take);
+      need -= take;
+    }
+    if (need <= 0) return amount;
+  }
+  return amount - need;
 }
 
 const U = {
@@ -588,7 +625,8 @@ export const ACTIONS = {
         if (++looked > 24) break;
         const c = ctx.ont.get(key);
         if (!c) continue;
-        if (!c.parents.every((p) => a.count(p) >= 1)) continue;
+        // Parents from person OR store
+        if (!c.parents.every((p) => availableMaterial(a, ctx, p) >= 1)) continue;
         if (
           hungryHousehold &&
           !c.functions.sustenance &&
@@ -617,7 +655,9 @@ export const ACTIONS = {
       if (--act.dur > 0) return 'continue';
       const c = ctx.ont.get(act.payload);
       if (!c) return 'abort';
-      for (const p of c.parents) if (!a.take(p, 1)) return 'abort';
+      for (const p of c.parents) {
+        if (takeMaterial(a, ctx, p, 1) < 1) return 'abort';
+      }
       a.add(act.payload, 1);
       c.uses++;
       a.stats.crafted++;
@@ -731,14 +771,45 @@ export const ACTIONS = {
       const settlement = ctx.sim.nearestSettlement(a.x, a.y);
       const s = ctx.sim.settlementNeeds(settlement);
       const out = [];
+
       for (const [kind, def] of Object.entries(STRUCTURE_KINDS)) {
-        const need = def.need(s);
+        let need = def.need(s);
+
+        // Bridges: strong pull when water is nearby
+        if (kind === 'bridge') {
+          let water = 0;
+          for (let dy = -6; dy <= 6; dy++) {
+            for (let dx = -6; dx <= 6; dx++) {
+              if (!ctx.world.inBounds(a.x + dx, a.y + dy)) continue;
+              const t = ctx.world.at(a.x + dx, a.y + dy);
+              if (t === TERRAIN.WATER || t === TERRAIN.MARSH) water++;
+            }
+          }
+          if (water > 3) need = Math.max(need, 0.55 + water * 0.025);
+          else need *= 0.25;
+        }
+
         if (need <= 0.05) continue;
+
         const material = ctx.sim.bestBuildMaterial(a, def.fn);
-        if (!material) continue;
-        const cost = Math.ceil(def.cost / (0.5 + material.score));
-        if (a.count(material.key) < cost) {
-          const spot = ctx.world.findResource(material.key, a, 16);
+        // Prefer material that exists on person or in store
+        let matKey = material?.key;
+        let matScore = material?.score || 0;
+        if (!matKey || availableMaterial(a, ctx, matKey) < 1) {
+          for (const k of ['wood', 'stone', 'clay', 'fibre', 'reed']) {
+            if (availableMaterial(a, ctx, k) >= 1) {
+              matKey = k;
+              matScore = 0.25;
+              break;
+            }
+          }
+        }
+        if (!matKey) continue;
+
+        const cost = Math.ceil(def.cost / (0.5 + matScore));
+        if (availableMaterial(a, ctx, matKey) < cost) {
+          // Gather more of that material if beds exist
+          const spot = ctx.world.findResource(matKey, a, 16);
           if (spot && a.carried() <= a.carryLimit) {
             out.push({
               kind: 'gather',
@@ -748,7 +819,7 @@ export const ACTIONS = {
                 (ctx.bias?.work ?? 1) *
                 (0.5 + a.genome.industry) *
                 (foodEasy ? 1.4 : 1),
-              payload: material.key,
+              payload: matKey,
               target: beside(ctx.world, spot),
               site: spot,
               dur: 2,
@@ -756,17 +827,26 @@ export const ACTIONS = {
           }
           continue;
         }
+
         const u =
           need *
           1.5 *
           (ctx.bias?.work ?? 1) *
           (0.65 + a.skills.build * 0.5) *
           (0.5 + a.genome.industry) *
-          (foodEasy ? 1.6 : 1);
+          (foodEasy ? 1.6 : 1) *
+          (kind === 'bridge' ? 1.3 : 1);
+
         out.push({
           kind: 'build',
           u,
-          payload: { structure: kind, material: material.key, cost, fn: def.fn, settlement },
+          payload: {
+            structure: kind,
+            material: matKey,
+            cost,
+            fn: def.fn,
+            settlement,
+          },
           dur: 4 + Math.round(def.cost / 3),
         });
       }
@@ -784,8 +864,7 @@ export const ACTIONS = {
       a.body.energy = clamp(a.body.energy - 0.05, 0, 1);
       if (--act.dur > 0) return 'continue';
       const { material, cost } = act.payload;
-      if (a.count(material) < cost) return 'abort';
-      a.take(material, cost);
+      if (takeMaterial(a, ctx, material, cost) < cost) return 'abort';
       const st = ctx.sim.raiseStructure(a, act.payload.structure, act.spot, material);
       a.stats.built++;
       a.gainSkill('build', 0.07);
@@ -871,6 +950,10 @@ export const ACTIONS = {
         f.harvests = (f.harvests || 0) + 1;
         a.stats.harvested += got;
         a.gainSkill('farm', 0.05);
+        const fi = ctx.world.idx(f.x, f.y);
+        if (ctx.world.fertility) {
+          ctx.world.fertility[fi] = clamp(ctx.world.fertility[fi] - 0.04, 0.15, 1);
+        }
         ctx.sim.record(
           a,
           'harvest',
@@ -967,7 +1050,6 @@ export const ACTIONS = {
   teach: {
     category: 'social',
     propose(a, ctx) {
-      // Hard stop: empty belly → no lessons
       if (a.body.hunger > 0.4 || a.body.thirst > 0.55) return [];
       if (ctx.sim.totalFood() < ctx.sim.living.length * 1.5) return [];
 
@@ -1560,4 +1642,14 @@ export const ACTIONS = {
   },
 };
 
-export { STRUCTURE_KINDS, stepToward, beside, nearWater, T, normPull, normsFor };
+export {
+  STRUCTURE_KINDS,
+  stepToward,
+  beside,
+  nearWater,
+  T,
+  normPull,
+  normsFor,
+  availableMaterial,
+  takeMaterial,
+};
