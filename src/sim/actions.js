@@ -1,6 +1,6 @@
 // Everything an inhabitant can choose to do.
 // Craft/build pull from personal inventory first, then nearest store.
-// Bridges are proposed when open water sits near the agent.
+// Bridges: at most ~2 near a camp; never inland; spaced apart.
 
 import { clamp, dist, topN } from '../core/util.js';
 import { TERRAIN } from '../world/world.js';
@@ -180,7 +180,7 @@ function availableMaterial(a, ctx, key, range = 12) {
   return n;
 }
 
-/** Take from person first, then nearest store. Returns amount actually taken. */
+/** Take from person first, then nearest store. Never drives stock below 0. */
 function takeMaterial(a, ctx, key, amount = 1, range = 12) {
   let need = amount;
   const fromPerson = Math.min(need, a.count(key));
@@ -197,7 +197,7 @@ function takeMaterial(a, ctx, key, amount = 1, range = 12) {
     const have = s.stock.get(key) || 0;
     const take = Math.min(need, have);
     if (take > 0) {
-      s.stock.set(key, have - take);
+      s.stock.set(key, Math.max(0, have - take));
       need -= take;
     }
     if (need <= 0) return amount;
@@ -360,13 +360,14 @@ export const ACTIONS = {
       const s = act.target;
       if (!s?.stock) return 'abort';
       if (a.body.thirst > 0.4 && (s.stock.get('water') || 0) > 0) {
-        s.stock.set('water', s.stock.get('water') - 1);
+        const have = s.stock.get('water') || 0;
+        s.stock.set('water', Math.max(0, have - 1));
         a.add('water', 1);
         return 'done';
       }
       for (const [k, v] of s.stock) {
         if (v > 0) {
-          s.stock.set(k, v - 1);
+          s.stock.set(k, Math.max(0, v - 1));
           a.add(k, 1);
           ctx.sim.record(
             a,
@@ -625,7 +626,6 @@ export const ACTIONS = {
         if (++looked > 24) break;
         const c = ctx.ont.get(key);
         if (!c) continue;
-        // Parents from person OR store
         if (!c.parents.every((p) => availableMaterial(a, ctx, p) >= 1)) continue;
         if (
           hungryHousehold &&
@@ -775,8 +775,12 @@ export const ACTIONS = {
       for (const [kind, def] of Object.entries(STRUCTURE_KINDS)) {
         let need = def.need(s);
 
-        // Bridges: strong pull when water is nearby
         if (kind === 'bridge') {
+          const nearBridges = ctx.world.structuresOfKind('bridge').filter(
+            (b) => Math.hypot(b.x - settlement.x, b.y - settlement.y) < 18,
+          ).length;
+          if (nearBridges >= 2) continue;
+
           let water = 0;
           for (let dy = -6; dy <= 6; dy++) {
             for (let dx = -6; dx <= 6; dx++) {
@@ -785,14 +789,13 @@ export const ACTIONS = {
               if (t === TERRAIN.WATER || t === TERRAIN.MARSH) water++;
             }
           }
-          if (water > 3) need = Math.max(need, 0.55 + water * 0.025);
-          else need *= 0.25;
+          if (water > 3) need = Math.max(need, 0.45);
+          else continue;
         }
 
         if (need <= 0.05) continue;
 
         const material = ctx.sim.bestBuildMaterial(a, def.fn);
-        // Prefer material that exists on person or in store
         let matKey = material?.key;
         let matScore = material?.score || 0;
         if (!matKey || availableMaterial(a, ctx, matKey) < 1) {
@@ -808,7 +811,6 @@ export const ACTIONS = {
 
         const cost = Math.ceil(def.cost / (0.5 + matScore));
         if (availableMaterial(a, ctx, matKey) < cost) {
-          // Gather more of that material if beds exist
           const spot = ctx.world.findResource(matKey, a, 16);
           if (spot && a.carried() <= a.carryLimit) {
             out.push({
@@ -835,7 +837,7 @@ export const ACTIONS = {
           (0.65 + a.skills.build * 0.5) *
           (0.5 + a.genome.industry) *
           (foodEasy ? 1.6 : 1) *
-          (kind === 'bridge' ? 1.3 : 1);
+          (kind === 'bridge' ? 1.15 : 1);
 
         out.push({
           kind: 'build',
