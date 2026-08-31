@@ -2,8 +2,7 @@
 // climate that turns, and whatever the inhabitants choose to build on top.
 //
 // Structures can change movement: bridges cross water; paths and worn trails
-// are cheaper to walk. Social/work bonuses stay in actions/sim; the map only
-// answers "can I stand here?" and "how hard is this step?"
+// are cheaper to walk. Fauna herds wander and sync into game beds for hunt.
 
 import { clamp, lerp } from '../core/util.js';
 
@@ -69,8 +68,8 @@ export class World {
     this.sites = [];
     this.trails = new Float32Array(width * height);
     this.danger = new Float32Array(width * height);
-    // tileIndex -> structure (fast lookup for walkable / moveCost)
     this.structureIndex = new Map();
+    this.fauna = [];
     this.season = 'spring';
     this.weather = 'clear';
     this.temperature = 0.55;
@@ -89,24 +88,17 @@ export class World {
     return this.terrain[this.idx(x, y)];
   }
 
-  /**
-   * Land is walkable. Water/marsh are not, unless a bridge sits on that tile
-   * (or we treat adjacent bridge spans — see hasBridgeAccess).
-   * Deep water is never walkable.
-   */
   walkable(x, y) {
     if (!this.inBounds(x, y)) return false;
     const t = this.at(x, y);
     if (t === TERRAIN.DEEP) return false;
-    if (t > TERRAIN.WATER) return true; // marsh is 2; water is 1
-    // WATER (and optionally MARSH): need a bridge
+    if (t > TERRAIN.WATER) return true;
     if (t === TERRAIN.WATER || t === TERRAIN.MARSH) {
       return this.hasBridgeAccess(x, y);
     }
     return true;
   }
 
-  /** True if this tile has a bridge structure, or a bridge on an orthogonal neighbour (short span). */
   hasBridgeAccess(x, y) {
     const here = this.structureAt(x, y);
     if (here && here.kind === 'bridge') return true;
@@ -117,10 +109,6 @@ export class World {
     return false;
   }
 
-  /**
-   * Relative cost of stepping onto (x,y). Used by movement to prefer paths.
-   * 1 = normal land; lower = easier; water without bridge should not be queried.
-   */
   moveCost(x, y) {
     if (!this.inBounds(x, y)) return 99;
     const t = this.at(x, y);
@@ -142,14 +130,12 @@ export class World {
       if (s.kind === 'plaza' || s.kind === 'hall') cost *= 0.85;
     }
 
-    // Worn trails act as soft paths
     const trail = this.trails[this.idx(x, y)] || 0;
     if (trail > 0.15) cost *= 1 - clamp(trail * 0.35, 0, 0.35);
 
     return cost;
   }
 
-  /** Structures within radius (for plaza/workshop bonuses in actions). */
   structuresNear(x, y, radius = 6, kind = null) {
     const r2 = radius * radius;
     return this.structures.filter((s) => {
@@ -189,6 +175,8 @@ export class World {
     }
     this.carveRiver();
     this.seedBeds();
+    this.seedFauna(18);
+    this.syncFaunaBeds();
   }
 
   carveRiver() {
@@ -261,6 +249,118 @@ export class World {
         list.push(i);
       }
     }
+  }
+
+  // ── Fauna ─────────────────────────────────────────────────────────────────
+
+  seedFauna(count = 18) {
+    this.fauna = [];
+    const { rng, w, h } = this;
+    let tries = 0;
+    while (this.fauna.length < count && tries < count * 40) {
+      tries++;
+      const x = rng.int(2, w - 3);
+      const y = rng.int(2, h - 3);
+      const t = this.at(x, y);
+      if (t !== TERRAIN.MEADOW && t !== TERRAIN.GRASS && t !== TERRAIN.FOREST) continue;
+      this.fauna.push({
+        id: `f${this.fauna.length}`,
+        x,
+        y,
+        kind: rng.bool(0.55) ? 'herd' : 'pack',
+        size: 2 + Math.floor(rng.float(1, 5)),
+        energy: 1,
+      });
+    }
+  }
+
+  /** Sync fauna → beds so hunt / findResource still work. */
+  syncFaunaBeds() {
+    for (const [, bed] of this.beds) {
+      if (bed.game && bed.game._mobile) {
+        bed.game.amount = 0;
+      }
+    }
+    for (const f of this.fauna || []) {
+      if (f.size < 0.5) continue;
+      const i = this.idx(f.x | 0, f.y | 0);
+      let bed = this.beds.get(i);
+      if (!bed) {
+        bed = {};
+        this.beds.set(i, bed);
+      }
+      const amount = f.size * (f.kind === 'pack' ? 1.4 : 1);
+      bed.game = {
+        amount,
+        max: amount + 2,
+        regrow: 0,
+        _mobile: true,
+      };
+    }
+    // Keep bedIndex useful for game
+    if (this.bedIndex) {
+      const m = this.bedIndex.get('game') || new Map();
+      m.clear();
+      for (const [i, bed] of this.beds) {
+        if (!bed.game || bed.game.amount < 1) continue;
+        const x = i % this.w;
+        const y = (i - x) / this.w;
+        const ci = Math.floor(y / this.cell) * this.cw + Math.floor(x / this.cell);
+        let list = m.get(ci);
+        if (!list) m.set(ci, (list = []));
+        list.push(i);
+      }
+      this.bedIndex.set('game', m);
+    }
+  }
+
+  stepFauna(dt = 1) {
+    if (!this.fauna?.length) return;
+    const { rng } = this;
+    for (const f of this.fauna) {
+      if (this.tick % 3 !== 0) continue;
+      let best = null;
+      let bestScore = -Infinity;
+      for (let n = 0; n < 6; n++) {
+        const nx = clamp((f.x | 0) + rng.int(-2, 2), 1, this.w - 2);
+        const ny = clamp((f.y | 0) + rng.int(-2, 2), 1, this.h - 2);
+        if (!this.walkable(nx, ny)) continue;
+        const t = this.at(nx, ny);
+        let score = this.fertility[this.idx(nx, ny)] || 0;
+        if (t === TERRAIN.MEADOW) score += 0.4;
+        if (t === TERRAIN.GRASS) score += 0.25;
+        if (t === TERRAIN.FOREST) score += 0.1;
+        if (score > bestScore) {
+          bestScore = score;
+          best = { x: nx, y: ny };
+        }
+      }
+      if (best) {
+        f.x = best.x;
+        f.y = best.y;
+      }
+      if (this.season !== 'winter' && rng.bool(0.02 * f.size)) {
+        f.size = Math.min(8, f.size + 0.15);
+      }
+      if (this.season === 'winter') f.size = Math.max(1, f.size - 0.02 * dt);
+    }
+    this.fauna = this.fauna.filter((f) => f.size >= 0.5);
+    this.syncFaunaBeds();
+  }
+
+  /** When hunt harvests game, shrink the local fauna if present. */
+  harvestFaunaAt(x, y, amount) {
+    const fx = x | 0;
+    const fy = y | 0;
+    let remaining = amount;
+    for (const f of this.fauna || []) {
+      if ((f.x | 0) !== fx || (f.y | 0) !== fy) continue;
+      const take = Math.min(f.size, remaining);
+      f.size -= take;
+      remaining -= take;
+      if (remaining <= 0) break;
+    }
+    this.fauna = this.fauna.filter((f) => f.size >= 0.5);
   }
 
   buildWaterField() {
@@ -342,6 +442,7 @@ export class World {
     if (!bed || !bed[key]) return 0;
     const got = Math.min(bed[key].amount, amount);
     bed[key].amount -= got;
+    if (key === 'game') this.harvestFaunaAt(x, y, got);
     return got;
   }
 
@@ -350,7 +451,6 @@ export class World {
     const i = this.idx(s.x, s.y);
     this.structureIndex.set(i, s);
     this.trails[i] = 1;
-    // Bridges / paths wear a bit of trail onto neighbours
     if (s.kind === 'bridge' || s.kind === 'path' || s.kind === 'road') {
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         if (!this.inBounds(s.x + dx, s.y + dy)) continue;
@@ -396,6 +496,7 @@ export class World {
       const i = keys[(this.tick * 7 + n * 6) % keys.length];
       const bed = this.beds.get(i);
       for (const r of Object.values(bed)) {
+        if (r._mobile) continue;
         r.amount = Math.min(r.max, r.amount + r.regrow * growth * 6 * dt);
       }
     }
@@ -404,6 +505,8 @@ export class World {
       this.trails[j] *= 0.9995;
       this.danger[j] *= 0.998;
     }
+
+    this.stepFauna(dt);
   }
 
   get dayNumber() {
