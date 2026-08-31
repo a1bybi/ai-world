@@ -1,7 +1,7 @@
 // Everything an inhabitant can choose to do.
-// Craft/build pull from person + store. Bridges capped.
-// Purpose-learning: use of field/store/bridge forms structure:* lessons;
-// build pressure stays naive until those lessons are earned.
+// Bootstrap: first shelter/field/store/hearth can be tried without full understanding.
+// Use of field/store/bridge/shelter/hearth writes structure:* lessons; repeats need proof.
+// Hungry + no/few fields → build field; hungry + ripe field → farm hard.
 
 import { clamp, dist, topN } from '../core/util.js';
 import { TERRAIN } from '../world/world.js';
@@ -95,7 +95,6 @@ function stepToward(agent, world, target) {
     world.trails[idx] = clamp((world.trails[idx] || 0) + 0.02, 0, 1);
   }
 
-  // Learned purpose: stepped onto a bridge after leaving land → crossing works
   const st = world.structureAt?.(agent.x, agent.y);
   if (st?.kind === 'bridge' && agent.memory) {
     const leftLand =
@@ -109,7 +108,6 @@ function stepToward(agent, world, target) {
   return agent.x === tx && agent.y === ty;
 }
 
-/** Record that a structure kind serves a purpose (builds understanding over time). */
 function learnStructureUse(a, kind, serves, conf = 0.2, valence = 0.4) {
   if (!a?.memory?.learn) return;
   const key = `structure:${kind}`;
@@ -126,10 +124,10 @@ function learnStructureUse(a, kind, serves, conf = 0.2, valence = 0.4) {
   });
 }
 
-/** How strongly this agent has learned that a structure kind is useful (0.2–1.2). */
+/** 0.2–1.25: weak until lived use of this structure kind. */
 function knownStructureUse(a, kind) {
   const b = a.memory?.belief?.(`structure:${kind}`);
-  if (!b || b.confidence < 0.12) return 0.22; // naive: weak pull until proven
+  if (!b || b.confidence < 0.12) return 0.22;
   return clamp(0.35 + b.confidence * (0.5 + Math.max(0, b.valence)), 0.2, 1.25);
 }
 
@@ -308,7 +306,6 @@ export const ACTIONS = {
         a.memory.learn('water', {
           kind: 'matter', confidence: 0.6, valence: 0.4, source: 'experience',
         });
-        // Well or open water — learn vessel/source
         if (ctx.world.structureAt?.(a.x, a.y)?.kind === 'well') {
           learnStructureUse(a, 'well', 'vessel', 0.2, 0.45);
         }
@@ -820,22 +817,46 @@ export const ACTIONS = {
     category: 'work',
     propose(a, ctx) {
       if (a.isChild(ctx.world.tick)) return [];
-      if (a.body.hunger > 0.65) return [];
+      if (a.body.hunger > 0.72) return [];
       const foodEasy =
         a.body.hunger < 0.4 && ctx.sim.totalFood() > ctx.sim.living.length * 1.5;
+      const hungry = a.body.hunger > 0.4;
       const settlement = ctx.sim.nearestSettlement(a.x, a.y);
       const s = ctx.sim.settlementNeeds(settlement);
+      const people = s.people || 1;
       const out = [];
+
+      const nearCount = (kind) =>
+        ctx.world.structuresOfKind(kind).filter(
+          (st) => Math.hypot(st.x - settlement.x, st.y - settlement.y) < 16,
+        ).length;
+
+      const fieldsNear = nearCount('field');
+      const needFieldBoost =
+        hungry && fieldsNear < 1
+          ? 0.85
+          : hungry && fieldsNear < Math.ceil(people / 10)
+            ? 0.45
+            : 0;
 
       for (const [kind, def] of Object.entries(STRUCTURE_KINDS)) {
         let need = def.need(s);
+        const existing = nearCount(kind);
+
+        // Bootstrap floors — civilization starter kit
+        if (kind === 'shelter' && existing < Math.max(1, Math.ceil(people / 4))) {
+          need = Math.max(need, 0.55);
+        }
+        if (kind === 'store' && existing < 1) need = Math.max(need, 0.5);
+        if (kind === 'hearth' && existing < 1) need = Math.max(need, 0.4);
+        if (kind === 'field') {
+          need = Math.max(need, needFieldBoost);
+          if (existing < 1) need = Math.max(need, 0.5);
+          if (existing < Math.ceil(people / 8)) need = Math.max(need, 0.35);
+        }
 
         if (kind === 'bridge') {
-          const nearBridges = ctx.world.structuresOfKind('bridge').filter(
-            (b) => Math.hypot(b.x - settlement.x, b.y - settlement.y) < 18,
-          ).length;
-          if (nearBridges >= 2) continue;
-
+          if (existing >= 2) continue;
           let water = 0;
           for (let dy = -6; dy <= 6; dy++) {
             for (let dx = -6; dx <= 6; dx++) {
@@ -844,19 +865,17 @@ export const ACTIONS = {
               if (t === TERRAIN.WATER || t === TERRAIN.MARSH) water++;
             }
           }
-          if (water > 3) need = Math.max(need, 0.45);
+          if (water > 3) need = Math.max(need, 0.4);
           else continue;
         }
 
-        if (need <= 0.05) continue;
+        if (need <= 0.08) continue;
 
-        // Purpose: weak until lived experience of this structure kind
-        const purpose = knownStructureUse(a, kind);
-        // First of a kind can still be tried (curiosity), but repeats need proof
-        const existing = ctx.world.structuresOfKind(kind).filter(
-          (st) => Math.hypot(st.x - settlement.x, st.y - settlement.y) < 16,
-        ).length;
-        const novelty = existing === 0 ? 1.15 + a.genome.curiosity * 0.4 : 1;
+        // First of kind: curiosity trial. Later: earned purpose.
+        const purpose =
+          existing === 0
+            ? 0.65 + a.genome.curiosity * 0.55
+            : knownStructureUse(a, kind);
 
         const material = ctx.sim.bestBuildMaterial(a, def.fn);
         let matKey = material?.key;
@@ -878,13 +897,7 @@ export const ACTIONS = {
           if (spot && a.carried() <= a.carryLimit) {
             out.push({
               kind: 'gather',
-              u:
-                need *
-                1.1 *
-                purpose *
-                (ctx.bias?.work ?? 1) *
-                (0.5 + a.genome.industry) *
-                (foodEasy ? 1.3 : 1),
+              u: need * purpose * 1.2 * (0.5 + a.genome.industry) * (ctx.bias?.work ?? 1),
               payload: matKey,
               target: beside(ctx.world, spot),
               site: spot,
@@ -896,14 +909,12 @@ export const ACTIONS = {
 
         const u =
           need *
-          1.35 *
           purpose *
-          novelty *
+          1.5 *
           (ctx.bias?.work ?? 1) *
-          (0.65 + a.skills.build * 0.5) *
+          (0.6 + a.skills.build * 0.5) *
           (0.5 + a.genome.industry) *
-          (foodEasy ? 1.5 : 1) *
-          (kind === 'bridge' ? 1.1 : 1);
+          (foodEasy ? 1.35 : hungry && kind === 'field' ? 1.6 : 1);
 
         out.push({
           kind: 'build',
@@ -936,9 +947,11 @@ export const ACTIONS = {
       const st = ctx.sim.raiseStructure(a, structure, act.spot, material);
       a.stats.built++;
       a.gainSkill('build', 0.07);
-      // Building is intention; real understanding comes from later use —
-      // but first build seeds a weak positive so they don't forget the attempt
       learnStructureUse(a, structure, STRUCTURE_KINDS[structure]?.fn || structure, 0.1, 0.25);
+      if (structure === 'field') {
+        st.tended = (st.tended || 0) + 0.3;
+        st.ripeness = Math.max(st.ripeness || 0, 0.15);
+      }
       appraise(a, { goalCongruence: 0.8, agency: 'self', intensity: 0.7, kind: 'first' });
       if (!a.home && structure === 'shelter') a.home = st;
       return 'done';
@@ -996,22 +1009,24 @@ export const ACTIONS = {
     propose(a, ctx) {
       const fields = ctx.world.structuresOfKind('field');
       if (!fields.length) return [];
-      // Prefer fields this agent (or culture) has learned work
       const f = topN(fields, 1, (s) => {
         const place = a.memory.belief('where:field-works')?.payload;
-        const placeBoost =
-          place && place.x === s.x && place.y === s.y ? 0.4 : 0;
-        return (s.ripeness || 0) * 2 - dist(a, s) * 0.05 + placeBoost;
+        const placeBoost = place && place.x === s.x && place.y === s.y ? 0.5 : 0;
+        return (s.ripeness || 0) * 3 + placeBoost - dist(a, s) * 0.04;
       })[0];
       if (!f) return [];
       const ripe = f.ripeness || 0;
       const purpose = knownStructureUse(a, 'field');
+      const hungry = a.body.hunger > 0.38;
+      const hungerFarm =
+        hungry && ripe > 0.7
+          ? 2.5 + a.body.hunger * 4
+          : ripe > 0.85
+            ? 1.6 + a.body.hunger
+            : 0.35 * purpose;
       const u =
-        ((ripe > 0.85 ? 1.9 + a.body.hunger : 0.45) *
-          (ctx.bias?.work ?? 1) *
-          (0.4 + a.skills.farm) *
-          purpose) /
-        (1 + dist(a, f) * 0.05);
+        (hungerFarm * (ctx.bias?.work ?? 1) * (0.45 + a.skills.farm) * Math.max(0.5, purpose)) /
+        (1 + dist(a, f) * 0.04);
       return [{ kind: 'farm', u, target: T(f.x, f.y), field: f, dur: 2 }];
     },
     run(a, ctx, act) {
@@ -1036,7 +1051,6 @@ export const ACTIONS = {
           ctx.world.fertility[fi] = clamp(ctx.world.fertility[fi] - 0.04, 0.15, 1);
         }
 
-        // Purpose earned: the field feeds
         learnStructureUse(a, 'field', 'sustenance', 0.28, 0.55);
         a.memory.learn('where:field-works', {
           kind: 'place',
@@ -1054,13 +1068,12 @@ export const ACTIONS = {
           `${a.name} took ${Math.round(got)} ${ctx.ont.get('grain')?.word || 'grain'} from the ${f.word}`,
           { valence: 0.6, intensity: 0.5, concept: 'grain' },
         );
-        // Observer-facing learning beat
-        if ((a.memory.belief('structure:field')?.confidence || 0) < 0.4) {
+        if ((a.memory.belief('structure:field')?.confidence || 0) < 0.45) {
           ctx.sim.record(
             a,
             'thought',
             `${a.name} saw that the turned ground gives food`,
-            { valence: 0.4, intensity: 0.35, voice: a.name, quiet: false },
+            { valence: 0.4, intensity: 0.35, voice: a.name },
           );
         }
         appraise(a, { goalCongruence: 0.65, agency: 'self', intensity: 0.5, kind: 'harvest' });
@@ -1148,7 +1161,6 @@ export const ACTIONS = {
         return 'continue';
       }
       ctx.sim.converse(a, o);
-      // Transfer structure lessons sometimes (purpose spreads by talk)
       if (ctx.rng.bool(0.25)) {
         for (const kind of ['field', 'store', 'bridge', 'shelter', 'hearth']) {
           const b = a.memory.belief(`structure:${kind}`);
@@ -1195,11 +1207,7 @@ export const ACTIONS = {
           const holders = ctx.sim.living.filter(
             (x) => x.id !== a.id && x.memory.knows(k, 0.25),
           ).length;
-          candidates.push({
-            key: k,
-            rarity: 1 / Math.max(1, holders),
-            isStructure: false,
-          });
+          candidates.push({ key: k, rarity: 1 / Math.max(1, holders), isStructure: false });
         }
         for (const k of structureLessons) {
           if (o.memory.knows(k, 0.25)) continue;
@@ -1558,8 +1566,7 @@ export const ACTIONS = {
       if (!leader) return [];
       const d = dist(a, leader);
       if (d < 3) return [];
-      const distFactor = Math.min(1.4, d * 0.12);
-      return [{ kind: 'follow', u: weight * distFactor, targetId: leader.id, dur: 1 }];
+      return [{ kind: 'follow', u: weight * Math.min(1.4, d * 0.12), targetId: leader.id, dur: 1 }];
     },
     run(a, ctx, act) {
       const o = ctx.sim.byId(act.targetId);
