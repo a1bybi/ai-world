@@ -88,11 +88,15 @@ export class World {
     return this.terrain[this.idx(x, y)];
   }
 
+  /**
+   * Land is always walkable (except DEEP).
+   * WATER / MARSH only if this tile has a bridge (or an adjacent bridge
+   * for a 1-tile “approach” so pathing can step onto the span).
+   */
   walkable(x, y) {
     if (!this.inBounds(x, y)) return false;
     const t = this.at(x, y);
     if (t === TERRAIN.DEEP) return false;
-    if (t > TERRAIN.WATER) return true;
     if (t === TERRAIN.WATER || t === TERRAIN.MARSH) {
       return this.hasBridgeAccess(x, y);
     }
@@ -102,6 +106,7 @@ export class World {
   hasBridgeAccess(x, y) {
     const here = this.structureAt(x, y);
     if (here && here.kind === 'bridge') return true;
+    // Allow stepping onto water that touches a bridge (crossing a narrow span)
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const s = this.structureAt(x + dx, y + dy);
       if (s && s.kind === 'bridge') return true;
@@ -126,7 +131,7 @@ export class World {
     const s = this.structureAt(x, y);
     if (s) {
       if (s.kind === 'path' || s.kind === 'road') cost *= 0.65;
-      if (s.kind === 'bridge') cost *= 0.9;
+      if (s.kind === 'bridge') cost *= 0.85;
       if (s.kind === 'plaza' || s.kind === 'hall') cost *= 0.85;
     }
 
@@ -147,6 +152,76 @@ export class World {
 
   hasStructureNear(x, y, kind, radius = 6) {
     return this.structuresNear(x, y, radius, kind).length > 0;
+  }
+
+  /**
+   * Candidate bridge placements near a camp.
+   * Water/marsh tile with ≥1 dry land neighbor, not too close to an existing bridge.
+   * Ranked by: closeness to center, then “cross potential” (land on opposite sides).
+   */
+  findBridgeSites(cx, cy, radius = 22, minSpacing = 4, limit = 12) {
+    const scored = [];
+    const r0 = Math.max(0, (cx | 0) - radius);
+    const r1 = Math.min(this.w - 1, (cx | 0) + radius);
+    const c0 = Math.max(0, (cy | 0) - radius);
+    const c1 = Math.min(this.h - 1, (cy | 0) + radius);
+
+    for (let y = c0; y <= c1; y++) {
+      for (let x = r0; x <= r1; x++) {
+        const t = this.at(x, y);
+        if (t !== TERRAIN.WATER && t !== TERRAIN.MARSH) continue;
+        if (this.structureAt(x, y)) continue;
+
+        let landN = 0;
+        let landS = 0;
+        let landE = 0;
+        let landW = 0;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (!this.inBounds(nx, ny)) continue;
+          const nt = this.at(nx, ny);
+          if (nt > TERRAIN.MARSH) {
+            if (dx === 1) landE++;
+            if (dx === -1) landW++;
+            if (dy === 1) landS++;
+            if (dy === -1) landN++;
+          }
+        }
+        const landAdj = landN + landS + landE + landW;
+        if (landAdj < 1) continue;
+
+        const tooClose = this.structuresOfKind('bridge').some(
+          (b) => Math.hypot(b.x - x, b.y - y) < minSpacing,
+        );
+        if (tooClose) continue;
+
+        // Prefer spans that touch two opposite banks (real crossing)
+        const opposite =
+          (landE && landW ? 2 : 0) + (landN && landS ? 2 : 0) + landAdj * 0.15;
+        const distCamp = Math.hypot(x - cx, y - cy);
+        const score = opposite * 3 - distCamp * 0.08 + landAdj * 0.2;
+        scored.push({ x, y, score, landAdj, opposite });
+      }
+    }
+
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, limit);
+  }
+
+  /** Count water/marsh tiles near a point (for settlementNeeds). */
+  waterNearCount(cx, cy, radius = 10) {
+    let n = 0;
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        const x = (cx | 0) + dx;
+        const y = (cy | 0) + dy;
+        if (!this.inBounds(x, y)) continue;
+        const t = this.at(x, y);
+        if (t === TERRAIN.WATER || t === TERRAIN.MARSH) n++;
+      }
+    }
+    return n;
   }
 
   generate() {
@@ -251,8 +326,6 @@ export class World {
     }
   }
 
-  // ── Fauna ─────────────────────────────────────────────────────────────────
-
   seedFauna(count = 18) {
     this.fauna = [];
     const { rng, w, h } = this;
@@ -274,7 +347,6 @@ export class World {
     }
   }
 
-  /** Sync fauna → beds so hunt / findResource still work. */
   syncFaunaBeds() {
     for (const [, bed] of this.beds) {
       if (bed.game && bed.game._mobile) {
@@ -297,7 +369,6 @@ export class World {
         _mobile: true,
       };
     }
-    // Keep bedIndex useful for game
     if (this.bedIndex) {
       const m = this.bedIndex.get('game') || new Map();
       m.clear();
@@ -348,7 +419,6 @@ export class World {
     this.syncFaunaBeds();
   }
 
-  /** When hunt harvests game, shrink the local fauna if present. */
   harvestFaunaAt(x, y, amount) {
     const fx = x | 0;
     const fy = y | 0;
