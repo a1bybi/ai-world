@@ -1040,7 +1040,6 @@ export class Simulation {
         if (t === TERRAIN.WATER || t === TERRAIN.MARSH) waterNear++;
       }
     }
-    // Cap: at most 1–2 bridges per camp
     const bridgesWanted =
       waterNear < 6 ? 0 : Math.min(BALANCE.maxBridgesPerCamp, count('bridge') > 0 ? 1 : 2);
 
@@ -1097,7 +1096,6 @@ export class Simulation {
     return best;
   }
 
-  /** Ring around settlement; bridges on water, spaced ≥4 tiles. */
   pickBuildSite(a, kind, settlement) {
     const center = settlement || this.nearestSettlement(a.x, a.y);
     const ring =
@@ -1191,7 +1189,8 @@ export class Simulation {
       kind, x: spot.x, y: spot.y, word,
       builtBy: a.name, builtTick: this.world.tick, material: materialKey,
       condition: 1, stock: new Map(),
-      ripeness: kind === 'field' ? 0 : undefined,
+      ripeness: kind === 'field' ? 0.15 : undefined,
+      tended: kind === 'field' ? 0.3 : undefined,
       occupants: [],
     };
     this.world.addStructure(s);
@@ -1218,12 +1217,19 @@ export class Simulation {
     return s;
   }
 
+  /** Fields ripen even with light care so the first harvest can teach purpose. */
   fieldsTick() {
     if (this.world.tick % 6) return;
-    const growth = this.world.season === 'winter' ? 0.15 : this.world.season === 'summer' ? 1.2 : 0.9;
+    const growth =
+      this.world.season === 'winter' ? 0.2 :
+      this.world.season === 'summer' ? 1.25 :
+      0.95;
     for (const f of this.world.structuresOfKind('field')) {
       const care = clamp(f.tended || 0);
-      f.ripeness = clamp((f.ripeness || 0) + 0.006 * growth * (0.4 + care), 0, 1);
+      f.ripeness = clamp(
+        (f.ripeness || 0) + 0.008 * growth * (0.5 + care),
+        0, 1,
+      );
       f.tended = Math.max(0, (f.tended || 0) - 0.02);
       const fi = this.world.idx(f.x, f.y);
       if (this.world.fertility) {
@@ -1242,7 +1248,7 @@ export class Simulation {
       if (this.world.tick - c.tick > BALANCE.corpseDesiccation) {
         const idx = this.world.corpses.indexOf(c);
         if (idx >= 0) this.world.corpses.splice(idx, 1);
-        this.record(null, 'loss', `${c.name} was never buried; the ground took them anyway`, {
+        this.record(null, 'loss', `${c.name} was never buried; the ground took them away`, {
           valence: -0.5, intensity: 0.6, landmark: true,
         });
         this.violateNorm('burial', 0.03);
