@@ -1,7 +1,6 @@
 // The land itself: procedurally grown terrain, renewable resource beds, a
 // climate that turns, and whatever the inhabitants choose to build on top.
-//
-// Bridges are multi-tile spans across water (findBridgeSpan + raiseStructure).
+// Bridges grow one water-tile at a time until they reach the other bank.
 
 import { clamp, lerp } from '../core/util.js';
 
@@ -87,7 +86,6 @@ export class World {
     return this.terrain[this.idx(x, y)];
   }
 
-  /** Only the bridge tile itself is walkable water (spans cover the path). */
   walkable(x, y) {
     if (!this.inBounds(x, y)) return false;
     const t = this.at(x, y);
@@ -98,6 +96,7 @@ export class World {
     return true;
   }
 
+  /** Only tiles that already have a bridge structure. */
   hasBridgeAccess(x, y) {
     const here = this.structureAt(x, y);
     return !!(here && here.kind === 'bridge');
@@ -143,14 +142,143 @@ export class World {
     return this.structuresNear(x, y, radius, kind).length > 0;
   }
 
-  /** Unique bridge spans near a point (not individual tiles). */
-  bridgeSpanCount(cx, cy, radius = 18) {
-    const ids = new Set();
-    for (const s of this.structuresOfKind('bridge')) {
-      if (Math.hypot(s.x - cx, s.y - cy) > radius) continue;
-      ids.add(s.spanId || `${s.x},${s.y}`);
+  landAdjacent(x, y) {
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (!this.inBounds(nx, ny)) continue;
+      if (this.at(nx, ny) > TERRAIN.MARSH) return true;
     }
-    return ids.size;
+    return false;
+  }
+
+  bridgeAdjacent(x, y) {
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const st = this.structureAt(x + dx, y + dy);
+      if (st?.kind === 'bridge') return true;
+    }
+    return false;
+  }
+
+  /**
+   * Water/marsh cells where one more bridge length can be laid:
+   * next to dry land, or continuing from an existing bridge.
+   */
+  findBridgeWorkSites(cx, cy, radius = 24, limit = 16) {
+    const scored = [];
+    const r0 = Math.max(0, (cx | 0) - radius);
+    const r1 = Math.min(this.w - 1, (cx | 0) + radius);
+    const c0 = Math.max(0, (cy | 0) - radius);
+    const c1 = Math.min(this.h - 1, (cy | 0) + radius);
+
+    for (let y = c0; y <= c1; y++) {
+      for (let x = r0; x <= r1; x++) {
+        const t = this.at(x, y);
+        if (t !== TERRAIN.WATER && t !== TERRAIN.MARSH) continue;
+        if (this.structureAt(x, y)) continue;
+
+        const onLand = this.landAdjacent(x, y);
+        const onBridge = this.bridgeAdjacent(x, y);
+        if (!onLand && !onBridge) continue;
+
+        let extend = 0;
+        if (onBridge) extend += 2;
+        if (onLand && onBridge) extend += 1;
+        if (onLand && !onBridge) extend += 0.5;
+
+        const distCamp = Math.hypot(x - cx, y - cy);
+        scored.push({
+          x,
+          y,
+          score: extend * 4 - distCamp * 0.04 + (onBridge ? 1 : 0),
+          extends: onBridge,
+          starts: onLand && !onBridge,
+        });
+      }
+    }
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, limit);
+  }
+
+  /** True when bridge tiles connect two land points at least 3 apart. */
+  bridgeCrosses(cx, cy, radius = 28) {
+    const key = (x, y) => `${x},${y}`;
+    const bridges = this.structuresOfKind('bridge').filter(
+      (b) => Math.hypot(b.x - cx, b.y - cy) <= radius,
+    );
+    if (!bridges.length) return false;
+
+    const bq = [];
+    const bseen = new Set();
+    const lands = new Set();
+
+    for (const b of bridges) {
+      if (!this.landAdjacent(b.x, b.y)) continue;
+      bq.push([b.x, b.y]);
+      bseen.add(key(b.x, b.y));
+    }
+
+    while (bq.length) {
+      const [x, y] = bq.shift();
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (!this.inBounds(nx, ny)) continue;
+        if (this.at(nx, ny) > TERRAIN.MARSH) {
+          lands.add(key(nx, ny));
+          continue;
+        }
+        const st = this.structureAt(nx, ny);
+        if (st?.kind !== 'bridge') continue;
+        const k = key(nx, ny);
+        if (bseen.has(k)) continue;
+        bseen.add(k);
+        bq.push([nx, ny]);
+      }
+    }
+
+    if (lands.size < 2) return false;
+    const pts = [...lands].map((k) => {
+      const [x, y] = k.split(',').map(Number);
+      return { x, y };
+    });
+    for (let i = 0; i < pts.length; i++) {
+      for (let j = i + 1; j < pts.length; j++) {
+        if (Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y) >= 3) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /** Connected components of bridge tiles near a point. */
+  bridgeSpanCount(cx, cy, radius = 18) {
+    const bridges = this.structuresOfKind('bridge').filter(
+      (b) => Math.hypot(b.x - cx, b.y - cy) <= radius,
+    );
+    if (!bridges.length) return 0;
+    const key = (x, y) => `${x},${y}`;
+    const byPos = new Map(bridges.map((b) => [key(b.x, b.y), b]));
+    const seen = new Set();
+    let components = 0;
+    for (const b of bridges) {
+      const k0 = key(b.x, b.y);
+      if (seen.has(k0)) continue;
+      components++;
+      const q = [[b.x, b.y]];
+      seen.add(k0);
+      while (q.length) {
+        const [x, y] = q.shift();
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const k = key(x + dx, y + dy);
+          if (seen.has(k) || !byPos.has(k)) continue;
+          seen.add(k);
+          q.push([x + dx, y + dy]);
+        }
+      }
+    }
+    return components;
   }
 
   waterNearCount(cx, cy, radius = 10) {
@@ -167,155 +295,8 @@ export class World {
     return n;
   }
 
-  /**
-   * Candidate single water tiles (legacy / ranking).
-   * Prefer opposite-bank potential.
-   */
   findBridgeSites(cx, cy, radius = 22, minSpacing = 4, limit = 12) {
-    const scored = [];
-    const r0 = Math.max(0, (cx | 0) - radius);
-    const r1 = Math.min(this.w - 1, (cx | 0) + radius);
-    const c0 = Math.max(0, (cy | 0) - radius);
-    const c1 = Math.min(this.h - 1, (cy | 0) + radius);
-
-    for (let y = c0; y <= c1; y++) {
-      for (let x = r0; x <= r1; x++) {
-        const t = this.at(x, y);
-        if (t !== TERRAIN.WATER && t !== TERRAIN.MARSH) continue;
-        if (this.structureAt(x, y)) continue;
-
-        let landN = 0, landS = 0, landE = 0, landW = 0;
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-          const nx = x + dx, ny = y + dy;
-          if (!this.inBounds(nx, ny)) continue;
-          if (this.at(nx, ny) > TERRAIN.MARSH) {
-            if (dx === 1) landE++;
-            if (dx === -1) landW++;
-            if (dy === 1) landS++;
-            if (dy === -1) landN++;
-          }
-        }
-        const landAdj = landN + landS + landE + landW;
-        if (landAdj < 1) continue;
-
-        const tooClose = this.structuresOfKind('bridge').some(
-          (b) => Math.hypot(b.x - x, b.y - y) < minSpacing,
-        );
-        if (tooClose) continue;
-
-        const opposite =
-          (landE && landW ? 2 : 0) + (landN && landS ? 2 : 0) + landAdj * 0.15;
-        const distCamp = Math.hypot(x - cx, y - cy);
-        scored.push({
-          x, y,
-          score: opposite * 3 - distCamp * 0.08 + landAdj * 0.2,
-        });
-      }
-    }
-    scored.sort((a, b) => b.score - a.score);
-    return scored.slice(0, limit);
-  }
-
-  /**
-   * Full bank→bank water path for a real crossing.
-   * Returns { tiles, startLand, endLand, length } or null.
-   */
-  findBridgeSpan(nearX, nearY, radius = 26, maxLen = 8) {
-    const starts = [];
-    const r0 = Math.max(0, (nearX | 0) - radius);
-    const r1 = Math.min(this.w - 1, (nearX | 0) + radius);
-    const c0 = Math.max(0, (nearY | 0) - radius);
-    const c1 = Math.min(this.h - 1, (nearY | 0) + radius);
-
-    for (let y = c0; y <= c1; y++) {
-      for (let x = r0; x <= r1; x++) {
-        const t = this.at(x, y);
-        if (t !== TERRAIN.WATER && t !== TERRAIN.MARSH) continue;
-        if (this.structureAt(x, y)?.kind === 'bridge') continue;
-
-        let landNbr = null;
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-          const nx = x + dx, ny = y + dy;
-          if (!this.inBounds(nx, ny)) continue;
-          if (this.at(nx, ny) > TERRAIN.MARSH) {
-            landNbr = { x: nx, y: ny };
-            break;
-          }
-        }
-        if (landNbr) starts.push({ x, y, land: landNbr });
-      }
-    }
-    if (!starts.length) return null;
-
-    starts.sort(
-      (a, b) =>
-        Math.hypot(a.x - nearX, a.y - nearY) - Math.hypot(b.x - nearX, b.y - nearY),
-    );
-
-    const key = (x, y) => `${x},${y}`;
-
-    for (const start of starts.slice(0, 50)) {
-      const seen = new Map();
-      const depthMap = new Map();
-      const q = [[start.x, start.y]];
-      seen.set(key(start.x, start.y), null);
-      depthMap.set(key(start.x, start.y), 0);
-
-      let exitWater = null;
-      let exitLand = null;
-
-      while (q.length) {
-        const [x, y] = q.shift();
-        const depth = depthMap.get(key(x, y)) || 0;
-        if (depth >= maxLen) continue;
-
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-          const nx = x + dx, ny = y + dy;
-          if (!this.inBounds(nx, ny)) continue;
-          const nt = this.at(nx, ny);
-
-          if (nt > TERRAIN.MARSH) {
-            if (
-              (nx !== start.land.x || ny !== start.land.y) &&
-              Math.hypot(nx - start.land.x, ny - start.land.y) >= 2
-            ) {
-              exitWater = { x, y };
-              exitLand = { x: nx, y: ny };
-              q.length = 0;
-              break;
-            }
-            continue;
-          }
-          if (nt !== TERRAIN.WATER && nt !== TERRAIN.MARSH) continue;
-          if (this.structureAt(nx, ny)?.kind === 'bridge') continue;
-          const k = key(nx, ny);
-          if (seen.has(k)) continue;
-          seen.set(k, [x, y]);
-          depthMap.set(k, depth + 1);
-          q.push([nx, ny]);
-        }
-      }
-
-      if (!exitWater) continue;
-
-      const tiles = [];
-      let cur = [exitWater.x, exitWater.y];
-      while (cur) {
-        tiles.push({ x: cur[0], y: cur[1] });
-        const p = seen.get(key(cur[0], cur[1]));
-        cur = p;
-      }
-      tiles.reverse();
-      if (tiles.length < 1 || tiles.length > maxLen) continue;
-
-      return {
-        tiles,
-        startLand: start.land,
-        endLand: exitLand,
-        length: tiles.length,
-      };
-    }
-    return null;
+    return this.findBridgeWorkSites(cx, cy, radius, limit);
   }
 
   generate() {
@@ -506,7 +487,8 @@ export class World {
   }
 
   harvestFaunaAt(x, y, amount) {
-    const fx = x | 0, fy = y | 0;
+    const fx = x | 0;
+    const fy = y | 0;
     let remaining = amount;
     for (const f of this.fauna || []) {
       if ((f.x | 0) !== fx || (f.y | 0) !== fy) continue;
@@ -534,7 +516,8 @@ export class World {
       const x = i % this.w;
       const y = (i - x) / this.w;
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const nx = x + dx, ny = y + dy;
+        const nx = x + dx;
+        const ny = y + dy;
         if (!this.inBounds(nx, ny)) continue;
         const j = this.idx(nx, ny);
         if (this.waterFrom[j] !== -1 || this.terrain[j] === TERRAIN.DEEP) continue;
