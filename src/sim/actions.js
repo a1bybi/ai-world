@@ -1,5 +1,6 @@
 // Everything an inhabitant can choose to do.
-// Bridges grow one water-tile at a time (findBridgeWorkSites → raise one length).
+// Bridges grow one water-tile at a time.
+// Settlement projects (bridge/field/store) raise build utility via sim.projectBias.
 
 import { clamp, dist, topN } from '../core/util.js';
 import { TERRAIN } from '../world/world.js';
@@ -822,6 +823,8 @@ export const ACTIONS = {
       const s = ctx.sim.settlementNeeds(settlement);
       const people = s.people || 1;
       const out = [];
+      const pb = ctx.sim.projectBias?.(a, settlement) || 0;
+      const active = ctx.sim.activeProject?.(settlement);
 
       const nearCount = (kind) =>
         ctx.world.structuresOfKind(kind).filter(
@@ -855,6 +858,7 @@ export const ACTIONS = {
           let need = Math.max(def.need(s), 0.55);
           if (far) need = Math.max(need, 0.8);
           if (sites.some((x) => x.extends)) need = Math.max(need, 0.85);
+          if (active?.kind === 'bridge') need = Math.max(need, 0.75);
 
           const purpose =
             spans === 0
@@ -885,14 +889,17 @@ export const ACTIONS = {
           }
 
           const site = sites.find((x) => x.extends) || sites[0];
+          let u =
+            need *
+            purpose *
+            1.7 *
+            (ctx.bias?.work ?? 1) *
+            (0.5 + a.genome.industry);
+          if (active?.kind === 'bridge') u *= 1 + pb;
+
           out.push({
             kind: 'build',
-            u:
-              need *
-              purpose *
-              1.7 *
-              (ctx.bias?.work ?? 1) *
-              (0.5 + a.genome.industry),
+            u,
             payload: {
               structure: 'bridge',
               material: matKey,
@@ -960,7 +967,7 @@ export const ACTIONS = {
           continue;
         }
 
-        const u =
+        let u =
           need *
           purpose *
           1.5 *
@@ -968,6 +975,8 @@ export const ACTIONS = {
           (0.6 + a.skills.build * 0.5) *
           (0.5 + a.genome.industry) *
           (foodEasy ? 1.35 : hungry && kind === 'field' ? 1.6 : 1);
+
+        if (active?.kind === kind) u *= 1 + pb;
 
         out.push({
           kind: 'build',
@@ -986,18 +995,14 @@ export const ACTIONS = {
     },
     run(a, ctx, act) {
       const structure = act.payload.structure;
+      const home = act.payload.settlement || ctx.sim.nearestSettlement(a.x, a.y);
 
       // ── One length of bridge ─────────────────────────────────
       if (structure === 'bridge') {
         const site =
           act.payload.site ||
           act.spot ||
-          (ctx.world.findBridgeWorkSites?.(
-            act.payload.settlement.x,
-            act.payload.settlement.y,
-            26,
-            8,
-          ) || [])[0];
+          (ctx.world.findBridgeWorkSites?.(home.x, home.y, 26, 8) || [])[0];
         if (!site) return 'abort';
         act.spot = { x: site.x, y: site.y };
 
@@ -1036,14 +1041,9 @@ export const ACTIONS = {
         a.stats.built++;
         a.gainSkill('build', 0.05);
         learnStructureUse(a, 'bridge', 'crossing', 0.12, 0.35);
+        ctx.sim.contributeProject?.(a, home, 'bridge', act.payload.material, 2);
 
-        if (
-          ctx.world.bridgeCrosses?.(
-            act.payload.settlement.x,
-            act.payload.settlement.y,
-            28,
-          )
-        ) {
+        if (ctx.world.bridgeCrosses?.(home.x, home.y, 28)) {
           learnStructureUse(a, 'bridge', 'crossing', 0.35, 0.7);
           appraise(a, {
             goalCongruence: 0.9,
@@ -1057,7 +1057,7 @@ export const ACTIONS = {
 
       // ── Other structures ─────────────────────────────────────
       if (!act.spot) {
-        act.spot = ctx.sim.pickBuildSite(a, structure, act.payload.settlement);
+        act.spot = ctx.sim.pickBuildSite(a, structure, home);
       }
       if (!act.spot) return 'abort';
       if (dist(a, act.spot) > 1.2) {
@@ -1079,6 +1079,9 @@ export const ACTIONS = {
         0.12,
         0.3,
       );
+      if (structure === 'field' || structure === 'store') {
+        ctx.sim.contributeProject?.(a, home, structure, material, 0);
+      }
       if (structure === 'field') {
         st.tended = (st.tended || 0) + 0.3;
         st.ripeness = Math.max(st.ripeness || 0, 0.15);
@@ -1186,7 +1189,6 @@ export const ACTIONS = {
         if (ctx.world.fertility) {
           ctx.world.fertility[fi] = clamp(ctx.world.fertility[fi] - 0.04, 0.15, 1);
         }
-
         learnStructureUse(a, 'field', 'sustenance', 0.28, 0.55);
         a.memory.learn('where:field-works', {
           kind: 'place',
@@ -1197,7 +1199,6 @@ export const ACTIONS = {
         a.memory.learn('grain', {
           kind: 'matter', confidence: 0.5, valence: 0.5, source: 'farm',
         });
-
         ctx.sim.record(
           a,
           'harvest',
