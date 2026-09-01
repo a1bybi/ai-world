@@ -1,6 +1,6 @@
-// The society layer: who knows whom, who owes whom, what is held to be wrong,
-// who is buried where, and what the whole thing adds up to.
-// Bridges grow one water-tile at a time until bridgeCrosses is true.
+// The society layer: life, population, settlement economy, projects,
+// leadership, camp knowledge, innovation loss, chronicle.
+// Bridges grow one water-tile at a time (world.findBridgeWorkSites).
 
 import { RNG } from '../core/rng.js';
 import { Language } from '../core/language.js';
@@ -33,6 +33,12 @@ const BALANCE = {
   maxBeliefs: 120,
   maxLostKnowledge: 300,
   maxBridgesPerCamp: 2,
+  foodPerPersonDay: 1.15,
+  projectLaborPerTick: 1,
+  bridgeProjectWood: 8,
+  fieldProjectLabor: 12,
+  storeProjectLabor: 14,
+  campKnowledgeMinHolders: 3,
 };
 
 const NORM_SEEDS = [
@@ -43,6 +49,22 @@ const NORM_SEEDS = [
   { key: 'teaching', label: 'what one knows, all may learn', polarity: 1 },
   { key: 'craft', label: 'a thing well made is owed respect', polarity: 1 },
 ];
+
+function emptySettlementStats() {
+  return {
+    people: 0,
+    children: 0,
+    adults: 0,
+    elders: 0,
+    dependency: 0,
+    foodStock: 0,
+    woodStock: 0,
+    foodDays: 0,
+    hungerMean: 0,
+    bridgeCrosses: false,
+    bridgeSpans: 0,
+  };
+}
 
 export class Simulation {
   constructor(seed = 'aurorae', opts = {}) {
@@ -68,6 +90,7 @@ export class Simulation {
     this.inventionTicks = new Map();
     this.wantedMaterials = new Map();
     this.lexicon = new Map();
+    this.campKnowledge = new Map();
 
     this.generation = 1;
     this.ritualPull = 0;
@@ -90,18 +113,243 @@ export class Simulation {
   get origin() { return this.settlements[0]; }
   get settlementName() { return this.settlements[0]?.name; }
 
+  // ── Settlement economy & projects ─────────────────────────────
+
+  ensureSettlementMeta(s) {
+    if (!s.projects) s.projects = [];
+    if (!s.stats) s.stats = emptySettlementStats();
+    if (s.championId === undefined) s.championId = null;
+  }
+
+  peopleNear(settlement, radius = 18) {
+    return this.living.filter(
+      (a) => Math.hypot(a.x - settlement.x, a.y - settlement.y) < radius,
+    );
+  }
+
+  stockNear(settlement, key, radius = 16) {
+    let n = 0;
+    for (const a of this.peopleNear(settlement, radius)) n += a.count(key) || 0;
+    for (const st of this.world.structuresOfKind('store')) {
+      if (Math.hypot(st.x - settlement.x, st.y - settlement.y) > radius) continue;
+      n += st.stock?.get(key) || 0;
+    }
+    return n;
+  }
+
+  foodStockNear(settlement, radius = 16) {
+    let t = 0;
+    const addMap = (map) => {
+      for (const [k, v] of map || []) {
+        if (this.ont.get(k)?.functions?.sustenance) t += v;
+      }
+    };
+    for (const a of this.peopleNear(settlement, radius)) addMap(a.inventory);
+    for (const st of this.world.structuresOfKind('store')) {
+      if (Math.hypot(st.x - settlement.x, st.y - settlement.y) > radius) continue;
+      addMap(st.stock);
+    }
+    return t;
+  }
+
+  refreshSettlementStats(settlement) {
+    this.ensureSettlementMeta(settlement);
+    const people = this.peopleNear(settlement, 18);
+    const tick = this.world.tick;
+    let children = 0, adults = 0, elders = 0, hunger = 0;
+    for (const a of people) {
+      if (a.isChild(tick)) children++;
+      else if (a.isElder?.(tick) || a.ageAt(tick) >= 50) elders++;
+      else adults++;
+      hunger += a.body.hunger;
+    }
+    const n = people.length || 1;
+    const foodStock = this.foodStockNear(settlement);
+    const woodStock = this.stockNear(settlement, 'wood');
+    const workers = Math.max(1, adults);
+    settlement.stats = {
+      people: people.length,
+      children,
+      adults,
+      elders,
+      dependency: +((children + elders) / workers).toFixed(2),
+      foodStock: Math.round(foodStock),
+      woodStock: Math.round(woodStock),
+      foodDays: +(foodStock / (n * BALANCE.foodPerPersonDay)).toFixed(2),
+      hungerMean: +(hunger / n).toFixed(2),
+      bridgeCrosses: !!this.world.bridgeCrosses?.(settlement.x, settlement.y, 28),
+      bridgeSpans: this.world.bridgeSpanCount?.(settlement.x, settlement.y, 18) ?? 0,
+    };
+    return settlement.stats;
+  }
+
+  syncProjects(settlement) {
+    this.ensureSettlementMeta(settlement);
+    const needs = this.settlementNeeds(settlement);
+    const stats = settlement.stats || this.refreshSettlementStats(settlement);
+    const leaders = this.leaders().filter(
+      (a) => Math.hypot(a.x - settlement.x, a.y - settlement.y) < 20,
+    );
+    settlement.championId = leaders[0]?.id ?? settlement.championId;
+
+    const has = (kind) => settlement.projects.some((p) => p.kind === kind && !p.done);
+    const water = (this.world.waterNearCount?.(settlement.x, settlement.y, 14) ?? 0) > 3;
+
+    if (water && !stats.bridgeCrosses && !has('bridge')) {
+      settlement.projects.push({
+        kind: 'bridge',
+        label: 'span the water',
+        progress: 0,
+        target: BALANCE.bridgeProjectWood,
+        needMaterial: 'wood',
+        materialPaid: 0,
+        championId: settlement.championId,
+        startedTick: this.world.tick,
+        done: false,
+      });
+    }
+    if (needs.fieldDeficit > 0.25 && !has('field')) {
+      settlement.projects.push({
+        kind: 'field',
+        label: 'turn ground for grain',
+        progress: 0,
+        target: BALANCE.fieldProjectLabor,
+        needMaterial: null,
+        materialPaid: 0,
+        championId: settlement.championId,
+        startedTick: this.world.tick,
+        done: false,
+      });
+    }
+    if (needs.storeDeficit > 0.25 && !has('store')) {
+      settlement.projects.push({
+        kind: 'store',
+        label: 'raise a store',
+        progress: 0,
+        target: BALANCE.storeProjectLabor,
+        needMaterial: 'wood',
+        materialPaid: 0,
+        championId: settlement.championId,
+        startedTick: this.world.tick,
+        done: false,
+      });
+    }
+
+    for (const p of settlement.projects) {
+      if (p.kind === 'bridge' && !p.done && stats.bridgeCrosses) {
+        p.done = true;
+        p.progress = p.target;
+        this.record(null, 'first', `The project to ${p.label} is finished — the banks are joined`, {
+          valence: 0.8, intensity: 0.85, landmark: true,
+        });
+      }
+    }
+  }
+
+  activeProject(settlement, kind = null) {
+    this.ensureSettlementMeta(settlement);
+    const list = settlement.projects.filter((p) => !p.done);
+    if (kind) return list.find((p) => p.kind === kind) || null;
+    return (
+      list.find((p) => p.kind === 'bridge') ||
+      list.find((p) => p.kind === 'field') ||
+      list[0] ||
+      null
+    );
+  }
+
+  contributeProject(a, settlement, kind = null, materialKey = null, materialAmt = 0) {
+    this.ensureSettlementMeta(settlement);
+    const p = this.activeProject(settlement, kind);
+    if (!p || p.done) return false;
+
+    p.progress += BALANCE.projectLaborPerTick * (0.7 + (a.skills.build || 0) * 0.5);
+    if (materialKey && materialAmt > 0 && p.needMaterial === materialKey) {
+      p.materialPaid = (p.materialPaid || 0) + materialAmt;
+      p.progress += materialAmt * 0.5;
+    }
+    a.stats.built = (a.stats.built || 0) + 0.15;
+    a.gainSkill?.('build', 0.02);
+
+    if (p.kind === 'bridge') {
+      p.progress = Math.min(p.progress, p.target * 0.98);
+      return true;
+    }
+
+    if (
+      p.progress >= p.target &&
+      (p.needMaterial == null || (p.materialPaid || 0) >= 2)
+    ) {
+      const site = this.pickBuildSite(a, p.kind, settlement);
+      if (site) {
+        this.raiseStructure(a, p.kind, site, materialKey || 'wood');
+        p.done = true;
+        this.record(a, 'first', `${a.name} finished the camp's work to ${p.label}`, {
+          valence: 0.7, intensity: 0.75, landmark: true,
+        });
+      }
+    }
+    return true;
+  }
+
+  projectBias(a, settlement) {
+    if (!settlement) return 0;
+    const st = settlement.stats || this.refreshSettlementStats(settlement);
+    const crisis =
+      st.foodDays < 4 || st.hungerMean > 0.45 || (!st.bridgeCrosses && st.foodDays < 8);
+    if (!crisis) return 0;
+    const p = this.activeProject(settlement);
+    if (!p) return 0;
+    const isChampion = settlement.championId === a.id;
+    return (isChampion ? 0.35 : 0.2) + 0.25 + this.respectFor(a) * 0.15;
+  }
+
+  updateCampKnowledge() {
+    this.campKnowledge.clear();
+    for (const a of this.living) {
+      for (const key of a.memory.knownKeys('recipe')) {
+        if (!a.memory.knows(key, 0.25)) continue;
+        let set = this.campKnowledge.get(key);
+        if (!set) this.campKnowledge.set(key, (set = new Set()));
+        set.add(a.id);
+      }
+    }
+  }
+
+  isCampKnowledge(key) {
+    const set = this.campKnowledge.get(key);
+    return !!(set && set.size >= BALANCE.campKnowledgeMinHolders);
+  }
+
+  updateMarketFromScarcity() {
+    const s = this.origin;
+    if (!s) return;
+    const food = this.foodStockNear(s) + 1;
+    const people = Math.max(1, this.peopleNear(s).length);
+    const pressure = people / food;
+    for (const key of ['grain', 'berry', 'root', 'meat', 'wood']) {
+      const mp = this.marketPrices.get(key) || { price: 1, volume: 0 };
+      const isFood = key !== 'wood';
+      const target = isFood
+        ? clamp(0.5 + pressure * 1.2, 0.3, 8)
+        : clamp(0.8 + 20 / (this.stockNear(s, 'wood') + 1), 0.4, 5);
+      mp.price = mp.price * 0.9 + target * 0.1;
+      this.marketPrices.set(key, mp);
+    }
+  }
+
+  // ── Geography ─────────────────────────────────────────────────
+
   landReachable(sx, sy, maxSteps = 48) {
     const w = this.world;
-    const seen = new Set();
+    const seen = new Set([`${sx},${sy}`]);
     const q = [[sx, sy, 0]];
     const out = new Set([`${sx},${sy}`]);
-    seen.add(`${sx},${sy}`);
     while (q.length) {
       const [x, y, d] = q.shift();
       if (d >= maxSteps) continue;
       for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const nx = x + ox;
-        const ny = y + oy;
+        const nx = x + ox, ny = y + oy;
         const k = `${nx},${ny}`;
         if (seen.has(k) || !w.walkable(nx, ny)) continue;
         seen.add(k);
@@ -115,10 +363,7 @@ export class Simulation {
   riverBlocks(from, to, maxSteps = 70) {
     const w = this.world;
     const key = (x, y) => `${x},${y}`;
-    const landOnly = (x, y) => {
-      if (!w.inBounds(x, y)) return false;
-      return w.at(x, y) > TERRAIN.MARSH;
-    };
+    const landOnly = (x, y) => w.inBounds(x, y) && w.at(x, y) > TERRAIN.MARSH;
     const bfs = (pass) => {
       const seen = new Set([key(from.x | 0, from.y | 0)]);
       const q = [[from.x | 0, from.y | 0, 0]];
@@ -127,8 +372,7 @@ export class Simulation {
         if (x === (to.x | 0) && y === (to.y | 0)) return true;
         if (d >= maxSteps) continue;
         for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-          const nx = x + dx;
-          const ny = y + dy;
+          const nx = x + dx, ny = y + dy;
           const k = key(nx, ny);
           if (seen.has(k) || !pass(nx, ny)) continue;
           seen.add(k);
@@ -143,12 +387,8 @@ export class Simulation {
   farBankTarget(a, radius = 22) {
     const sites = this.world.findBridgeWorkSites?.(a.x, a.y, radius, 10) || [];
     for (const s of sites) {
-      for (const [dx, dy] of [
-        [2, 0], [-2, 0], [0, 2], [0, -2],
-        [3, 0], [-3, 0], [0, 3], [0, -3],
-      ]) {
-        const x = s.x + dx;
-        const y = s.y + dy;
+      for (const [dx, dy] of [[2, 0], [-2, 0], [0, 2], [0, -2], [3, 0], [-3, 0]]) {
+        const x = s.x + dx, y = s.y + dy;
         if (!this.world.inBounds(x, y)) continue;
         if (this.world.at(x, y) <= TERRAIN.MARSH) continue;
         if (Math.hypot(x - a.x, y - a.y) < 6) continue;
@@ -158,8 +398,7 @@ export class Simulation {
     if (this.world.bridgeCrosses?.(a.x, a.y, 28)) {
       for (const b of this.world.structuresOfKind('bridge')) {
         for (const [dx, dy] of [[2, 0], [-2, 0], [0, 2], [0, -2], [3, 0], [-3, 0]]) {
-          const x = b.x + dx;
-          const y = b.y + dy;
+          const x = b.x + dx, y = b.y + dy;
           if (!this.world.inBounds(x, y)) continue;
           if (this.world.at(x, y) <= TERRAIN.MARSH) continue;
           if (Math.hypot(x - a.x, y - a.y) < 8) continue;
@@ -243,8 +482,16 @@ export class Simulation {
     const firstName = this.lang.placeName(rng);
     this.registerLex(firstName, 'founding shore-camp', 'place');
     const founding = {
-      kind: 'settlement', name: firstName, x: cx, y: cy,
-      foundedTick: 0, color: hueFor(0), tier: 'camp',
+      kind: 'settlement',
+      name: firstName,
+      x: cx,
+      y: cy,
+      foundedTick: 0,
+      color: hueFor(0),
+      tier: 'camp',
+      projects: [],
+      stats: emptySettlementStats(),
+      championId: null,
     };
     this.settlements = [founding];
     world.sites.push(founding);
@@ -324,15 +571,13 @@ export class Simulation {
       material: 'wood',
       condition: 1,
       stock: new Map([
-        ['grain', 120],
-        ['berry', 80],
-        ['root', 70],
-        ['water', 40],
-        ['wood', 40],
-        ['stone', 20],
-        ['fibre', 25],
+        ['grain', 120], ['berry', 80], ['root', 70], ['water', 40],
+        ['wood', 40], ['stone', 20], ['fibre', 25],
       ]),
     });
+
+    this.refreshSettlementStats(founding);
+    this.syncProjects(founding);
   }
 
   addAgent(a) {
@@ -350,7 +595,6 @@ export class Simulation {
   }
 
   get dead() { return this.agents.filter((x) => !x.alive); }
-
   byId(id) { return this.index.get(id); }
 
   rebuildGrid() {
@@ -383,6 +627,15 @@ export class Simulation {
     w.step(1);
     this.livingCache = null;
     this.rebuildGrid();
+
+    if (w.tick % 6 === 0) {
+      for (const s of this.settlements) {
+        this.refreshSettlementStats(s);
+        this.syncProjects(s);
+      }
+      this.updateCampKnowledge();
+      this.updateMarketFromScarcity();
+    }
 
     const ctx = {
       sim: this, world: w, ont: this.ont, rng: this.rng, tick: w.tick,
@@ -457,7 +710,6 @@ export class Simulation {
   handOffKnowledge(a) {
     const recipes = a.memory.knownKeys('recipe');
     if (!recipes.length) return 0;
-
     const recipients = [];
     if (a.partner) {
       const p = this.byId(a.partner);
@@ -471,25 +723,20 @@ export class Simulation {
       .filter((o) => o.alive && !o.isChild(this.world.tick) && o.id !== a.id)
       .sort((x, y) => dist(a, x) - dist(a, y))
       .slice(0, 3);
-    for (const o of near) {
-      if (!recipients.includes(o)) recipients.push(o);
-    }
+    for (const o of near) if (!recipients.includes(o)) recipients.push(o);
     if (!recipients.length) return 0;
 
     let passed = 0;
     for (const key of recipes) {
+      if (this.isCampKnowledge(key)) continue;
       const holders = this.living.filter(
         (x) => x.id !== a.id && x.memory.knows(key, 0.25),
       ).length;
       if (holders > 1 && this.rng.bool(0.55)) continue;
-
       const belief = a.memory.belief(key);
       if (!belief) continue;
-
-      const pupil =
-        recipients.find((r) => !r.memory.knows(key, 0.25)) || recipients[0];
+      const pupil = recipients.find((r) => !r.memory.knows(key, 0.25)) || recipients[0];
       if (!pupil || pupil.memory.knows(key, 0.4)) continue;
-
       pupil.memory.learn(key, {
         kind: 'recipe',
         confidence: Math.min(0.75, (belief.confidence || 0.5) * 0.7 * (pupil.genome.learning || 0.5)),
@@ -501,20 +748,10 @@ export class Simulation {
       a.stats.taught = (a.stats.taught || 0) + 1;
       this.counters.lessons++;
       passed++;
-
       const word = this.ont.get(key)?.word || key;
-      this.record(
-        a,
-        'teach',
-        `As ${a.name} failed, ${pupil.name} took the knowing of ${word}`,
-        {
-          actors: [a.id, pupil.id],
-          valence: 0.35,
-          intensity: 0.55,
-          concept: key,
-          quiet: true,
-        },
-      );
+      this.record(a, 'teach', `As ${a.name} failed, ${pupil.name} took the knowing of ${word}`, {
+        actors: [a.id, pupil.id], valence: 0.35, intensity: 0.55, concept: key, quiet: true,
+      });
     }
     return passed;
   }
@@ -526,27 +763,20 @@ export class Simulation {
     a.deathCause = cause;
     this.livingCache = null;
     this.counters.deaths++;
-
     this.handOffKnowledge(a);
 
     for (const key of a.memory.knownKeys('recipe')) {
+      if (this.isCampKnowledge(key)) continue;
       const stillKnown = this.living.some(
         (x) => x.id !== a.id && x.memory.knows(key, 0.2),
       );
       if (stillKnown) continue;
       const c = this.ont.get(key);
       const word = c?.word || key;
-      this.lostKnowledge.push({
-        key, word, lastKeeper: a.name, tick: this.world.tick,
-      });
-      if (this.lostKnowledge.length > BALANCE.maxLostKnowledge) {
-        this.lostKnowledge.shift();
-      }
+      this.lostKnowledge.push({ key, word, lastKeeper: a.name, tick: this.world.tick });
+      if (this.lostKnowledge.length > BALANCE.maxLostKnowledge) this.lostKnowledge.shift();
       this.record(a, 'loss', `How to make ${word} was lost — ${a.name} was the last who knew`, {
-        valence: -0.55,
-        intensity: 0.7,
-        concept: key,
-        landmark: true,
+        valence: -0.55, intensity: 0.7, concept: key, landmark: true,
       });
     }
 
@@ -572,16 +802,27 @@ export class Simulation {
       a.partner = null;
     }
 
+    for (const s of this.settlements) {
+      if (s.championId === a.id) {
+        s.championId = null;
+        const next = this.leaders().find(
+          (x) => x.alive && Math.hypot(x.x - s.x, x.y - s.y) < 20,
+        );
+        if (next) {
+          s.championId = next.id;
+          this.record(next, 'first', `After ${a.name} fell, ${next.name} was the one they listened to`, {
+            valence: 0.35, intensity: 0.7, landmark: true,
+          });
+        }
+      }
+    }
+
     const age = Math.max(0, a.ageAt(this.world.tick));
     this.record(
       a,
       'death',
       `${a.name} died of ${cause} at ${age < 1 ? 'an infant' : Math.round(age)}`,
-      {
-        valence: -0.8,
-        intensity: 0.9,
-        landmark: age > 30,
-      },
+      { valence: -0.8, intensity: 0.9, landmark: age > 30 },
     );
     this.chronicle.noteCause(cause);
 
@@ -621,8 +862,8 @@ export class Simulation {
       }
     }
     for (const id of ev.actors) {
-      const a = this.byId(id);
-      if (a) a.memory.remember(ev);
+      const ag = this.byId(id);
+      if (ag) ag.memory.remember(ev);
     }
     if (agent && (opts.intensity ?? 0) > 0.45) {
       for (const o of this.nearby(agent, 6)) {
@@ -637,16 +878,13 @@ export class Simulation {
   }
 
   converse(a, o) {
-    const rng = this.rng;
     a.gainSkill('speak', 0.012);
     o.gainSkill('speak', 0.012);
     a.adjustRel(o, { familiarity: 0.05, trust: 0.012 });
     o.adjustRel(a, { familiarity: 0.05, trust: 0.012 });
-
     const pull = 0.06 * (a.genome.empathy + 0.3);
     o.affect.mood = clamp(o.affect.mood + (a.affect.mood - o.affect.mood) * pull, -1, 1);
     a.affect.mood = clamp(a.affect.mood + (o.affect.mood - a.affect.mood) * pull * 0.7, -1, 1);
-
     const rapport = (x, y) => clamp(
       0.02 +
         (1 - Math.abs(x.affect.mood - y.affect.mood)) * 0.02 +
@@ -655,7 +893,6 @@ export class Simulation {
     );
     a.adjustRel(o, { affection: rapport(a, o) });
     o.adjustRel(a, { affection: rapport(o, a) });
-
     appraise(a, {
       goalCongruence: 0.2 + o.rel(a).affection * 0.3, agency: 'other',
       intensity: 0.3, kind: 'talk', social: o.id,
@@ -664,8 +901,7 @@ export class Simulation {
       goalCongruence: 0.2 + a.rel(o).affection * 0.3, agency: 'other',
       intensity: 0.3, kind: 'talk', social: a.id,
     });
-
-    if (rng.bool(0.5)) {
+    if (this.rng.bool(0.5)) {
       const topic = this.pickTopic(a, o);
       if (topic) {
         const text = this.utterance(a, o, topic);
@@ -706,30 +942,19 @@ export class Simulation {
     for (const key of a.memory.knownKeys('recipe').slice(0, 12)) {
       if (!o.memory.knows(key, 0.3)) {
         options.push({
-          kind: 'teach',
-          transfer: key,
-          concept: key,
-          valence: 0.4,
+          kind: 'teach', transfer: key, concept: key, valence: 0.4,
           weight: 1.2 + (a.isElder(this.world.tick) ? 0.5 : 0),
         });
       }
     }
     for (const key of a.memory.knownKeys('place').slice(0, 6)) {
-      options.push({
-        kind: 'place',
-        transfer: key,
-        concept: key,
-        valence: 0.2,
-        weight: 0.6,
-      });
+      options.push({ kind: 'place', transfer: key, concept: key, valence: 0.2, weight: 0.6 });
     }
     const nearPeople = this.nearby(a, 12).filter((x) => x.id !== a.id && x.id !== o.id);
     if (nearPeople.length) {
       const subj = this.rng.pick(nearPeople);
       options.push({
-        kind: 'gossip',
-        gossipAbout: subj,
-        valence: a.rel(subj).affection,
+        kind: 'gossip', gossipAbout: subj, valence: a.rel(subj).affection,
         weight: 0.5 + a.genome.sociability,
       });
     }
@@ -750,9 +975,7 @@ export class Simulation {
       const word = this.ont.get(topic.concept)?.word || topic.concept;
       return `${a.name} shows ${name} the making of ${word}.`;
     }
-    if (topic.kind === 'place' && topic.concept) {
-      return `${a.name} tells ${name} of a place they know.`;
-    }
+    if (topic.kind === 'place') return `${a.name} tells ${name} of a place they know.`;
     if (topic.kind === 'gossip' && topic.gossipAbout) {
       return `${a.name} speaks of ${topic.gossipAbout.name} with ${name}.`;
     }
@@ -775,16 +998,11 @@ export class Simulation {
     o.stats.learned = (o.stats.learned || 0) + 1;
     this.counters.lessons++;
     a.gainSkill?.('teach', 0.04);
-
     const c = this.ont.get(key);
     const word = c?.word || key;
     if (c?.bestFn) this.registerLex(word, c.bestFn, 'recipe', key);
-
     this.record(a, 'teach', `${a.name} taught ${o.name} the making of ${word}`, {
-      actors: [a.id, o.id],
-      valence: 0.45,
-      intensity: 0.45,
-      concept: key,
+      actors: [a.id, o.id], valence: 0.45, intensity: 0.45, concept: key,
     });
     this.upholdNorm('teaching', 0.02);
     a.adjustRel(o, { affection: 0.04, familiarity: 0.05 });
@@ -812,7 +1030,6 @@ export class Simulation {
       a.ageAt(this.world.tick) > 15 &&
       o.ageAt(this.world.tick) > 15;
     if (!want) return false;
-
     a.partner = o.id;
     o.partner = a.id;
     a.adjustRel(o, { affection: 0.2, trust: 0.15, familiarity: 0.1 });
@@ -835,7 +1052,6 @@ export class Simulation {
           const c = this.byId(cid);
           if (!c?.alive || !c.isChild(this.world.tick)) continue;
           if (dist(a, c) > 10) continue;
-
           if (c.body.hunger >= 0.35) {
             let food = null;
             for (const [k, v] of a.inventory) {
@@ -884,6 +1100,11 @@ export class Simulation {
         }
       }
 
+      const home = this.nearestSettlement(a.x, a.y);
+      const foodDays = home?.stats?.foodDays ?? 5;
+      const dep = home?.stats?.dependency ?? 1;
+      const birthScale = clamp(0.55 + foodDays * 0.08 - dep * 0.15, 0.25, 1.4);
+
       if (
         a.partner &&
         !a.body.pregnant &&
@@ -902,6 +1123,7 @@ export class Simulation {
           dist(a, p) < 4 &&
           this.rng.bool(
             BALANCE.conceptionChance *
+              birthScale *
               ((a.genome.fertility + p.genome.fertility) / 2),
           )
         ) {
@@ -931,13 +1153,8 @@ export class Simulation {
     const name = this.lang.personName(this.rng);
     this.registerLex(name, 'child', 'person');
     const child = new Agent({
-      name,
-      genome: g,
-      x: mother.x,
-      y: mother.y,
-      tick: this.world.tick,
-      world: this.world,
-      tongue: this.lang.name,
+      name, genome: g, x: mother.x, y: mother.y,
+      tick: this.world.tick, world: this.world, tongue: this.lang.name,
     });
     child.bornTick = this.world.tick;
     child.motherId = mother.id;
@@ -946,7 +1163,6 @@ export class Simulation {
     child.body.hunger = 0.15;
     child.body.thirst = 0.1;
     child.body.health = 0.95;
-
     for (const food of ['berry', 'root', 'grain', 'water']) {
       child.memory.learn(food, {
         kind: 'matter', confidence: 0.7, valence: 0.5, source: 'upbringing',
@@ -958,10 +1174,8 @@ export class Simulation {
       father.children = father.children || [];
       father.children.push(child.id);
     }
-
     child.add('berry', 4);
     child.add('water', 3);
-
     this.addAgent(child);
     this.counters.births++;
     this.record(
@@ -970,9 +1184,7 @@ export class Simulation {
       `${child.name} was born to ${mother.name}${father ? ` and ${father.name}` : ''}`,
       {
         actors: [mother.id, child.id].concat(father ? [father.id] : []),
-        valence: 0.85,
-        intensity: 0.9,
-        landmark: true,
+        valence: 0.85, intensity: 0.9, landmark: true,
       },
     );
     return child;
@@ -1014,7 +1226,6 @@ export class Simulation {
     o.rel(a).exchanges = (o.rel(a).exchanges || 0) + 1;
     a.adjustRel(o, { trust: 0.04, familiarity: 0.03 });
     o.adjustRel(a, { trust: 0.04, familiarity: 0.03 });
-
     for (const key of [deal.give, deal.take]) {
       const mp = this.marketPrices.get(key) || { price: 1, volume: 0 };
       mp.volume = (mp.volume || 0) + 1;
@@ -1022,7 +1233,6 @@ export class Simulation {
       this.marketPrices.set(key, mp);
       this.chronicle.notePrice(key, mp.price, this.world.tick);
     }
-
     const wa = this.ont.get(deal.give)?.word || deal.give;
     const wb = this.ont.get(deal.take)?.word || deal.take;
     this.record(a, 'trade', `${a.name} traded ${wa} for ${wb} with ${o.name}`, {
@@ -1051,8 +1261,7 @@ export class Simulation {
     this.counters.conflicts++;
     const power = (x) =>
       0.3 + x.body.energy * 0.4 + x.skills.fight * 0.8 + x.genome.aggression * 0.3;
-    const pa = power(a);
-    const po = power(o);
+    const pa = power(a), po = power(o);
     const aWins = this.rng.next() < pa / (pa + po);
     const winner = aWins ? a : o;
     const loser = aWins ? o : a;
@@ -1088,14 +1297,12 @@ export class Simulation {
         (s) => s.kind === kind && Math.hypot(s.x - settlement.x, s.y - settlement.y) < 16,
       ).length;
     const need = (have, want) => clamp((want - have) / Math.max(1, want));
-
     const waterNear = this.world.waterNearCount?.(settlement.x, settlement.y, 14) ?? 0;
     const waterFar = this.world.waterNearCount?.(settlement.x, settlement.y, 22) ?? 0;
     const water = Math.max(waterNear, Math.floor(waterFar / 2));
     const crossed = this.world.bridgeCrosses?.(settlement.x, settlement.y, 28) ? 1 : 0;
     const bridgesWanted = water < 4 ? 0 : 1;
-    const bridgeDeficit =
-      bridgesWanted && !crossed ? 0.9 : need(crossed, bridgesWanted);
+    const bridgeDeficit = bridgesWanted && !crossed ? 0.9 : need(crossed, bridgesWanted);
 
     return {
       people,
@@ -1132,10 +1339,7 @@ export class Simulation {
       if (score > (best?.score || 0.05)) best = { key: k, score };
     }
     for (const k of ['wood', 'stone', 'clay', 'fibre', 'reed']) {
-      if (a.count(k) > 0) {
-        const score = 0.2;
-        if (score > (best?.score || 0)) best = { key: k, score };
-      }
+      if (a.count(k) > 0 && 0.2 > (best?.score || 0)) best = { key: k, score: 0.2 };
     }
     for (const s of this.world.structuresOfKind('store')) {
       if (!s.stock || dist(a, s) > 14) continue;
@@ -1152,28 +1356,24 @@ export class Simulation {
 
   pickBuildSite(a, kind, settlement) {
     const center = settlement || this.nearestSettlement(a.x, a.y);
-
     if (kind === 'bridge') {
       const sites = this.world.findBridgeWorkSites?.(center.x, center.y, 26, 12) || [];
       if (!sites.length) return null;
       const pick = sites.find((s) => s.extends) || sites[0];
       return { x: pick.x, y: pick.y };
     }
-
     const ring =
       kind === 'field' ? 5 :
       kind === 'shelter' || kind === 'hearth' ? 3 :
       kind === 'store' || kind === 'well' ? 4 :
       kind === 'plaza' || kind === 'shrine' ? 6 :
       kind === 'workshop' ? 5 : 4;
-
     for (let attempt = 0; attempt < 60; attempt++) {
       const angle = this.rng.float(0, Math.PI * 2);
       const rad = ring + this.rng.float(-1.5, 2.2);
       const x = clamp(Math.round(center.x + Math.cos(angle) * rad), 1, this.world.w - 2);
       const y = clamp(Math.round(center.y + Math.sin(angle) * rad), 1, this.world.h - 2);
-      if (!this.world.walkable(x, y)) continue;
-      if (this.world.structureAt(x, y)) continue;
+      if (!this.world.walkable(x, y) || this.world.structureAt(x, y)) continue;
       if (kind === 'field') {
         const t = this.world.at(x, y);
         if (t !== TERRAIN.MEADOW && t !== TERRAIN.GRASS) continue;
@@ -1200,6 +1400,9 @@ export class Simulation {
       foundedTick: this.world.tick,
       color: hueFor(this.settlements.length),
       tier: 'camp',
+      projects: [],
+      stats: emptySettlementStats(),
+      championId: a.id,
     };
     this.settlements.push(settlement);
     this.world.sites.push(settlement);
@@ -1208,6 +1411,7 @@ export class Simulation {
     });
     appraise(a, { goalCongruence: 0.7, agency: 'self', intensity: 0.8, kind: 'first', novelty: 1 });
     this.reputationDelta(a, 0.06);
+    this.refreshSettlementStats(settlement);
     return settlement;
   }
 
@@ -1226,62 +1430,35 @@ export class Simulation {
         }
       }
       if (!spanId) spanId = `span-${this.world.tick}-${a.id}`;
-
       const s = {
-        kind: 'bridge',
-        x: spot.x,
-        y: spot.y,
-        word,
-        builtBy: a.name,
-        builtTick: this.world.tick,
-        material: materialKey,
-        condition: 1,
-        stock: new Map(),
-        occupants: [],
-        spanId,
+        kind: 'bridge', x: spot.x, y: spot.y, word,
+        builtBy: a.name, builtTick: this.world.tick, material: materialKey,
+        condition: 1, stock: new Map(), occupants: [], spanId,
       };
       this.world.addStructure(s);
-
-      const tilesInSpan = this.world
-        .structuresOfKind('bridge')
-        .filter((b) => b.spanId === spanId).length;
+      const tilesInSpan = this.world.structuresOfKind('bridge').filter((b) => b.spanId === spanId).length;
       const crossed = this.world.bridgeCrosses?.(settlement.x, settlement.y, 28);
-
       if (crossed && tilesInSpan >= 2) {
-        this.record(
-          a,
-          'first',
-          `${a.name} closed the crossing — the ${word} reaches the other bank`,
-          { valence: 0.85, intensity: 0.95, landmark: true },
-        );
+        this.record(a, 'first', `${a.name} closed the crossing — the ${word} reaches the other bank`, {
+          valence: 0.85, intensity: 0.95, landmark: true,
+        });
       } else if (tilesInSpan === 1) {
-        this.record(
-          a,
-          'build',
-          `${a.name} laid the first length of a ${word} into the water`,
-          { valence: 0.5, intensity: 0.55 },
-        );
+        this.record(a, 'build', `${a.name} laid the first length of a ${word} into the water`, {
+          valence: 0.5, intensity: 0.55,
+        });
       } else {
-        this.record(
-          a,
-          'build',
-          `${a.name} laid another length of the ${word} (${tilesInSpan} so far)`,
-          { valence: 0.4, intensity: 0.4, quiet: true },
-        );
+        this.record(a, 'build', `${a.name} laid another length of the ${word} (${tilesInSpan} so far)`, {
+          valence: 0.4, intensity: 0.4, quiet: true,
+        });
       }
+      this.contributeProject(a, settlement, 'bridge', materialKey, 2);
       return s;
     }
 
     const s = {
-      kind,
-      x: spot.x,
-      y: spot.y,
-      word,
-      builtBy: a.name,
-      builtTick: this.world.tick,
-      material: materialKey,
-      condition: 1,
-      stock: new Map(),
+      kind, x: spot.x, y: spot.y, word,
+      builtBy: a.name, builtTick: this.world.tick, material: materialKey,
+      condition: 1, stock: new Map(),
       ripeness: kind === 'field' ? 0.15 : undefined,
       tended: kind === 'field' ? 0.3 : undefined,
       occupants: [],
@@ -1307,6 +1484,9 @@ export class Simulation {
         }
       }
     }
+    if (kind === 'field' || kind === 'store') {
+      this.contributeProject(a, settlement, kind, materialKey, 0);
+    }
     return s;
   }
 
@@ -1314,14 +1494,10 @@ export class Simulation {
     if (this.world.tick % 6) return;
     const growth =
       this.world.season === 'winter' ? 0.2 :
-      this.world.season === 'summer' ? 1.25 :
-      0.95;
+      this.world.season === 'summer' ? 1.25 : 0.95;
     for (const f of this.world.structuresOfKind('field')) {
       const care = clamp(f.tended || 0);
-      f.ripeness = clamp(
-        (f.ripeness || 0) + 0.008 * growth * (0.5 + care),
-        0, 1,
-      );
+      f.ripeness = clamp((f.ripeness || 0) + 0.008 * growth * (0.5 + care), 0, 1);
       f.tended = Math.max(0, (f.tended || 0) - 0.02);
       const fi = this.world.idx(f.x, f.y);
       if (this.world.fertility) {
@@ -1593,11 +1769,20 @@ export class Simulation {
       }
     }
     const leaders = this.leaders();
-    if (leaders[0] && this.respectFor(leaders[0]) > 0.4 && !leaders[0].titles.includes('the one they listen to')) {
+    if (
+      leaders[0] &&
+      this.respectFor(leaders[0]) > 0.4 &&
+      !leaders[0].titles.includes('the one they listen to')
+    ) {
       leaders[0].titles.push('the one they listen to');
       this.record(leaders[0], 'first', `${leaders[0].name} became the one they listen to`, {
         valence: 0.5, intensity: 0.8, landmark: true,
       });
+      for (const s of this.settlements) {
+        if (Math.hypot(leaders[0].x - s.x, leaders[0].y - s.y) < 20) {
+          s.championId = leaders[0].id;
+        }
+      }
     }
   }
 
@@ -1654,20 +1839,49 @@ export class Simulation {
   settlementReport(settlement = null) {
     const s = settlement || this.origin;
     if (!s) return null;
+    this.refreshSettlementStats(s);
+    this.syncProjects(s);
     const n = this.settlementNeeds(s);
     const structs = {};
     for (const st of this.world.structures) {
       if (Math.hypot(st.x - s.x, st.y - s.y) > 16) continue;
       structs[st.kind] = (structs[st.kind] || 0) + 1;
     }
+    const champ = s.championId && this.byId(s.championId);
     return {
       name: s.name,
-      people: n.people,
-      structures: structs,
-      bridgeSpans: this.world.bridgeSpanCount?.(s.x, s.y, 18) ?? 0,
-      bridgeCrosses: !!this.world.bridgeCrosses?.(s.x, s.y, 28),
+      stats: s.stats,
       deficits: n,
+      structures: structs,
+      projects: (s.projects || []).map((p) => ({
+        kind: p.kind,
+        label: p.label,
+        progress: +Math.min(1, p.progress / Math.max(1, p.target)).toFixed(2),
+        done: !!p.done,
+      })),
+      leader: champ ? champ.name : null,
       food: this.totalFood(),
+    };
+  }
+
+  societyReport() {
+    return {
+      day: this.world.dayNumber,
+      year: this.world.year,
+      population: this.living.length,
+      births: this.counters.births,
+      deaths: this.counters.deaths,
+      settlements: this.settlements.map((s) => this.settlementReport(s)),
+      campRecipes: [...this.campKnowledge.entries()]
+        .filter(([, set]) => set.size >= BALANCE.campKnowledgeMinHolders)
+        .map(([key, set]) => ({
+          key,
+          word: this.ont.get(key)?.word || key,
+          holders: set.size,
+        })),
+      prices: [...this.marketPrices.entries()].map(([k, v]) => ({
+        key: k, price: +v.price.toFixed(2),
+      })),
     };
   }
 
@@ -1685,6 +1899,7 @@ export class Simulation {
         tier: c.tier ?? null,
         uses: c.uses || 0,
         holders: this.living.filter((a) => a.memory.knows(key, 0.25)).length,
+        camp: this.isCampKnowledge(key),
       });
     }
     return rows.sort((a, b) => b.tick - a.tick).slice(0, limit);
@@ -1695,7 +1910,6 @@ export class Simulation {
     const matter = new Map();
     const norms = new Map();
     const places = new Map();
-
     for (const a of this.living) {
       for (const b of a.memory.semantic.values()) {
         if (b.confidence < 0.2) continue;
@@ -1712,7 +1926,6 @@ export class Simulation {
         m.set(b.key, cur);
       }
     }
-
     const top = (map, n = 12) =>
       [...map.entries()]
         .map(([key, v]) => {
@@ -1729,7 +1942,6 @@ export class Simulation {
         })
         .sort((a, b) => b.holders - a.holders || b.confidence - a.confidence)
         .slice(0, n);
-
     return {
       tick: this.world.tick,
       day: this.world.dayNumber,
@@ -1750,15 +1962,11 @@ export class Simulation {
   resourceSummary() {
     const inv = new Map();
     const add = (k, v) => inv.set(k, (inv.get(k) || 0) + v);
-
-    for (const a of this.living) {
-      for (const [k, v] of a.inventory) add(k, v);
-    }
+    for (const a of this.living) for (const [k, v] of a.inventory) add(k, v);
     for (const s of this.world.structuresOfKind('store')) {
       if (!s.stock) continue;
       for (const [k, v] of s.stock) add(k, v);
     }
-
     return [...inv.entries()]
       .map(([key, amount]) => {
         const c = this.ont.get(key);
