@@ -1,5 +1,6 @@
 // The society layer: who knows whom, who owes whom, what is held to be wrong,
 // who is buried where, and what the whole thing adds up to.
+// Bridges are multi-tile spans (world.findBridgeSpan + raiseStructure).
 
 import { RNG } from '../core/rng.js';
 import { Language } from '../core/language.js';
@@ -111,10 +112,6 @@ export class Simulation {
     return out;
   }
 
-  /**
-   * Land-only path fails, but walkable (bridges) path could succeed.
-   * Used to decide that a bridge is still needed for a real crossing.
-   */
   riverBlocks(from, to, maxSteps = 70) {
     const w = this.world;
     const key = (x, y) => `${x},${y}`;
@@ -143,9 +140,6 @@ export class Simulation {
     return !bfs(landOnly) && bfs((x, y) => w.walkable(x, y));
   }
 
-  /**
-   * Walkable dry tile on the far side of nearby water (explore / pressure).
-   */
   farBankTarget(a, radius = 22) {
     const sites = this.world.findBridgeSites?.(a.x, a.y, radius, 3, 10) || [];
     for (const s of sites) {
@@ -158,14 +152,16 @@ export class Simulation {
         const y = s.y + dy;
         if (!this.world.inBounds(x, y)) continue;
         if (this.world.at(x, y) <= TERRAIN.MARSH) continue;
-        if (!this.world.walkable(x, y) && this.world.structuresOfKind('bridge').length === 0) {
-          // still useful as a "want to reach" point for bridge pressure
-        }
         if (Math.hypot(x - a.x, y - a.y) < 7) continue;
         if (this.riverBlocks(a, { x, y }, 50)) {
           return { x, y };
         }
       }
+    }
+    // Also try endLand of a known span blueprint
+    const span = this.world.findBridgeSpan?.(a.x, a.y, radius, 8);
+    if (span?.endLand) {
+      if (this.riverBlocks(a, span.endLand, 50)) return span.endLand;
     }
     return null;
   }
@@ -1092,6 +1088,8 @@ export class Simulation {
     const waterNear = this.world.waterNearCount?.(settlement.x, settlement.y, 14) ?? 0;
     const waterFar = this.world.waterNearCount?.(settlement.x, settlement.y, 22) ?? 0;
     const water = Math.max(waterNear, Math.floor(waterFar / 2));
+    const bridgeSpans =
+      this.world.bridgeSpanCount?.(settlement.x, settlement.y, 18) ?? count('bridge');
     const bridgesWanted =
       water < 4 ? 0 : Math.min(BALANCE.maxBridgesPerCamp, Math.max(1, Math.ceil(people / 25)));
 
@@ -1106,7 +1104,7 @@ export class Simulation {
       shrineDeficit: need(count('shrine'), people > 18 ? 1 : 0),
       wallDeficit: need(count('wall'), people > 40 ? 1 : 0),
       hallDeficit: need(count('hall'), people > 28 ? 1 : 0),
-      bridgeDeficit: need(count('bridge'), bridgesWanted),
+      bridgeDeficit: need(bridgeSpans, bridgesWanted),
       pathDeficit: need(count('path'), people > 8 ? Math.ceil(people / 15) : 0),
       plazaDeficit: need(count('plaza'), people > 20 ? 1 : 0),
     };
@@ -1152,10 +1150,9 @@ export class Simulation {
     const center = settlement || this.nearestSettlement(a.x, a.y);
 
     if (kind === 'bridge') {
-      const sites = this.world.findBridgeSites?.(center.x, center.y, 24, 4, 16) || [];
-      if (sites.length) {
-        const top = sites.slice(0, Math.min(5, sites.length));
-        return this.rng.pick(top);
+      const span = this.world.findBridgeSpan?.(center.x, center.y, 26, 8);
+      if (span?.tiles?.length) {
+        return { x: span.tiles[0].x, y: span.tiles[0].y, span };
       }
       return null;
     }
@@ -1218,10 +1215,64 @@ export class Simulation {
     const settlement = this.nearestSettlement(spot.x, spot.y);
     const word = this.lang.word(`struct:${kind}`);
     this.registerLex(word, kind, 'structure');
+
+    // ── Multi-tile bridge span ─────────────────────────────────
+    if (kind === 'bridge') {
+      const span =
+        spot.span ||
+        this.world.findBridgeSpan?.(spot.x, spot.y, 26, 8) ||
+        this.world.findBridgeSpan?.(settlement.x, settlement.y, 26, 8);
+
+      if (!span?.tiles?.length) return null;
+
+      const spanId = `span-${this.world.tick}-${a.id}`;
+      let first = null;
+      for (const t of span.tiles) {
+        if (this.world.structureAt(t.x, t.y)) continue;
+        const s = {
+          kind: 'bridge',
+          x: t.x,
+          y: t.y,
+          word,
+          builtBy: a.name,
+          builtTick: this.world.tick,
+          material: materialKey,
+          condition: 1,
+          stock: new Map(),
+          occupants: [],
+          spanId,
+          spanLen: span.length,
+        };
+        this.world.addStructure(s);
+        if (!first) first = s;
+      }
+
+      const spans = this.world.bridgeSpanCount?.(settlement.x, settlement.y, 22) ?? 1;
+      const firstEver = spans <= 1;
+      this.record(
+        a,
+        firstEver ? 'first' : 'build',
+        firstEver
+          ? `${a.name} spanned the water with ${word} — ${span.length} lengths of ${
+              this.ont.get(materialKey)?.word || materialKey
+            }`
+          : `${a.name} raised a ${word} across the water (${span.length} lengths)`,
+        { valence: 0.75, intensity: firstEver ? 0.95 : 0.55, landmark: firstEver },
+      );
+      return first;
+    }
+
+    // ── Ordinary structures ────────────────────────────────────
     const s = {
-      kind, x: spot.x, y: spot.y, word,
-      builtBy: a.name, builtTick: this.world.tick, material: materialKey,
-      condition: 1, stock: new Map(),
+      kind,
+      x: spot.x,
+      y: spot.y,
+      word,
+      builtBy: a.name,
+      builtTick: this.world.tick,
+      material: materialKey,
+      condition: 1,
+      stock: new Map(),
       ripeness: kind === 'field' ? 0.15 : undefined,
       tended: kind === 'field' ? 0.3 : undefined,
       occupants: [],
@@ -1229,14 +1280,14 @@ export class Simulation {
     this.world.addStructure(s);
     const existing = this.world.structuresOfKind(kind).length;
     const first = existing === 1;
-    const riverNote = kind === 'bridge' ? ' on the water' : '';
     this.record(
-      a, first ? 'first' : 'build',
+      a,
+      first ? 'first' : 'build',
       first
-        ? `${a.name} raised the first ${word} of ${settlement.name} — ${kind}${riverNote}, out of ${
+        ? `${a.name} raised the first ${word} of ${settlement.name} — ${kind}, out of ${
             this.ont.get(materialKey)?.word || materialKey
           }`
-        : `${a.name} raised a ${word}${riverNote}`,
+        : `${a.name} raised a ${word}`,
       { valence: 0.7, intensity: first ? 0.95 : 0.5, landmark: first },
     );
     if (kind === 'shelter') {
@@ -1600,14 +1651,15 @@ export class Simulation {
       if (Math.hypot(st.x - s.x, st.y - s.y) > 16) continue;
       structs[st.kind] = (structs[st.kind] || 0) + 1;
     }
+    const spans = this.world.bridgeSpanCount?.(s.x, s.y, 18) ?? 0;
     const far = this.farBankTarget({ x: s.x, y: s.y }, 22);
     return {
       name: s.name,
       people: n.people,
       structures: structs,
+      bridgeSpans: spans,
       deficits: n,
-      bridges: structs.bridge || 0,
-      farBankStillBlocked: !!far && (structs.bridge || 0) === 0,
+      farBankStillBlocked: !!far && spans === 0,
       food: this.totalFood(),
     };
   }
