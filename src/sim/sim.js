@@ -111,6 +111,65 @@ export class Simulation {
     return out;
   }
 
+  /**
+   * Land-only path fails, but walkable (bridges) path could succeed.
+   * Used to decide that a bridge is still needed for a real crossing.
+   */
+  riverBlocks(from, to, maxSteps = 70) {
+    const w = this.world;
+    const key = (x, y) => `${x},${y}`;
+    const landOnly = (x, y) => {
+      if (!w.inBounds(x, y)) return false;
+      return w.at(x, y) > TERRAIN.MARSH;
+    };
+    const bfs = (pass) => {
+      const seen = new Set([key(from.x | 0, from.y | 0)]);
+      const q = [[from.x | 0, from.y | 0, 0]];
+      while (q.length) {
+        const [x, y, d] = q.shift();
+        if (x === (to.x | 0) && y === (to.y | 0)) return true;
+        if (d >= maxSteps) continue;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = x + dx;
+          const ny = y + dy;
+          const k = key(nx, ny);
+          if (seen.has(k) || !pass(nx, ny)) continue;
+          seen.add(k);
+          q.push([nx, ny, d + 1]);
+        }
+      }
+      return false;
+    };
+    return !bfs(landOnly) && bfs((x, y) => w.walkable(x, y));
+  }
+
+  /**
+   * Walkable dry tile on the far side of nearby water (explore / pressure).
+   */
+  farBankTarget(a, radius = 22) {
+    const sites = this.world.findBridgeSites?.(a.x, a.y, radius, 3, 10) || [];
+    for (const s of sites) {
+      for (const [dx, dy] of [
+        [2, 0], [-2, 0], [0, 2], [0, -2],
+        [3, 0], [-3, 0], [0, 3], [0, -3],
+        [2, 2], [-2, -2], [2, -2], [-2, 2],
+      ]) {
+        const x = s.x + dx;
+        const y = s.y + dy;
+        if (!this.world.inBounds(x, y)) continue;
+        if (this.world.at(x, y) <= TERRAIN.MARSH) continue;
+        if (!this.world.walkable(x, y) && this.world.structuresOfKind('bridge').length === 0) {
+          // still useful as a "want to reach" point for bridge pressure
+        }
+        if (Math.hypot(x - a.x, y - a.y) < 7) continue;
+        if (this.riverBlocks(a, { x, y }, 50)) {
+          return { x, y };
+        }
+      }
+    }
+    return null;
+  }
+
   registerLex(surface, gloss, kind = 'concept', referentId = null) {
     if (!surface || this.lexicon.has(surface)) return;
     this.lexicon.set(surface, {
@@ -1030,33 +1089,26 @@ export class Simulation {
       ).length;
     const need = (have, want) => clamp((want - have) / Math.max(1, want));
 
-    let waterNear = 0;
-    for (let dy = -8; dy <= 8; dy++) {
-      for (let dx = -8; dx <= 8; dx++) {
-        const x = settlement.x + dx;
-        const y = settlement.y + dy;
-        if (!this.world.inBounds(x, y)) continue;
-        const t = this.world.at(x, y);
-        if (t === TERRAIN.WATER || t === TERRAIN.MARSH) waterNear++;
-      }
-    }
+    const waterNear = this.world.waterNearCount?.(settlement.x, settlement.y, 14) ?? 0;
+    const waterFar = this.world.waterNearCount?.(settlement.x, settlement.y, 22) ?? 0;
+    const water = Math.max(waterNear, Math.floor(waterFar / 2));
     const bridgesWanted =
-      waterNear < 6 ? 0 : Math.min(BALANCE.maxBridgesPerCamp, count('bridge') > 0 ? 1 : 2);
+      water < 4 ? 0 : Math.min(BALANCE.maxBridgesPerCamp, Math.max(1, Math.ceil(people / 25)));
 
     return {
       people,
-      shelterDeficit: need(count('shelter'), Math.ceil(people / 3)),
-      hearthDeficit: need(count('hearth'), Math.ceil(people / 8)),
-      storeDeficit: need(count('store'), Math.max(1, Math.ceil(people / 20))),
-      workshopDeficit: need(count('workshop'), people > 12 ? 1 : 0),
-      fieldDeficit: need(count('field'), Math.ceil(people / 8)),
-      wellDeficit: need(count('well'), people > 15 ? 1 : 0),
-      shrineDeficit: need(count('shrine'), people > 20 ? 1 : 0),
+      shelterDeficit: need(count('shelter'), Math.max(1, Math.ceil(people / 2.5))),
+      hearthDeficit: need(count('hearth'), Math.max(1, Math.ceil(people / 8))),
+      storeDeficit: need(count('store'), Math.max(1, Math.ceil(people / 14))),
+      workshopDeficit: need(count('workshop'), people > 10 ? Math.ceil(people / 25) : 0),
+      fieldDeficit: need(count('field'), Math.max(1, Math.ceil(people / 5))),
+      wellDeficit: need(count('well'), people > 12 ? 1 : 0),
+      shrineDeficit: need(count('shrine'), people > 18 ? 1 : 0),
       wallDeficit: need(count('wall'), people > 40 ? 1 : 0),
-      hallDeficit: need(count('hall'), people > 30 ? 1 : 0),
+      hallDeficit: need(count('hall'), people > 28 ? 1 : 0),
       bridgeDeficit: need(count('bridge'), bridgesWanted),
-      pathDeficit: need(count('path'), people > 10 ? 1 : 0),
-      plazaDeficit: need(count('plaza'), people > 25 ? 1 : 0),
+      pathDeficit: need(count('path'), people > 8 ? Math.ceil(people / 15) : 0),
+      plazaDeficit: need(count('plaza'), people > 20 ? 1 : 0),
     };
   }
 
@@ -1098,37 +1150,28 @@ export class Simulation {
 
   pickBuildSite(a, kind, settlement) {
     const center = settlement || this.nearestSettlement(a.x, a.y);
+
+    if (kind === 'bridge') {
+      const sites = this.world.findBridgeSites?.(center.x, center.y, 24, 4, 16) || [];
+      if (sites.length) {
+        const top = sites.slice(0, Math.min(5, sites.length));
+        return this.rng.pick(top);
+      }
+      return null;
+    }
+
     const ring =
       kind === 'field' ? 5 :
       kind === 'shelter' || kind === 'hearth' ? 3 :
       kind === 'store' || kind === 'well' ? 4 :
       kind === 'plaza' || kind === 'shrine' ? 6 :
-      kind === 'workshop' ? 5 :
-      kind === 'bridge' ? 8 : 4;
+      kind === 'workshop' ? 5 : 4;
 
     for (let attempt = 0; attempt < 60; attempt++) {
       const angle = this.rng.float(0, Math.PI * 2);
       const rad = ring + this.rng.float(-1.5, 2.2);
       const x = clamp(Math.round(center.x + Math.cos(angle) * rad), 1, this.world.w - 2);
       const y = clamp(Math.round(center.y + Math.sin(angle) * rad), 1, this.world.h - 2);
-
-      if (kind === 'bridge') {
-        const t = this.world.at(x, y);
-        if (t !== TERRAIN.WATER && t !== TERRAIN.MARSH) continue;
-        const tooClose = this.world.structuresOfKind('bridge').some(
-          (b) => Math.hypot(b.x - x, b.y - y) < 4,
-        );
-        if (tooClose) continue;
-        let landAdj = false;
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-          if (this.world.walkable(x + dx, y + dy) && this.world.at(x + dx, y + dy) > TERRAIN.MARSH) {
-            landAdj = true;
-            break;
-          }
-        }
-        if (!landAdj) continue;
-        return { x, y };
-      }
 
       if (!this.world.walkable(x, y)) continue;
       if (this.world.structureAt(x, y)) continue;
@@ -1142,16 +1185,6 @@ export class Simulation {
     for (let i = 0; i < 40; i++) {
       const x = clamp(center.x + this.rng.int(-8, 8), 1, this.world.w - 2);
       const y = clamp(center.y + this.rng.int(-8, 8), 1, this.world.h - 2);
-      if (kind === 'bridge') {
-        const t = this.world.at(x, y);
-        if (t === TERRAIN.WATER || t === TERRAIN.MARSH) {
-          const tooClose = this.world.structuresOfKind('bridge').some(
-            (b) => Math.hypot(b.x - x, b.y - y) < 4,
-          );
-          if (!tooClose) return { x, y };
-        }
-        continue;
-      }
       if (!this.world.walkable(x, y)) continue;
       if (this.world.structureAt(x, y)) continue;
       return { x, y };
@@ -1217,7 +1250,6 @@ export class Simulation {
     return s;
   }
 
-  /** Fields ripen even with light care so the first harvest can teach purpose. */
   fieldsTick() {
     if (this.world.tick % 6) return;
     const growth =
@@ -1559,6 +1591,27 @@ export class Simulation {
     return Math.round(t);
   }
 
+  settlementReport(settlement = null) {
+    const s = settlement || this.origin;
+    if (!s) return null;
+    const n = this.settlementNeeds(s);
+    const structs = {};
+    for (const st of this.world.structures) {
+      if (Math.hypot(st.x - s.x, st.y - s.y) > 16) continue;
+      structs[st.kind] = (structs[st.kind] || 0) + 1;
+    }
+    const far = this.farBankTarget({ x: s.x, y: s.y }, 22);
+    return {
+      name: s.name,
+      people: n.people,
+      structures: structs,
+      deficits: n,
+      bridges: structs.bridge || 0,
+      farBankStillBlocked: !!far && (structs.bridge || 0) === 0,
+      food: this.totalFood(),
+    };
+  }
+
   inventionSummary(limit = 30) {
     const rows = [];
     for (const [key, tick] of this.inventionTicks) {
@@ -1623,6 +1676,7 @@ export class Simulation {
       day: this.world.dayNumber,
       population: this.living.length,
       food: this.totalFood(),
+      settlement: this.settlementReport(),
       topRecipes: top(recipes, 15),
       topMatter: top(matter, 15),
       topNorms: top(norms, 12),
