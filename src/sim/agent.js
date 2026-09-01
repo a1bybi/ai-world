@@ -10,17 +10,42 @@ export const SKILLS = ['forage', 'hunt', 'craft', 'build', 'farm', 'speak', 'tea
 let seq = 0;
 
 export class Agent {
-  constructor({ name, genome, x, y, tick, parents = [], world, culture }) {
+  // Support two call styles for backward compatibility:
+  // 1) new Agent(sim, opts)  -- used by src/sim/sim.js
+  // 2) new Agent(opts)       -- direct creation with destructured opts
+  constructor(simOrOpts = {}, maybeOpts = undefined) {
+    let sim = null;
+    let opts = {};
+    if (maybeOpts !== undefined) {
+      sim = simOrOpts;
+      opts = maybeOpts || {};
+    } else {
+      opts = simOrOpts || {};
+    }
+
+    this.sim = sim;
+    this.world = this.sim?.world || opts.world || null;
+
+    // establish bornTick: accept explicit tick or ageYears
+    const bornTick = typeof opts.tick !== 'undefined'
+      ? opts.tick
+      : typeof opts.ageYears !== 'undefined'
+        ? (this.world ? this.world.tick : 0) - Math.round(opts.ageYears * YEAR_TICKS)
+        : 0;
+
+    this.worldTick = bornTick;
+
     this.seq = ++seq;
-    this.id = `a${this.seq}`;
-    this.name = name;
-    this.genome = genome;
-    this.x = x; this.y = y;
-    this.bornTick = tick;
-    this.parents = parents;
-    this.children = [];
-    this.partner = null;
-    this.culture = culture;
+    // allow caller to supply id (old code did this), otherwise generate one
+    this.id = opts.id || `a${this.seq}`;
+    this.name = opts.name || opts.id || `person-${this.seq}`;
+    this.genome = opts.genome || { learning: 0.5, fertility: 0.5, resilience: 0.5, stamina: 0.5, longevity: 1, expressive: 0.5, sex: 'f' };
+    this.x = opts.x || 0; this.y = opts.y || 0;
+    this.bornTick = bornTick;
+    this.parents = opts.parents || [];
+    this.children = opts.children || [];
+    this.partner = opts.partner || null;
+    this.culture = opts.culture || null;
 
     this.body = {
       energy: 0.85, hunger: 0.2, thirst: 0.2, health: 1,
@@ -28,30 +53,30 @@ export class Agent {
     };
     this.inventory = new Map();
     this.skills = {};
-    for (const s of SKILLS) this.skills[s] = 0.02 + (genome.learning - 0.5) * 0.02;
+    for (const s of SKILLS) this.skills[s] = 0.02 + ((this.genome.learning || 0.5) - 0.5) * 0.02;
 
     this.affect = blankAffect();
-    this.memory = new MemoryStore(240 + Math.round(genome.learning * 220));
+    this.memory = new MemoryStore(240 + Math.round((this.genome.learning || 0.5) * 220));
     this.relationships = new Map();
     this.values = new Map();       // conceptKey -> subjective worth
-    this.reputation = 0.5;
-    this.home = null;
-    this.role = 'wanderer';
-    this.goal = null;
+    this.reputation = typeof opts.reputation !== 'undefined' ? opts.reputation : 0.5;
+    this.home = opts.home || null;
+    this.role = opts.role || 'wanderer';
+    this.goal = opts.goal || null;
     this.action = null;            // { name, ticksLeft, target, ... }
     this.path = null;
-    this.alive = true;
+    this.alive = typeof opts.alive === 'undefined' ? true : opts.alive;
     this.deathCause = null;
     this.deathTick = null;
     this.utterance = null;
     this.lastSpokeTick = -99;
-    this.stats = {
+    this.stats = Object.assign({
       harvested: 0, crafted: 0, built: 0, taught: 0, learned: 0, trades: 0,
       gifts: 0, meals: 0, inventions: 0, births: 0, fights: 0, rescues: 0,
       steps: 0, words: 0, ideas: 0, buried: 0, thefts: 0,
-    };
-    this.traits = dominantTraits(genome);
-    this.titles = [];
+    }, opts.stats || {});
+    this.traits = dominantTraits(this.genome);
+    this.titles = opts.titles || [];
   }
 
   get age() { return (this.worldTick - this.bornTick) / YEAR_TICKS; }
@@ -59,7 +84,7 @@ export class Agent {
   isChild(tick) { return this.ageAt(tick) < 13; }
   isElder(tick) { return this.ageAt(tick) > 52 * this.genome.longevity; }
 
-  // ── inventory ─────────────────────────────────────────────────────────────
+  // ── inventory ──────────────────────────────────────────────────────────[...]
   count(key) { return this.inventory.get(key) || 0; }
   add(key, n = 1) { this.inventory.set(key, this.count(key) + n); }
   take(key, n = 1) {
@@ -70,12 +95,12 @@ export class Agent {
     return got;
   }
   carried() { let t = 0; for (const v of this.inventory.values()) t += v; return t; }
-  get carryLimit() { return 12 + this.skills.craft * 8 + this.genome.stamina * 6; }
+  get carryLimit() { return 12 + this.skills.craft * 8 + (this.genome.stamina || 0) * 6; }
 
   /** The best thing they own for a purpose, according to what they know. */
   bestToolFor(fn, ontology) {
     if (this._toolTick !== this.worldTick) { this._toolTick = this.worldTick; this._toolMemo = new Map(); }
-    if (this._toolMemo.has(fn)) return this._toolMemo.get(fn);
+    if (this._toolMemo && this._toolMemo.has && this._toolMemo.has(fn)) return this._toolMemo.get(fn);
     let best = null, score = 0;
     for (const key of this.inventory.keys()) {
       const c = ontology.get(key);
@@ -83,11 +108,12 @@ export class Agent {
       const s = c.serves(fn);
       if (s > score) { score = s; best = { key, concept: c, score: s }; }
     }
+    if (!this._toolMemo) this._toolMemo = new Map();
     this._toolMemo.set(fn, best);
     return best;
   }
 
-  // ── relationships ─────────────────────────────────────────────────────────
+  // ── relationships ────────────────────────────────────────────────────────��[...]
   rel(other) {
     const id = typeof other === 'string' ? other : other.id;
     let r = this.relationships.get(id);
