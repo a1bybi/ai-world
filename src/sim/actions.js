@@ -1,5 +1,5 @@
 // Everything an inhabitant can choose to do.
-// Bridges cost and place a full bank→bank span (world.findBridgeSpan).
+// Bridges grow one water-tile at a time (findBridgeWorkSites → raise one length).
 
 import { clamp, dist, topN } from '../core/util.js';
 import { TERRAIN } from '../world/world.js';
@@ -256,7 +256,7 @@ const STRUCTURE_KINDS = {
   shrine:   { fn: 'art',        cost: 6,  need: (s) => s.shrineDeficit,   desc: 'a place for the dead and the questions' },
   wall:     { fn: 'shelter',    cost: 14, need: (s) => s.wallDeficit,     desc: 'a boundary against what is out there' },
   hall:     { fn: 'shelter',    cost: 18, need: (s) => s.hallDeficit,     desc: 'one roof big enough for everyone' },
-  bridge:   { fn: 'shelter',    cost: 10, need: (s) => s.bridgeDeficit,   desc: 'a way across water' },
+  bridge:   { fn: 'shelter',    cost: 2,  need: (s) => s.bridgeDeficit,   desc: 'a way across water' },
   path:     { fn: 'shelter',    cost: 3,  need: (s) => s.pathDeficit,     desc: 'beaten ground that is easier to walk' },
   plaza:    { fn: 'art',        cost: 8,  need: (s) => s.plazaDeficit,    desc: 'open ground where people meet' },
 };
@@ -839,24 +839,26 @@ export const ACTIONS = {
       const far = ctx.sim.farBankTarget?.(a, 22);
 
       for (const [kind, def] of Object.entries(STRUCTURE_KINDS)) {
-        // ── Bridge: full span cost + site ───────────────────────
+        // ── Bridge: one length at a time ────────────────────────
         if (kind === 'bridge') {
+          const sites =
+            ctx.world.findBridgeWorkSites?.(settlement.x, settlement.y, 26, 12) || [];
+          if (!sites.length) continue;
+
+          const crossed = ctx.world.bridgeCrosses?.(settlement.x, settlement.y, 28);
+          if (crossed) continue;
+
           const spans =
-            ctx.world.bridgeSpanCount?.(settlement.x, settlement.y, 18) ??
-            nearCount('bridge');
-          if (spans >= 2) continue;
+            ctx.world.bridgeSpanCount?.(settlement.x, settlement.y, 18) ?? 0;
+          if (spans >= 3) continue;
 
-          const span = ctx.world.findBridgeSpan?.(settlement.x, settlement.y, 26, 8);
-          if (!span?.tiles?.length) continue;
-
-          let need = def.need(s);
-          if (far) need = Math.max(need, 0.75);
-          else need = Math.max(need, 0.5);
-          if (need <= 0.08) continue;
+          let need = Math.max(def.need(s), 0.55);
+          if (far) need = Math.max(need, 0.8);
+          if (sites.some((x) => x.extends)) need = Math.max(need, 0.85);
 
           const purpose =
             spans === 0
-              ? 0.65 + a.genome.curiosity * 0.55
+              ? 0.6 + a.genome.curiosity * 0.5
               : knownStructureUse(a, 'bridge');
 
           let matKey = 'wood';
@@ -866,13 +868,13 @@ export const ACTIONS = {
               break;
             }
           }
-          const cost = Math.max(3, span.length * 2);
+          const cost = 2;
           if (availableMaterial(a, ctx, matKey) < cost) {
             const spot = ctx.world.findResource(matKey, a, 18);
             if (spot && a.carried() <= a.carryLimit) {
               out.push({
                 kind: 'gather',
-                u: need * purpose * 1.3 * (0.5 + a.genome.industry) * (ctx.bias?.work ?? 1),
+                u: need * purpose * 1.2 * (0.5 + a.genome.industry) * (ctx.bias?.work ?? 1),
                 payload: matKey,
                 target: beside(ctx.world, spot),
                 site: spot,
@@ -882,24 +884,24 @@ export const ACTIONS = {
             continue;
           }
 
+          const site = sites.find((x) => x.extends) || sites[0];
           out.push({
             kind: 'build',
             u:
               need *
               purpose *
-              1.6 *
+              1.7 *
               (ctx.bias?.work ?? 1) *
-              (0.5 + a.genome.industry) *
-              (far ? 1.4 : 1),
+              (0.5 + a.genome.industry),
             payload: {
               structure: 'bridge',
               material: matKey,
               cost,
               fn: def.fn,
               settlement,
-              span,
+              site,
             },
-            dur: 3 + span.length,
+            dur: 2,
           });
           continue;
         }
@@ -985,48 +987,89 @@ export const ACTIONS = {
     run(a, ctx, act) {
       const structure = act.payload.structure;
 
-      if (!act.spot) {
-        act.spot = ctx.sim.pickBuildSite(a, structure, act.payload.settlement);
-      }
-      if (!act.spot) return 'abort';
-
-      // Approach dry land next to the span (or the build tile)
-      const approach =
-        structure === 'bridge' && act.payload.span?.startLand
-          ? act.payload.span.startLand
-          : act.spot;
-
-      if (dist(a, approach) > 1.4) {
-        stepToward(a, ctx.world, approach);
-        return 'continue';
-      }
-
-      a.body.energy = clamp(a.body.energy - 0.05, 0, 1);
-      if (--act.dur > 0) return 'continue';
-
-      const { material } = act.payload;
-      let needMat = act.payload.cost;
-
+      // ── One length of bridge ─────────────────────────────────
       if (structure === 'bridge') {
-        const span =
-          act.payload.span ||
-          ctx.world.findBridgeSpan?.(act.spot.x, act.spot.y, 26, 8) ||
-          ctx.world.findBridgeSpan?.(
+        const site =
+          act.payload.site ||
+          act.spot ||
+          (ctx.world.findBridgeWorkSites?.(
             act.payload.settlement.x,
             act.payload.settlement.y,
             26,
             8,
-          );
-        if (!span?.tiles?.length) return 'abort';
-        needMat = Math.max(3, span.length * 2);
-        act.payload.span = span;
-        act.spot = { x: span.tiles[0].x, y: span.tiles[0].y, span };
+          ) || [])[0];
+        if (!site) return 'abort';
+        act.spot = { x: site.x, y: site.y };
+
+        let approach = null;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [0, 0]]) {
+          const ax = act.spot.x + dx;
+          const ay = act.spot.y + dy;
+          if (ctx.world.walkable(ax, ay)) {
+            approach = T(ax, ay);
+            break;
+          }
+        }
+        if (!approach) {
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const ax = act.spot.x + dx;
+            const ay = act.spot.y + dy;
+            if (!ctx.world.inBounds(ax, ay)) continue;
+            if (ctx.world.at(ax, ay) > TERRAIN.MARSH) {
+              approach = T(ax, ay);
+              break;
+            }
+          }
+        }
+        if (approach && dist(a, approach) > 1.4) {
+          stepToward(a, ctx.world, approach);
+          return 'continue';
+        }
+
+        a.body.energy = clamp(a.body.energy - 0.04, 0, 1);
+        if (--act.dur > 0) return 'continue';
+
+        if (takeMaterial(a, ctx, act.payload.material, 2) < 2) return 'abort';
+        const st = ctx.sim.raiseStructure(a, 'bridge', act.spot, act.payload.material);
+        if (!st) return 'abort';
+
+        a.stats.built++;
+        a.gainSkill('build', 0.05);
+        learnStructureUse(a, 'bridge', 'crossing', 0.12, 0.35);
+
+        if (
+          ctx.world.bridgeCrosses?.(
+            act.payload.settlement.x,
+            act.payload.settlement.y,
+            28,
+          )
+        ) {
+          learnStructureUse(a, 'bridge', 'crossing', 0.35, 0.7);
+          appraise(a, {
+            goalCongruence: 0.9,
+            agency: 'self',
+            intensity: 0.85,
+            kind: 'first',
+          });
+        }
+        return 'done';
       }
 
-      if (takeMaterial(a, ctx, material, needMat) < needMat) return 'abort';
+      // ── Other structures ─────────────────────────────────────
+      if (!act.spot) {
+        act.spot = ctx.sim.pickBuildSite(a, structure, act.payload.settlement);
+      }
+      if (!act.spot) return 'abort';
+      if (dist(a, act.spot) > 1.2) {
+        stepToward(a, ctx.world, act.spot);
+        return 'continue';
+      }
+      a.body.energy = clamp(a.body.energy - 0.05, 0, 1);
+      if (--act.dur > 0) return 'continue';
+      const { material, cost } = act.payload;
+      if (takeMaterial(a, ctx, material, cost) < cost) return 'abort';
       const st = ctx.sim.raiseStructure(a, structure, act.spot, material);
       if (!st) return 'abort';
-
       a.stats.built++;
       a.gainSkill('build', 0.07);
       learnStructureUse(
@@ -1036,14 +1079,16 @@ export const ACTIONS = {
         0.12,
         0.3,
       );
-      if (structure === 'bridge') {
-        learnStructureUse(a, 'bridge', 'crossing', 0.2, 0.45);
-      }
       if (structure === 'field') {
         st.tended = (st.tended || 0) + 0.3;
         st.ripeness = Math.max(st.ripeness || 0, 0.15);
       }
-      appraise(a, { goalCongruence: 0.8, agency: 'self', intensity: 0.7, kind: 'first' });
+      appraise(a, {
+        goalCongruence: 0.8,
+        agency: 'self',
+        intensity: 0.7,
+        kind: 'first',
+      });
       if (!a.home && structure === 'shelter') a.home = st;
       return 'done';
     },
@@ -1825,12 +1870,10 @@ export const ACTIONS = {
         (1 - a.body.hunger * 0.6) *
         Math.max(0.35, a.body.energy);
 
-      const spans =
-        ctx.world.bridgeSpanCount?.(a.x, a.y, 30) ??
-        ctx.world.structuresOfKind('bridge').length;
+      const crossed = ctx.world.bridgeCrosses?.(a.x, a.y, 30);
       const far = ctx.sim.farBankTarget?.(a, 22);
 
-      if (far && spans > 0) {
+      if (far && crossed) {
         return [{ kind: 'explore', u: u * 1.45, target: T(far.x, far.y), dur: 24 }];
       }
 
