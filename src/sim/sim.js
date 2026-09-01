@@ -1,4 +1,6 @@
-// sim.js — Unified Bootstrap, River, Build, Social Core, and Lifecycle Core
+// Society layer: settlements, projects, institutional archive, food crisis,
+// birth lock, norms→law, market, orphans, chronicle, real structures
+// (bridges one length at a time, walls, arenas, fields, stores, …).
 
 import { RNG } from '../core/rng.js';
 import { Language } from '../core/language.js';
@@ -9,7 +11,7 @@ import { Agent, YEAR_TICKS, SKILLS } from './agent.js';
 import { randomGenome, inherit } from './genome.js';
 import { think } from './mind.js';
 import { appraise, dominantEmotion, moodWord } from './emotion.js';
-import { clamp, dist, mean, topN, gini, sum } from '../core/util.js';
+import { clamp, dist, mean, topN, gini } from '../core/util.js';
 import { STRUCTURE_KINDS } from './actions.js';
 
 const BALANCE = {
@@ -24,8 +26,6 @@ const BALANCE = {
   wallProjectLabor: 8,
   spoilRate: 0.002,
   orphanRadius: 14,
-  founderGrain: 28,
-  maxBridgeSpansNear: 4,
 };
 
 const NORM_LABELS = {
@@ -37,8 +37,6 @@ const NORM_LABELS = {
   craft: 'a thing well made is owed respect',
   neglect: 'the hungry are not left to watch the fed',
   rescue: 'the hurt are not left alone',
-  gift: 'what is given freely binds us',
-  law: 'what is spoken as law is kept',
 };
 
 function emptySettlementStats() {
@@ -53,10 +51,6 @@ function emptySettlementStats() {
     bridgeCrosses: false,
     structures: 0,
   };
-}
-
-function lerp(a, b, t) {
-  return a + (b - a) * t;
 }
 
 export class Simulation {
@@ -76,7 +70,6 @@ export class Simulation {
     this.generation = 1;
     this.tick = 0;
     this.logBuffer = [];
-    this.eventLog = [];
     this.counters = {
       gifts: 0,
       thefts: 0,
@@ -87,21 +80,18 @@ export class Simulation {
       inventions: 0,
       trades: 0,
       burials: 0,
-      rituals: 0,
-      builds: 0,
     };
     this.marketPrices = new Map();
     this.lostKnowledge = [];
     this.campKnowledge = new Map();
     this.archive = new Set();
-    this.laws = new Map();
+    this.laws = new Map(); // situation -> { label, strength, polarity, since }
     this.normTally = new Map();
     this.ritualPull = 0;
     this.nextStructureId = 1;
     this.nextSpanId = 1;
     this.nextAgentId = 1;
     this.era = { name: 'the First Waking', started: 0, capability: 0 };
-    this._lastReportTick = 0;
 
     this.seedPopulation(opts.founders || 14);
     this.refreshAllMarkets();
@@ -113,15 +103,15 @@ export class Simulation {
     const cx = Math.floor(this.world.w / 2);
     const cy = Math.floor(this.world.h / 2);
     let site = null;
-    for (let r = 0; r < 28 && !site; r++) {
-      for (let t = 0; t < 32; t++) {
+    for (let r = 0; r < 24 && !site; r++) {
+      for (let t = 0; t < 28; t++) {
         const x = clamp(
-          cx + Math.round(Math.cos((t / 32) * Math.PI * 2) * r),
+          cx + Math.round(Math.cos((t / 28) * Math.PI * 2) * r),
           2,
           this.world.w - 3,
         );
         const y = clamp(
-          cy + Math.round(Math.sin((t / 32) * Math.PI * 2) * r),
+          cy + Math.round(Math.sin((t / 28) * Math.PI * 2) * r),
           2,
           this.world.h - 3,
         );
@@ -158,27 +148,66 @@ export class Simulation {
         y: clamp(site.y + this.rng.int(-2, 2), 1, this.world.h - 2),
         ageYears: this.rng.float(16, 36),
       });
-      a.add('grain', this.rng.float(5, 12));
+      a.add('grain', this.rng.float(5, 11));
       a.add('meat', this.rng.float(1, 4));
-      a.add('wood', this.rng.float(4, 10));
+      a.add('wood', this.rng.float(4, 9));
       a.add('water', this.rng.float(2, 6));
-      a.add('fibre', this.rng.float(1, 4));
-      a.add('stone', this.rng.float(0, 2));
+      a.add('fibre', this.rng.float(1, 3));
       this.agents.push(a);
       this.living.push(a);
     }
     this.origin.founderId = this.living[0]?.id;
 
+    // Starter store + shelter + hearth
     const s0 = this.living[0];
     if (s0) {
-      this.bootstrapStructure(s0, 'store', {
-        grain: BALANCE.founderGrain,
-        meat: 8,
-        water: 12,
-      });
-      const home = this.bootstrapStructure(s0, 'shelter');
-      if (home) s0.home = home;
-      this.bootstrapStructure(s0, 'hearth');
+      const storeSpot = this.pickBuildSite(s0, 'store', this.origin);
+      if (storeSpot) {
+        this.world.addStructure({
+          id: `store_${this.nextStructureId++}`,
+          kind: 'store',
+          x: storeSpot.x,
+          y: storeSpot.y,
+          word: this.lang.thingName?.('store') || 'store',
+          stock: new Map([
+            ['grain', 28],
+            ['meat', 8],
+            ['water', 10],
+          ]),
+          builtBy: s0.id,
+          tick: 0,
+          condition: 1,
+        });
+      }
+      const shel = this.pickBuildSite(s0, 'shelter', this.origin);
+      if (shel) {
+        const st = this.world.addStructure({
+          id: `shelter_${this.nextStructureId++}`,
+          kind: 'shelter',
+          x: shel.x,
+          y: shel.y,
+          word: this.lang.thingName?.('shelter') || 'shelter',
+          stock: new Map(),
+          builtBy: s0.id,
+          tick: 0,
+          condition: 1,
+        });
+        s0.home = st;
+      }
+      const hearth = this.pickBuildSite(s0, 'hearth', this.origin);
+      if (hearth) {
+        this.world.addStructure({
+          id: `hearth_${this.nextStructureId++}`,
+          kind: 'hearth',
+          x: hearth.x,
+          y: hearth.y,
+          word: this.lang.thingName?.('hearth') || 'hearth',
+          stock: new Map(),
+          builtBy: s0.id,
+          tick: 0,
+          condition: 1,
+        });
+      }
     }
 
     this.record(
@@ -187,33 +216,6 @@ export class Simulation {
       `${name} was spoken into being on the ${this.world.season} ground`,
       { valence: 0.5, intensity: 0.7, landmark: true },
     );
-  }
-
-  bootstrapStructure(agent, kind, stockObj = null) {
-    const spot = this.pickBuildSite(agent, kind, this.origin);
-    if (!spot) return null;
-    const st = {
-      id: `${kind}_${this.nextStructureId++}`,
-      kind,
-      x: spot.x,
-      y: spot.y,
-      word: this.lang.thingName?.(kind) || kind,
-      stock: new Map(),
-      builtBy: agent.id,
-      tick: 0,
-      condition: 1,
-      occupants: [],
-    };
-    if (stockObj) {
-      for (const [k, v] of Object.entries(stockObj)) st.stock.set(k, v);
-    }
-    if (kind === 'field') {
-      st.ripeness = 0.2;
-      st.tended = 0.3;
-      st.harvests = 0;
-    }
-    this.world.addStructure(st);
-    return st;
   }
 
   ensureSettlementMeta(s) {
@@ -254,7 +256,6 @@ export class Simulation {
   totalFood() {
     let t = 0;
     for (const a of this.living) {
-      if (!a.inventory) continue;
       for (const [k, v] of a.inventory) {
         if (this.ont.get(k)?.functions?.sustenance) t += v;
       }
@@ -296,7 +297,6 @@ export class Simulation {
   updateCampKnowledge() {
     this.campKnowledge.clear();
     for (const a of this.living) {
-      if (!a.memory?.knownKeys) continue;
       for (const k of a.memory.knownKeys('recipe')) {
         if (!this.campKnowledge.has(k)) this.campKnowledge.set(k, new Set());
         this.campKnowledge.get(k).add(a.id);
@@ -313,19 +313,21 @@ export class Simulation {
     return !!(h && h.size >= BALANCE.campHolders);
   }
 
+  /** Living can slowly learn archived recipes at a store/workshop. */
   tryLearnFromArchive(a) {
-    if (!this.archive.size || this.rng.bool(0.65)) return;
+    if (!this.archive.size || this.rng.bool(0.7)) return;
     const nearHall =
-      this.world.hasStructureNear?.(a.x, a.y, 'store', 6) ||
-      this.world.hasStructureNear?.(a.x, a.y, 'workshop', 6) ||
-      this.world.hasStructureNear?.(a.x, a.y, 'hall', 8);
+      this.world.hasStructureNear?.(a.x, a.y, 'store', 5) ||
+      this.world.hasStructureNear?.(a.x, a.y, 'workshop', 5) ||
+      this.world.hasStructureNear?.(a.x, a.y, 'hall', 6);
     if (!nearHall) return;
     for (const key of this.archive) {
-      if (a.memory?.knows?.(key, 0.35)) continue;
-      if (!this.ont.get(key)) continue;
-      a.memory?.learn?.(key, {
+      if (a.memory.knows(key, 0.35)) continue;
+      const c = this.ont.get(key);
+      if (!c) continue;
+      a.memory.learn(key, {
         kind: 'recipe',
-        confidence: 0.32 * (a.genome?.learning || 0.5),
+        confidence: 0.3 * (a.genome.learning || 0.5),
         valence: 0.25,
         source: 'archive',
       });
@@ -342,12 +344,10 @@ export class Simulation {
     let hunger = 0;
     let children = 0;
     for (const a of near) {
-      hunger += a.body?.hunger || 0;
+      hunger += a.body.hunger;
       if (a.isChild?.(this.world.tick) || a.ageAt(this.world.tick) < 12) children++;
-      if (a.inventory) {
-        for (const [k, v] of a.inventory) {
-          if (this.ont.get(k)?.functions?.sustenance) food += v;
-        }
+      for (const [k, v] of a.inventory) {
+        if (this.ont.get(k)?.functions?.sustenance) food += v;
       }
     }
     for (const st of this.world.structures) {
@@ -561,15 +561,20 @@ export class Simulation {
 
   // ── Path / river ──────────────────────────────────────────────
 
-  landReachable(from, to, maxSteps = 40) {
+  landReachable(from, to, maxSteps = 80) {
     const key = (x, y) => `${x},${y}`;
     const q = [[from.x | 0, from.y | 0, 0]];
-    const seen = new Set([key(from.x | 0, from.y | 0)]);
+    const seen = new Set([key(from.x, from.y)]);
     while (q.length) {
       const [x, y, d] = q.shift();
       if (x === (to.x | 0) && y === (to.y | 0)) return true;
       if (d >= maxSteps) continue;
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      for (const [dx, dy] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ]) {
         const nx = x + dx;
         const ny = y + dy;
         const k = key(nx, ny);
@@ -582,19 +587,24 @@ export class Simulation {
     return false;
   }
 
-  riverBlocks(from, to, maxSteps = 40) {
+  riverBlocks(from, to, maxSteps = 70) {
     const landOnly = (x, y) =>
       this.world.inBounds(x, y) && this.world.at(x, y) > TERRAIN.MARSH;
     const walk = (x, y) => this.world.walkable(x, y);
     const bfs = (pass) => {
       const key = (x, y) => `${x},${y}`;
       const q = [[from.x | 0, from.y | 0, 0]];
-      const seen = new Set([key(from.x | 0, from.y | 0)]);
+      const seen = new Set([key(from.x, from.y)]);
       while (q.length) {
         const [x, y, d] = q.shift();
         if (x === (to.x | 0) && y === (to.y | 0)) return true;
         if (d >= maxSteps) continue;
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        for (const [dx, dy] of [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ]) {
           const nx = x + dx;
           const ny = y + dy;
           const k = key(nx, ny);
@@ -608,13 +618,14 @@ export class Simulation {
     return !bfs(landOnly) && bfs(walk);
   }
 
-  farBankTarget(a, radius = 16) {
+  farBankTarget(a, radius = 22) {
     const home = this.nearestSettlement(a.x, a.y);
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 40; i++) {
       const x = clamp(home.x + this.rng.int(-radius, radius), 1, this.world.w - 2);
       const y = clamp(home.y + this.rng.int(-radius, radius), 1, this.world.h - 2);
       if (this.world.at(x, y) <= TERRAIN.MARSH) continue;
-      if (this.riverBlocks(home, { x, y })) {
+      if (this.landReachable(home, { x, y })) continue;
+      if (this.world.walkable(x, y) || this.riverBlocks(home, { x, y })) {
         return { x, y };
       }
     }
@@ -632,7 +643,7 @@ export class Simulation {
           : ['wood', 'stone', 'clay', 'fibre', 'reed'];
     let best = null;
     for (const k of prefer) {
-      const n = a.count ? a.count(k) : 0;
+      const n = a.count(k);
       let storeN = 0;
       for (const s of this.world.structuresOfKind('store')) {
         if (dist(a, s) < 14 && s.stock) storeN += s.stock.get(k) || 0;
@@ -721,25 +732,24 @@ export class Simulation {
       const adj = this.world.bridgeAdjacent?.(spot.x, spot.y);
       st.spanId = adj?.spanId || `span_${this.nextSpanId++}`;
       this.world.addStructure(st);
-      this.counters.builds++;
       const home = this.nearestSettlement(spot.x, spot.y);
       const crosses = this.world.bridgeCrosses?.(home.x, home.y, 28);
       const lengths = this.world
         .structuresOfKind('bridge')
         .filter((b) => b.spanId === st.spanId).length;
       if (lengths <= 1) {
-        this.record(a, 'first', `${a?.name || 'They'} laid the first length of a crossing`, {
+        this.record(a, 'first', `${a.name} laid the first length of a crossing`, {
           valence: 0.55, intensity: 0.55, landmark: true,
         });
       } else if (crosses) {
         this.record(
           a,
           'first',
-          `${a?.name || 'They'} closed the crossing — the water no longer divides them`,
+          `${a.name} closed the crossing — the water no longer divides them`,
           { valence: 0.85, intensity: 0.9, landmark: true },
         );
       } else {
-        this.record(a, 'build', `${a?.name || 'They'} laid another length toward the far bank`, {
+        this.record(a, 'build', `${a.name} laid another length toward the far bank`, {
           valence: 0.4, intensity: 0.4, quiet: true,
         });
       }
@@ -754,7 +764,6 @@ export class Simulation {
     if (kind === 'arena' || kind === 'plaza') st.gatherings = 0;
 
     this.world.addStructure(st);
-    this.counters.builds++;
     const label = STRUCTURE_KINDS[kind]?.desc || kind;
     this.record(
       a,
@@ -790,62 +799,33 @@ export class Simulation {
   // ── Norms & law ───────────────────────────────────────────────
 
   personalNorm(a, tag) {
-    const b = a.memory?.belief?.(`norm:${tag}`);
+    const b = a.memory.belief?.(`norm:${tag}`);
     if (!b || b.confidence < 0.12) return 0;
-    return (b.valence || 0) * b.confidence;
+    return b.valence * b.confidence;
   }
 
   effectiveNorm(a, tag) {
     const personal = this.personalNorm(a, tag);
     const law = this.laws.get(tag);
-    if (law) {
-      return clamp(personal * 0.5 + law.strength * law.polarity * 0.5, -1, 1);
-    }
+    if (law) return clamp(personal * 0.5 + law.strength * law.polarity * 0.5, -1, 1);
     return personal;
-  }
-
-  violateNorm(a, tag, intensity = 0.3) {
-    const b = a.memory?.belief?.(`norm:${tag}`);
-    if (b) {
-      a.memory?.learn?.(`norm:${tag}`, {
-        kind: 'norm',
-        confidence: Math.max(0.1, (b.confidence || 0.2) - intensity * 0.1),
-        valence: b.valence,
-        source: 'violation',
-        payload: b.payload,
-      });
-    }
-    const law = this.laws.get(tag);
-    if (law) law.strength = clamp(law.strength - intensity * 0.05);
-  }
-
-  upholdNorm(a, tag, intensity = 0.2) {
-    const label = NORM_LABELS[tag] || tag;
-    a.memory?.learn?.(`norm:${tag}`, {
-      kind: 'norm',
-      confidence: 0.15 + intensity * 0.2,
-      valence: 0.5,
-      source: 'experience',
-      payload: { situation: tag, polarity: 1, label },
-    });
   }
 
   aggregateNorms() {
     const buckets = new Map();
     for (const a of this.living) {
-      if (!a.memory?.semantic) continue;
-      for (const [key, b] of a.memory.semantic) {
+      for (const [key, b] of a.memory.semantic || []) {
         if (b.kind !== 'norm' || b.confidence < 0.15) continue;
-        const sit = b.payload?.situation || String(key).replace(/^norm:/, '');
+        const sit = b.payload?.situation || key.replace(/^norm:/, '');
         const cur = buckets.get(sit) || { n: 0, v: 0, conf: 0 };
         cur.n++;
-        cur.v += b.valence || 0;
-        cur.conf += b.confidence || 0;
+        cur.v += b.valence;
+        cur.conf += b.confidence;
         buckets.set(sit, cur);
       }
     }
     for (const [sit, c] of buckets) {
-      if (c.n < Math.max(3, Math.ceil(this.living.length * 0.22))) continue;
+      if (c.n < Math.max(3, Math.ceil(this.living.length * 0.25))) continue;
       const avgV = c.v / c.n;
       const strength = clamp(c.conf / c.n);
       const polarity = avgV < 0 ? -1 : 1;
@@ -867,10 +847,12 @@ export class Simulation {
         existing.strength = lerp(existing.strength, strength, 0.15);
         if (existing.strength < 0.18) {
           this.laws.delete(sit);
-          this.record(null, 'law', `The rule slipped away: ${existing.label}`, {
-            valence: -0.2,
-            intensity: 0.45,
-          });
+          this.record(
+            null,
+            'law',
+            `The rule slipped away: ${existing.label}`,
+            { valence: -0.2, intensity: 0.45 },
+          );
         }
       }
     }
@@ -881,162 +863,91 @@ export class Simulation {
   refreshAllMarkets() {
     const counts = new Map();
     for (const a of this.living) {
-      if (!a.inventory) continue;
-      for (const [k, v] of a.inventory) {
-        counts.set(k, (counts.get(k) || 0) + v);
-      }
+      for (const [k, v] of a.inventory) counts.set(k, (counts.get(k) || 0) + v);
     }
     for (const s of this.world.structuresOfKind('store')) {
       if (!s.stock) continue;
-      for (const [k, v] of s.stock) {
-        counts.set(k, (counts.get(k) || 0) + v);
-      }
+      for (const [k, v] of s.stock) counts.set(k, (counts.get(k) || 0) + v);
     }
     for (const [k, n] of counts) {
       const scarcity = 1 / (1 + n);
-      const existing = this.marketPrices.get(k);
-      const prevPrice = typeof existing === 'object' && existing !== null && !isNaN(existing.price)
-        ? existing.price
-        : typeof existing === 'number' && !isNaN(existing) 
-          ? existing 
-          : 1;
-
-      const targetPrice = 0.5 + scarcity * 4;
-      const nextPrice = clamp(lerp(prevPrice, targetPrice, 0.2), 0.2, 12);
-
+      const prev = this.marketPrices.get(k)?.price || 1;
       this.marketPrices.set(k, {
-        price: Number.isNaN(nextPrice) ? 1 : nextPrice,
+        price: clamp(lerp(prev, 0.5 + scarcity * 4, 0.2), 0.2, 12),
         stock: n,
       });
     }
   }
 
-  priceOf(key) {
-    const entry = this.marketPrices.get(key);
-    if (typeof entry === 'number') return entry;
-    if (entry && typeof entry.price === 'number' && !isNaN(entry.price)) return entry.price;
-    return 1;
-  }
-
-  // ── Capability / gloss ────────────────────────────────────────
+  // ── Social helpers ────────────────────────────────────────────
 
   capabilityGaps(a) {
-    const need = [
-      'sustenance', 'shelter', 'heat', 'cutting', 'storage',
-      'medicine', 'cordage', 'clothing', 'vessel',
-    ];
+    const need = ['sustenance', 'shelter', 'heat', 'cutting', 'storage', 'medicine', 'cordage'];
     const gaps = [];
     for (const fn of need) {
       let best = 0;
-      if (a.inventory) {
-        for (const k of a.inventory.keys()) {
-          best = Math.max(best, this.ont.get(k)?.serves?.(fn) || 0);
-        }
+      for (const k of a.inventory.keys()) {
+        best = Math.max(best, this.ont.get(k)?.serves?.(fn) || 0);
       }
-      if (a.memory?.knownKeys) {
-        for (const k of a.memory.knownKeys('recipe')) {
-          best = Math.max(best, this.ont.get(k)?.serves?.(fn) || 0);
-        }
+      for (const k of a.memory.knownKeys('recipe')) {
+        best = Math.max(best, this.ont.get(k)?.serves?.(fn) || 0);
       }
       if (best < 0.35) gaps.push(fn);
     }
     return gaps;
   }
 
-  glossConcept(key) {
-    const c = this.ont.get(key);
-    if (!c) return key;
-    const fn = c.bestFn || Object.keys(c.functions || {})[0] || '';
-    return fn ? `${c.word} (${fn})` : c.word;
-  }
-
-  respectFor(a, o) {
-    const r = a.rel ? a.rel(o) : {};
-    return (
-      (o.reputation || 0.5) * 0.5 +
-      (r.trust || 0) * 0.25 +
-      (r.affection || 0) * 0.15 +
-      (r.kin || 0) * 0.1
-    );
-  }
-
-  // ── Social ────────────────────────────────────────────────────
-
   converse(a, o) {
-    a.adjustRel?.(o, { familiarity: 0.08, affection: 0.03 });
-    o.adjustRel?.(a, { familiarity: 0.08, affection: 0.03 });
-    const keys = a.memory?.knownKeys?.('recipe')?.slice(0, 12) || [];
+    a.adjustRel(o, { familiarity: 0.08, affection: 0.03 });
+    o.adjustRel(a, { familiarity: 0.08, affection: 0.03 });
+    const keys = a.memory.knownKeys('recipe').slice(0, 10);
     if (keys.length && this.rng.bool(0.35)) {
       const k = this.rng.pick(keys);
-      if (!o.memory?.knows?.(k, 0.2)) {
-        o.memory?.learn?.(k, {
+      if (!o.memory.knows(k, 0.2)) {
+        o.memory.learn(k, {
           kind: 'recipe',
-          confidence: 0.22 * (o.genome?.learning || 0.5),
+          confidence: 0.22 * (o.genome.learning || 0.5),
           valence: 0.2,
           source: `told by ${a.name}`,
         });
       }
     }
-    if (this.rng.bool(0.2)) {
-      for (const kind of ['field', 'store', 'bridge', 'shelter', 'wall', 'arena']) {
-        const b = a.memory?.belief?.(`structure:${kind}`);
-        if (b && b.confidence > 0.25 && !o.memory?.knows?.(`structure:${kind}`, 0.2)) {
-          o.memory?.learn?.(`structure:${kind}`, {
-            kind: 'lesson',
-            confidence: b.confidence * 0.4 * (o.genome?.learning || 0.5),
-            valence: b.valence,
-            source: `told by ${a.name}`,
-            payload: b.payload,
-          });
-          break;
-        }
-      }
-    }
-    if (a.stats) a.stats.talks = (a.stats.talks || 0) + 1;
+    a.stats.talks = (a.stats.talks || 0) + 1;
   }
 
   teach(a, o, key) {
     const c = this.ont.get(key);
+    if (!c && !String(key).startsWith('structure:')) return;
     if (String(key).startsWith('structure:')) {
-      const b = a.memory?.belief?.(key);
+      const b = a.memory.belief(key);
       if (b) {
-        o.memory?.learn?.(key, {
+        o.memory.learn(key, {
           kind: 'lesson',
-          confidence: Math.min(
-            0.7,
-            (b.confidence || 0.4) * 0.55 * (o.genome?.learning || 0.5),
-          ),
+          confidence: Math.min(0.7, (b.confidence || 0.4) * 0.55 * (o.genome.learning || 0.5)),
           valence: b.valence ?? 0.4,
           source: `taught by ${a.name}`,
           payload: b.payload,
         });
       }
-    } else if (c) {
-      o.memory?.learn?.(key, {
+    } else {
+      o.memory.learn(key, {
         kind: 'recipe',
-        confidence: 0.55 * (o.genome?.learning || 0.5),
+        confidence: 0.55 * (o.genome.learning || 0.5),
         valence: 0.4,
         source: `taught by ${a.name}`,
       });
       this.archiveKnowledge(key);
-    } else {
-      return;
     }
-    if (a.stats) a.stats.taught = (a.stats.taught || 0) + 1;
-    if (o.stats) o.stats.learned = (o.stats.learned || 0) + 1;
+    a.stats.taught = (a.stats.taught || 0) + 1;
+    o.stats.learned = (o.stats.learned || 0) + 1;
     this.counters.lessons++;
-    this.upholdNorm(a, 'teaching', 0.15);
-    const word = c?.word || String(key).replace('structure:', '');
+    const word = c?.word || key.replace('structure:', '');
     this.record(a, 'teach', `${a.name} taught ${o.name} about ${word}`, {
-      valence: 0.5,
-      intensity: 0.45,
-      actors: [a.id, o.id],
-      concept: key,
+      valence: 0.5, intensity: 0.45, actors: [a.id, o.id], concept: key,
     });
   }
 
   findDeal(a, o) {
-    if (!a.inventory || !o.inventory) return null;
     let best = null;
     for (const [k, v] of a.inventory) {
       if (v < 2) continue;
@@ -1062,25 +973,21 @@ export class Simulation {
     o.take(deal.take, deal.takeN);
     a.add(deal.take, deal.takeN);
     o.add(deal.give, deal.giveN);
-    a.adjustRel?.(o, { trust: 0.06, familiarity: 0.05 });
-    o.adjustRel?.(a, { trust: 0.06, familiarity: 0.05 });
-    if (a.rel) a.rel(o).lastTrade = this.world.tick;
-    if (o.rel) o.rel(a).lastTrade = this.world.tick;
-    if (a.stats) a.stats.trades = (a.stats.trades || 0) + 1;
+    a.adjustRel(o, { trust: 0.06, familiarity: 0.05 });
+    o.adjustRel(a, { trust: 0.06, familiarity: 0.05 });
+    a.rel(o).lastTrade = this.world.tick;
+    o.rel(a).lastTrade = this.world.tick;
+    a.stats.trades = (a.stats.trades || 0) + 1;
     this.counters.trades++;
     this.record(a, 'trade', `${a.name} traded with ${o.name}`, {
-      valence: 0.3,
-      intensity: 0.25,
-      actors: [a.id, o.id],
-      quiet: true,
+      valence: 0.3, intensity: 0.25, actors: [a.id, o.id], quiet: true,
     });
   }
 
   onTheft(a, o, key, n) {
     this.counters.thefts++;
-    a.adjustRel?.(o, { affection: -0.25, trust: -0.3 });
-    o.adjustRel?.(a, { affection: -0.35, trust: -0.4, conflicts: 1 });
-    this.violateNorm(a, 'theft', 0.4);
+    a.adjustRel(o, { affection: -0.25, trust: -0.3 });
+    o.adjustRel(a, { affection: -0.35, trust: -0.4, conflicts: 1 });
     this.record(
       a,
       'theft',
@@ -1101,39 +1008,32 @@ export class Simulation {
     this.counters.fights++;
     a.lastFightTick = this.world.tick;
     o.lastFightTick = this.world.tick;
-    const ap = (a.body?.energy || 0.5) * (0.5 + (a.genome?.aggression || 0.3));
-    const op = (o.body?.energy || 0.5) * (0.5 + (o.genome?.aggression || 0.3));
+    const ap = a.body.energy * (0.5 + a.genome.aggression);
+    const op = o.body.energy * (0.5 + o.genome.aggression);
     const aWin = this.rng.next() < ap / (ap + op + 0.01);
     const loser = aWin ? o : a;
     const winner = aWin ? a : o;
-    if (loser.body) loser.body.injury = clamp((loser.body.injury || 0) + this.rng.float(0.1, 0.35), 0, 1);
-    if (winner.body) winner.body.energy = clamp((winner.body.energy || 0.5) - 0.15, 0, 1);
-    a.adjustRel?.(o, { affection: -0.2, conflicts: 1 });
-    o.adjustRel?.(a, { affection: -0.2, conflicts: 1 });
-    this.violateNorm(winner, 'violence', 0.35);
+    loser.body.injury = clamp(loser.body.injury + this.rng.float(0.1, 0.35), 0, 1);
+    winner.body.energy = clamp(winner.body.energy - 0.15, 0, 1);
+    a.adjustRel(o, { affection: -0.2, conflicts: 1 });
+    o.adjustRel(a, { affection: -0.2, conflicts: 1 });
     this.record(winner, 'violence', `${winner.name} struck ${loser.name}`, {
-      valence: -0.6,
-      intensity: 0.75,
-      actors: [a.id, o.id],
+      valence: -0.6, intensity: 0.75, actors: [a.id, o.id],
     });
   }
 
   tryBond(a, o) {
-    if (a.partner || o.partner) return false;
-    const ar = a.rel ? a.rel(o) : {};
-    const or_ = o.rel ? o.rel(a) : {};
-    if ((ar.affection || 0) < 0.35 || (or_.affection || 0) < 0.3) return false;
+    if (a.partner || o.partner) return;
+    const ar = a.rel(o);
+    const or_ = o.rel(a);
+    if (ar.affection < 0.35 || or_.affection < 0.3) return;
     a.partner = o.id;
     o.partner = a.id;
-    a.adjustRel?.(o, { affection: 0.3, trust: 0.2 });
-    o.adjustRel?.(a, { affection: 0.3, trust: 0.2 });
+    a.adjustRel(o, { affection: 0.3, trust: 0.2 });
+    o.adjustRel(a, { affection: 0.3, trust: 0.2 });
     this.record(a, 'bond', `${a.name} and ${o.name} bound themselves to one another`, {
-      valence: 0.8,
-      intensity: 0.85,
-      actors: [a.id, o.id],
-      landmark: true,
+      valence: 0.8, intensity: 0.85, actors: [a.id, o.id], landmark: true,
     });
-    return true;
   }
 
   bury(a, corpse) {
@@ -1150,33 +1050,31 @@ export class Simulation {
       this.world.sites.push(graves);
     }
     this.counters.burials++;
-    this.upholdNorm(a, 'burial', 0.25);
     this.record(a, 'burial', `${a.name} put ${corpse.name} into the ground with words`, {
-      valence: -0.2,
-      intensity: 0.5,
-      actors: [a.id, corpse.id],
+      valence: -0.2, intensity: 0.5, actors: [a.id, corpse.id],
+    });
+    a.memory.learn('norm:burial', {
+      kind: 'norm',
+      confidence: 0.25,
+      valence: 0.5,
+      source: 'ritual',
+      payload: { situation: 'burial', polarity: 1, label: NORM_LABELS.burial },
     });
   }
 
   performRitual(a, site) {
-    if (a.affect?.e) {
-      a.affect.e.grief = clamp((a.affect.e.grief || 0) - 0.15, 0, 1);
-      a.affect.e.awe = clamp((a.affect.e.awe || 0) + 0.1, 0, 1);
-    }
+    a.affect.e.grief = clamp(a.affect.e.grief - 0.15, 0, 1);
+    a.affect.e.awe = clamp(a.affect.e.awe + 0.1, 0, 1);
     this.ritualPull = clamp(this.ritualPull + 0.05, 0, 1);
     if (site) site.gatherings = (site.gatherings || 0) + 1;
-    this.counters.rituals++;
-    this.record(
-      a,
-      'ritual',
-      `${a.name} stood at the ${site?.word || 'place'} and spoke`,
-      { valence: 0.3, intensity: 0.4, quiet: true },
-    );
+    this.record(a, 'ritual', `${a.name} stood at the ${site?.word || 'place'} and spoke`, {
+      valence: 0.3, intensity: 0.4, quiet: true,
+    });
   }
 
   makeArt(a, mediumKey) {
     const word = this.lang.thingName?.('art') || 'a making';
-    if (a.stats) a.stats.art = (a.stats.art || 0) + 1;
+    a.stats.art = (a.stats.art || 0) + 1;
     this.record(
       a,
       'art',
@@ -1212,8 +1110,7 @@ export class Simulation {
 
   assignOrphans() {
     for (const child of this.living) {
-      const age = child.ageAt(this.world.tick);
-      if (age >= 12) continue;
+      if (!child.isChild?.(this.world.tick) && child.ageAt(this.world.tick) >= 12) continue;
       const mother = this.byId(child.motherId);
       const father = this.byId(child.fatherId);
       if (mother?.alive || father?.alive) continue;
@@ -1222,17 +1119,17 @@ export class Simulation {
         .filter(
           (a) =>
             a.id !== child.id &&
-            a.ageAt(this.world.tick) >= 14 &&
+            !a.isChild?.(this.world.tick) &&
             Math.hypot(a.x - child.x, a.y - child.y) < BALANCE.orphanRadius,
         )
         .sort(
           (x, y) =>
-            (y.genome?.empathy || 0) + (y.rel ? y.rel(child).affection || 0 : 0) -
-            ((x.genome?.empathy || 0) + (x.rel ? x.rel(child).affection || 0 : 0)),
+            y.genome.empathy + (y.rel(child).affection || 0) -
+            (x.genome.empathy + (x.rel(child).affection || 0)),
         );
       if (adults[0]) {
         child.caretakerId = adults[0].id;
-        adults[0].adjustRel?.(child, { kin: 0.2, affection: 0.1 });
+        adults[0].adjustRel(child, { kin: 0.2, affection: 0.1 });
       }
     }
   }
@@ -1248,11 +1145,10 @@ export class Simulation {
     const ageA = a.ageAt(this.world.tick);
     const ageO = o.ageAt(this.world.tick);
     if (ageA < 16 || ageO < 16 || ageA > 48 || ageO > 48) return 0;
-    const affA = a.rel ? a.rel(o).affection || 0 : 0;
     return (
       0.018 *
-      ((a.genome?.fertility || 0.5) + (o.genome?.fertility || 0.5)) *
-      (0.5 + affA) *
+      ((a.genome.fertility || 0.5) + (o.genome.fertility || 0.5)) *
+      (0.5 + (a.rel(o).affection || 0)) *
       (s.stats.foodDays > 10 ? 1.35 : 1)
     );
   }
@@ -1267,10 +1163,8 @@ export class Simulation {
       if (seen.has(pairKey)) continue;
       seen.add(pairKey);
       if (this.rng.next() < this.conceptionChance(a, o)) {
-        let mother = a;
-        if (a.genome?.sex === 'f') mother = a;
-        else if (o.genome?.sex === 'f') mother = o;
-        else mother = this.rng.bool() ? a : o;
+        const mother =
+          a.genome.sex === 'f' ? a : o.genome.sex === 'f' ? o : this.rng.bool() ? a : o;
         mother.pregnant = 1;
         mother.pregnantWith = mother.id === a.id ? o.id : a.id;
       }
@@ -1301,55 +1195,41 @@ export class Simulation {
     this.agents.push(child);
     this.living.push(child);
     this.counters.births++;
-    if (mother.inventory) {
-      for (const [k, v] of [...mother.inventory]) {
-        if (this.ont.get(k)?.functions?.sustenance && v > 1) {
-          const give = Math.min(2, v - 1);
-          mother.take(k, give);
-          child.add(k, give);
-        }
+    for (const [k, v] of [...mother.inventory]) {
+      if (this.ont.get(k)?.functions?.sustenance && v > 1) {
+        const give = Math.min(2, v - 1);
+        mother.take(k, give);
+        child.add(k, give);
       }
     }
     this.record(
       mother,
       'birth',
       `${child.name} was born to ${mother.name}${father ? ` and ${father.name}` : ''}`,
-      {
-        valence: 0.85,
-        intensity: 0.9,
-        actors: [mother.id, child.id],
-        landmark: true,
-      },
+      { valence: 0.85, intensity: 0.9, actors: [mother.id, child.id], landmark: true },
     );
     return child;
   }
 
   handOffKnowledge(dying) {
-    const recipes = dying.memory?.knownKeys?.('recipe') || [];
+    const recipes = dying.memory.knownKeys('recipe');
     const near = this.living
-      .filter(
-        (a) => a.id !== dying.id && Math.hypot(a.x - dying.x, a.y - dying.y) < 18,
-      )
+      .filter((a) => a.id !== dying.id && Math.hypot(a.x - dying.x, a.y - dying.y) < 18)
       .sort((x, y) => dist(dying, x) - dist(dying, y));
 
     for (const key of recipes) {
       if (this.isCampKnowledge(key) || this.isArchived(key)) continue;
-      const heir = near.find((a) => !a.memory?.knows?.(key, 0.3)) || near[0];
+      const heir = near.find((a) => !a.memory.knows(key, 0.3)) || near[0];
       if (heir) {
-        heir.memory?.learn?.(key, {
+        heir.memory.learn(key, {
           kind: 'recipe',
-          confidence: 0.4 * (heir.genome?.learning || 0.5),
+          confidence: 0.4 * (heir.genome.learning || 0.5),
           valence: 0.3,
           source: `last gift of ${dying.name}`,
         });
         this.archiveKnowledge(key);
       } else {
-        this.lostKnowledge.push({
-          key,
-          tick: this.world.tick,
-          who: dying.name,
-          word: this.ont.get(key)?.word || key,
-        });
+        this.lostKnowledge.push({ key, tick: this.world.tick, who: dying.name });
         this.record(
           null,
           'loss',
@@ -1402,22 +1282,12 @@ export class Simulation {
 
   spoilFood() {
     for (const a of this.living) {
-      if (!a.inventory) continue;
       for (const [k, v] of [...a.inventory]) {
         const c = this.ont.get(k);
         if (!c?.functions?.sustenance) continue;
         if (k === 'grain') continue;
         const loss = v * BALANCE.spoilRate * (this.world.season === 'summer' ? 1.4 : 1);
         if (loss > 0.02) a.take(k, Math.min(v, loss));
-      }
-    }
-    for (const s of this.world.structuresOfKind('store')) {
-      if (!s.stock) continue;
-      for (const [k, v] of [...s.stock]) {
-        if (k === 'grain' || k === 'water') continue;
-        if (!this.ont.get(k)?.functions?.sustenance) continue;
-        const loss = v * BALANCE.spoilRate * 0.5;
-        if (loss > 0.02) s.stock.set(k, Math.max(0, v - loss));
       }
     }
   }
@@ -1448,19 +1318,36 @@ export class Simulation {
       if (!a.alive) continue;
       think(a, this, ctxBase);
 
-      if ((a.body?.hunger || 0) >= 0.99) this.die(a, 'starvation');
-      else if ((a.body?.thirst || 0) >= 0.99) this.die(a, 'thirst');
+      if (a.body.hunger >= 0.99) this.die(a, 'starvation');
+      else if (a.body.thirst >= 0.99) this.die(a, 'thirst');
       else if (typeof a.health === 'function' && a.health() <= 0) {
-        this.die(a, (a.body?.illness || 0) > (a.body?.injury || 0) ? 'illness' : 'injury');
+        this.die(a, a.body.illness > a.body.injury ? 'illness' : 'injury');
       } else if (
-        a.ageAt(this.world.tick) > 70 + (a.genome?.resilience || 0.5) * 25 &&
+        a.ageAt(this.world.tick) > 70 + (a.genome.resilience || 0.5) * 25 &&
         this.rng.bool(0.0015 * dt)
       ) {
         this.die(a, 'old age');
       }
     }
 
-    if (this.tick % 6 === 0) this.fieldsTick();
+    // Fields
+    if (this.tick % 6 === 0) {
+      for (const f of this.world.structuresOfKind('field')) {
+        const fert = this.world.fertility?.[this.world.idx(f.x, f.y)] || 0.5;
+        const seasonMul =
+          this.world.season === 'winter'
+            ? 0.12
+            : this.world.season === 'spring'
+              ? 1.15
+              : this.world.season === 'summer'
+                ? 1.25
+                : 0.65;
+        f.ripeness = clamp(
+          (f.ripeness || 0) + (0.045 + (f.tended || 0) * 0.055) * fert * seasonMul,
+        );
+        f.tended = clamp((f.tended || 0) * 0.92);
+      }
+    }
 
     if (this.tick % 24 === 0) {
       this.dailyReflection();
@@ -1484,32 +1371,12 @@ export class Simulation {
     this.ritualPull *= 0.99;
   }
 
-  fieldsTick() {
-    for (const f of this.world.structuresOfKind('field')) {
-      const fert = this.world.fertility?.[this.world.idx(f.x, f.y)] || 0.5;
-      const seasonMul =
-        this.world.season === 'winter'
-          ? 0.12
-          : this.world.season === 'spring'
-            ? 1.15
-            : this.world.season === 'summer'
-              ? 1.25
-              : 0.65;
-      f.ripeness = clamp(
-        (f.ripeness || 0) + (0.045 + (f.tended || 0) * 0.055) * fert * seasonMul,
-      );
-      f.tended = clamp((f.tended || 0) * 0.92);
-    }
-  }
-
   dailyReflection() {
     for (const a of this.living) {
-      if (this.rng.bool(0.28)) a.memory?.consolidate?.(a);
-      if (a.inventory) {
-        for (const [k] of a.inventory) {
-          const price = this.priceOf(k);
-          if (a.updateValue) a.updateValue(k, price, 0.06);
-        }
+      if (this.rng.bool(0.28)) a.memory.consolidate?.(a);
+      for (const [k] of a.inventory) {
+        const m = this.marketPrices.get(k);
+        if (m && a.updateValue) a.updateValue(k, m.price, 0.06);
       }
     }
   }
@@ -1518,8 +1385,8 @@ export class Simulation {
     if (!this.living.length || !this.origin) return;
     const ranked = [...this.living].sort(
       (x, y) =>
-        (y.reputation || 0) + (y.genome?.sociability || 0) * 0.2 -
-        ((x.reputation || 0) + (x.genome?.sociability || 0) * 0.2),
+        (y.reputation || 0) + (y.genome.sociability || 0) * 0.2 -
+        ((x.reputation || 0) + (x.genome.sociability || 0) * 0.2),
     );
     const lead = ranked[0];
     const s = this.origin;
@@ -1529,9 +1396,7 @@ export class Simulation {
       if (!lead.titles.includes('the one they listen to')) {
         lead.titles.push('the one they listen to');
         this.record(lead, 'first', `${lead.name} became the one they listen to`, {
-          valence: 0.5,
-          intensity: 0.8,
-          landmark: true,
+          valence: 0.5, intensity: 0.8, landmark: true,
         });
       }
     }
@@ -1551,6 +1416,7 @@ export class Simulation {
         { valence: 0, intensity: 0.5 },
       );
     }
+    // Era label by capability
     const cap = this.estimateCapability();
     if (cap > this.era.capability + 25) {
       this.era = {
@@ -1559,18 +1425,14 @@ export class Simulation {
         capability: cap,
       };
       this.record(null, 'era', `They entered ${this.era.name}`, {
-        valence: 0.4,
-        intensity: 0.6,
-        landmark: true,
+        valence: 0.4, intensity: 0.6, landmark: true,
       });
     }
   }
 
   estimateCapability() {
     let c = 0;
-    for (const a of this.living) {
-      c += (a.memory?.knownKeys?.('recipe')?.length || 0) * 0.5;
-    }
+    for (const a of this.living) c += a.memory.knownKeys('recipe').length * 0.5;
     c += this.archive.size * 2;
     c += this.world.structures.length * 1.5;
     return Math.round(c);
@@ -1598,8 +1460,6 @@ export class Simulation {
     };
     this.chronicle?.add?.(ev);
     this.logBuffer.push(ev);
-    this.eventLog.push(ev);
-    if (this.eventLog.length > 4000) this.eventLog.shift();
     if (agent?.memory?.remember && !opts.quiet) {
       agent.memory.remember({
         tick: this.world.tick,
@@ -1619,45 +1479,6 @@ export class Simulation {
     return out;
   }
 
-  activityFeed(limit = 40) {
-    return this.eventLog.slice(-limit).map((e) => ({
-      day: e.day,
-      kind: e.kind,
-      text: e.text,
-      name: e.name,
-    }));
-  }
-
-  learningSummary() {
-    const byFn = new Map();
-    for (const key of this.archive) {
-      const c = this.ont.get(key);
-      if (!c) continue;
-      const fn = c.bestFn || 'other';
-      const score = c.serves?.(fn) || 0;
-      const prev = byFn.get(fn);
-      if (!prev || score > prev.score) {
-        byFn.set(fn, { key, word: c.word, score });
-      }
-    }
-    for (const a of this.living) {
-      if (!a.memory?.knownKeys) continue;
-      for (const key of a.memory.knownKeys('recipe')) {
-        const c = this.ont.get(key);
-        if (!c) continue;
-        const fn = c.bestFn || 'other';
-        const score = c.serves?.(fn) || 0;
-        const prev = byFn.get(fn);
-        if (!prev || score > prev.score) {
-          byFn.set(fn, { key, word: c.word, score, holder: a.name });
-        }
-      }
-    }
-    return [...byFn.entries()]
-      .map(([fn, v]) => ({ need: fn, ...v }))
-      .sort((x, y) => y.score - x.score);
-  }
-
   settlementReport(settlement = null) {
     const s = settlement || this.origin;
     if (!s) return null;
@@ -1669,21 +1490,11 @@ export class Simulation {
       if (Math.hypot(st.x - s.x, st.y - s.y) > 20) continue;
       structs[st.kind] = (structs[st.kind] || 0) + 1;
     }
-    let storeFill = 0;
-    let storeCap = 0;
-    for (const st of this.world.structuresOfKind('store')) {
-      if (Math.hypot(st.x - s.x, st.y - s.y) > 20) continue;
-      for (const v of st.stock?.values() || []) {
-        storeFill += v;
-        storeCap += 40;
-      }
-    }
     return {
       name: s.name,
       stats: { ...s.stats },
       deficits: n,
       structures: structs,
-      storeFillPct: storeCap ? Math.round((storeFill / storeCap) * 100) : 0,
       projects: s.projects.map((p) => ({
         kind: p.kind,
         label: p.label,
@@ -1695,12 +1506,7 @@ export class Simulation {
       food: this.totalFood(),
       archiveSize: this.archive.size,
       crisis: this.foodCrisisLevel(s),
-      laws: [...this.laws.entries()].map(([k, v]) => ({
-        situation: k,
-        label: v.label,
-        strength: Math.round(v.strength * 100),
-        polarity: v.polarity,
-      })),
+      laws: [...this.laws.entries()].map(([k, v]) => ({ situation: k, ...v })),
     };
   }
 
@@ -1715,16 +1521,7 @@ export class Simulation {
       else if (age < 60) ages.mature++;
       else ages.elder++;
     }
-    const goods = this.living.map((a) => {
-      if (typeof a.carried === 'function') return a.carried();
-      if (a.inventory instanceof Map) return [...a.inventory.values()].reduce((x, y) => x + y, 0);
-      return 0;
-    });
-    const deathCauses = {};
-    for (const a of this.dead) {
-      const c = a.deathCause || 'unknown';
-      deathCauses[c] = (deathCauses[c] || 0) + 1;
-    }
+    const goods = this.living.map((a) => a.carried?.() || 0);
     return {
       living: this.living.length,
       ever: this.agents.length,
@@ -1733,7 +1530,6 @@ export class Simulation {
       day: this.world.dayNumber,
       year: this.world.year,
       era: this.era.name,
-      season: this.world.season,
       settlement: s,
       ages,
       archive: this.archive.size,
@@ -1744,18 +1540,16 @@ export class Simulation {
       inequality: gini(goods),
       counters: { ...this.counters },
       lost: this.lostKnowledge.length,
-      deathCauses,
-      learning: this.learningSummary().slice(0, 16),
-      recent: this.activityFeed(20),
     };
   }
 
   report() {
-    if (typeof this.chronicle?.report === 'function') {
-      return this.chronicle.report(this);
-    }
-    return this.societyReport();
+    return this.chronicle?.report?.(this) || this.societyReport();
   }
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
 }
 
 export { YEAR_TICKS, SKILLS, moodWord, BALANCE, NORM_LABELS };
