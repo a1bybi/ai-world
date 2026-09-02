@@ -1416,14 +1416,19 @@ export const ACTIONS = {
       const near = ctx.nearby(a, 6).filter((o) => o.id !== a.id);
       const shareNorm = normsFor(a, ctx, ['sharing', 'gift', 'neglect']);
       const out = [];
+      const tick = ctx.world.tick;
       for (const o of near) {
         const r = a.rel(o);
-        const isKid = o.isChild(ctx.world.tick);
+        // At most one counted gift per pair per half-day
+        if (tick - (r.lastGiftTick || -999) < 12) continue;
+
+        const isKid = o.isChild(tick);
         const kinChild =
           isKid &&
           (r.kin > 0.25 ||
             a.household === o.household ||
             a.children.includes(o.id));
+
         const theirNeed =
           o.body.hunger * 1.6 +
           o.body.thirst * 0.8 +
@@ -1465,9 +1470,17 @@ export const ACTIONS = {
           (ctx.bias?.social ?? 1) *
           (1 + Math.max(0, shareNorm) * 0.5) *
           (kinChild ? 2.0 : 1);
-        out.push({ kind: 'give', u, targetId: o.id, payload: gift, dur: 1 });
+
+        out.push({
+          kind: 'give',
+          u,
+          targetId: o.id,
+          payload: gift,
+          dur: 1,
+          quietGift: !!kinChild,
+        });
       }
-      return topN(out, 1, (o) => o.u);
+      return topN(out, 1, (x) => x.u);
     },
     run(a, ctx, act) {
       const o = ctx.sim.byId(act.targetId);
@@ -1478,25 +1491,46 @@ export const ACTIONS = {
       }
       if (!a.take(act.payload, 1)) return 'abort';
       o.add(act.payload, 1);
-      a.stats.gifts++;
-      ctx.sim.counters.gifts++;
+
+      const r = a.rel(o);
+      r.lastGiftTick = ctx.world.tick;
+      r.exchanges = (r.exchanges || 0) + 1;
+      const ro = o.rel(a);
+      ro.exchanges = (ro.exchanges || 0) + 1;
+      ro.lastGiftTick = ctx.world.tick;
+
       const word = ctx.ont.get(act.payload)?.word || act.payload;
       a.adjustRel(o, { affection: 0.08, familiarity: 0.06, debt: -0.4 });
       o.adjustRel(a, { affection: 0.16, trust: 0.14, familiarity: 0.08, debt: 0.5 });
-      ctx.sim.record(a, 'gift', `${a.name} gave ${word} to ${o.name}, who had none`, {
-        valence: 0.6, intensity: 0.6, actors: [a.id, o.id],
-      });
+
+      if (!act.quietGift) {
+        a.stats.gifts++;
+        ctx.sim.counters.gifts++;
+        ctx.sim.record(a, 'gift', `${a.name} gave ${word} to ${o.name}, who had none`, {
+          valence: 0.6,
+          intensity: 0.55,
+          actors: [a.id, o.id],
+        });
+        ctx.sim.reputationDelta?.(a, 0.05);
+      } else {
+        ctx.sim.record(a, 'gift', `${a.name} fed ${o.name}`, {
+          valence: 0.35,
+          intensity: 0.25,
+          actors: [a.id, o.id],
+          quiet: true,
+        });
+      }
+
       appraise(a, {
-        goalCongruence: 0.4, agency: 'self', intensity: 0.5, kind: 'gift', norm: 1, social: o.id,
+        goalCongruence: 0.4, agency: 'self', intensity: 0.45, kind: 'gift', norm: 1, social: o.id,
       });
       appraise(o, {
-        goalCongruence: 0.7, agency: 'other', intensity: 0.7, kind: 'gift', social: a.id,
+        goalCongruence: 0.7, agency: 'other', intensity: 0.6, kind: 'gift', social: a.id,
       });
       a.memory.learn('norm:sharing', {
         kind: 'norm', confidence: 0.2, valence: 0.45, source: 'experience',
         payload: { situation: 'sharing', polarity: 1, evidence: 1 },
       });
-      ctx.sim.reputationDelta(a, 0.05);
       return 'done';
     },
   },
