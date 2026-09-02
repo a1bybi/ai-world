@@ -1774,14 +1774,18 @@ export const ACTIONS = {
     category: 'ritual',
     propose(a, ctx) {
       if (!ctx.world.corpses?.length) return [];
+      if (a.isChild(ctx.world.tick)) return [];
       const c = topN(ctx.world.corpses, 1, (k) => -dist(a, k))[0];
-      if (!c || dist(a, c) > 22) return [];
+      if (!c || dist(a, c) > 28) return [];
       const r = a.rel(c.id) || { kin: 0, affection: 0 };
       const burialNorm = normsFor(a, ctx, ['burial', 'ritual', 'death']);
+      // Unburied dead are urgent: boost so burial norm can be upheld
+      const backlog = Math.min(4, ctx.world.corpses.length);
       const u =
-        (0.5 + a.genome.empathy + r.kin * 1.5 + r.affection + a.affect.e.grief) *
-        1.2 *
-        (1 + Math.max(0, burialNorm) * 0.45);
+        (0.85 + a.genome.empathy + r.kin * 1.5 + r.affection + (a.affect.e.grief || 0)) *
+        1.6 *
+        (1 + Math.max(0, burialNorm) * 0.5) *
+        (1 + backlog * 0.35);
       return [{ kind: 'bury', u, target: T(c.x, c.y), corpse: c, dur: 3 }];
     },
     run(a, ctx, act) {
