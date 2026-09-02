@@ -84,7 +84,7 @@ export class Agent {
   isChild(tick) { return this.ageAt(tick) < 13; }
   isElder(tick) { return this.ageAt(tick) > 52 * this.genome.longevity; }
 
-  // ── inventory ──────────────────────────────────────────────────────────[...]
+  // ââ inventory ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ[...]
   count(key) { return this.inventory.get(key) || 0; }
   add(key, n = 1) { this.inventory.set(key, this.count(key) + n); }
   take(key, n = 1) {
@@ -113,12 +113,12 @@ export class Agent {
     return best;
   }
 
-  // ── relationships ────────────────────────────────────────────────────────��[...]
+  // ââ relationships ââââââââââââââââââââââââââââââââââââââââââââââââââââââââï¿½ï¿½[...]
   rel(other) {
     const id = typeof other === 'string' ? other : other.id;
     let r = this.relationships.get(id);
     if (!r) {
-      r = { id, familiarity: 0, affection: 0, trust: 0.1, respect: 0.1, debt: 0, kin: 0, conflicts: 0, exchanges: 0, lastSeen: 0 };
+      r = { id, familiarity: 0, affection: 0, trust: 0.1, respect: 0.1, debt: 0, kin: 0, conflicts: 0, exchanges: 0, lastGiftTick: -999, lastSeen: 0 };
       this.relationships.set(id, r);
     }
     return r;
@@ -136,7 +136,7 @@ export class Agent {
       .slice(0, n);
   }
 
-  // ── value beliefs (subjective economics) ──────────────────────────────────
+  // ââ value beliefs (subjective economics) ââââââââââââââââââââââââââââââââââ
   valueOf(key, ontology) {
     if (this.values.has(key)) return this.values.get(key);
     const c = ontology.get(key);
@@ -149,7 +149,7 @@ export class Agent {
     this.values.set(key, clamp(cur * (1 - weight) + observed * weight, 0.05, 12));
   }
 
-  /** Marginal desire for one more unit — scarcity and need shape it. */
+  /** Marginal desire for one more unit â scarcity and need shape it. */
   desireFor(key, ontology, sim) {
     const c = ontology.get(key);
     if (!c) return 0;
