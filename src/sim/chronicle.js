@@ -106,7 +106,7 @@ export class Chronicle {
         population: sim.living.length,
       };
       this.eras.push(era);
-      sim.record(null, 'era', `A new age begins — ${era.name}`, {
+      sim.record(null, 'era', `A new age begins â ${era.name}`, {
         valence: 0.5, intensity: 1, landmark: true,
       });
       return era;
@@ -158,7 +158,7 @@ export class Chronicle {
     return this.events.filter((e) => e.tick > tick);
   }
 
-  // ── Settlements as places ──────────────────────────────────────────────────
+  // ââ Settlements as places ââââââââââââââââââââââââââââââââââââââââââââââââââ
 
   settlements(sim) {
     const list = sim.settlements?.length
@@ -205,7 +205,7 @@ export class Chronicle {
     });
   }
 
-  // ── Report writing ────────────────────────────────────────────────────────
+  // ââ Report writing ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
   report(sim) {
     const now = sim.world.tick;
@@ -256,6 +256,8 @@ export class Chronicle {
         lessons: sim.counters.lessons,
         words: sim.lang.words.size,
         laws: sim.norms.filter((n) => n.strength > 0.5).length,
+        foodDays: typeof sim.foodDaysAt === 'function' ? +sim.foodDaysAt().toFixed(1) : null,
+        archive: sim.archive?.size ?? 0,
       },
       deltas: {
         pop: living.length - (prevSample.pop ?? living.length),
@@ -278,14 +280,19 @@ export class Chronicle {
             score: +v.score.toFixed(2),
           }))
           .sort((a, b) => b.score - a.score),
-        newInventions: invNew.slice(-24).reverse().map((i) => ({
-          key: i.key,
-          label: glossConcept(sim, i.key),
-          word: i.word || sim.ont.get(i.key)?.word || i.key,
-          function: sim.ont.get(i.key)?.bestFn || null,
-          advance: !!i.advance,
-          maker: i.maker || null,
-        })),
+        newInventions: invNew.slice(-24).reverse().map((i) => {
+          const c = sim.ont.get(i.key);
+          return {
+            key: i.key,
+            label: glossConcept(sim, i.key),
+            word: i.word || c?.word || i.key,
+            fn: i.fn || c?.bestFn || null,
+            by: i.by || i.maker || 'someone',
+            advance: !!i.advance,
+            function: i.fn || c?.bestFn || null,
+            maker: i.by || i.maker || null,
+          };
+        }),
         lostKnowledge: sim.lostKnowledge.slice(-12).map((L) => ({
           ...L,
           label: glossConcept(sim, L.key),
@@ -342,10 +349,15 @@ export class Chronicle {
 
   demography(sim) {
     const living = sim.living;
+    const tick = sim.world.tick;
     const buckets = [0, 0, 0, 0, 0];
+    let adults = 0;
+    let children = 0;
     for (const a of living) {
-      const age = a.ageAt(sim.world.tick);
+      const age = a.ageAt(tick);
       buckets[age < 13 ? 0 : age < 25 ? 1 : age < 40 ? 2 : age < 55 ? 3 : 4]++;
+      if ((a.isChild && a.isChild(tick)) || age < 13) children++;
+      else adults++;
     }
     return {
       ageBuckets: {
@@ -355,7 +367,10 @@ export class Chronicle {
         mature: buckets[3],
         elder: buckets[4],
       },
-      meanAge: +mean(living, (a) => a.ageAt(sim.world.tick)).toFixed(1),
+      adults,
+      children,
+      dependency: adults > 0 ? +(children / adults).toFixed(2) : children > 0 ? 99 : 0,
+      meanAge: +mean(living, (a) => a.ageAt(tick)).toFixed(1),
       meanLifespan: sim.dead.length
         ? +mean(sim.dead, (a) => Math.max(0, a.ageAt(a.deathTick ?? a.diedTick ?? 0))).toFixed(1)
         : null,
@@ -430,8 +445,8 @@ export class Chronicle {
             affection: +r.affection.toFixed(2),
             trust: +r.trust.toFixed(2),
             kin: r.kin > 0.4,
-            exchanges: r.exchanges,
-            conflicts: r.conflicts,
+            exchanges: r.exchanges || 0,
+            conflicts: r.conflicts || 0,
           });
         }
       }
@@ -500,11 +515,11 @@ export class Chronicle {
         ? `store about ${p.store.pct}% full (${p.store.held} measures)`
         : 'no common store nearby';
       lines.push(
-        `${p.name} (${p.tier}): ${p.people} living close by · ${p.structureLine} · ${storeBit}.`,
+        `${p.name} (${p.tier}): ${p.people} living close by Â· ${p.structureLine} Â· ${storeBit}.`,
       );
       if (p.topHeld.length) {
         lines.push(
-          `  Most held there: ${p.topHeld.map((g) => `${g.label} ×${g.qty}`).join(', ')}.`,
+          `  Most held there: ${p.topHeld.map((g) => `${g.label} Ã${g.qty}`).join(', ')}.`,
         );
       }
     }
@@ -536,7 +551,7 @@ export class Chronicle {
     const hunger = last.hunger ?? 0;
     if (hunger > 0.6) {
       lines.push(
-        `Hunger is the ruling fact — the average belly sits at ${Math.round(hunger * 100)}% empty and the stores are thin.`,
+        `Hunger is the ruling fact â the average belly sits at ${Math.round(hunger * 100)}% empty and the stores are thin.`,
       );
     } else if (hunger < 0.3) {
       lines.push('Food is not a worry at present; the fields and beds are keeping pace.');
@@ -550,12 +565,26 @@ export class Chronicle {
     );
 
     const conflicts = window.filter((e) => e.kind === 'violence' || e.kind === 'theft').length;
-    const kindness = window.filter((e) => e.kind === 'gift' || e.kind === 'rescue').length;
+    const kindness = window.filter(
+      (e) => (e.kind === 'gift' || e.kind === 'rescue') && !e.quiet,
+    ).length;
     if (conflicts || kindness) {
       lines.push(
         `There were ${kindness} acts of open kindness and ${conflicts} of harm; the people are ${
           kindness >= conflicts ? 'still holding together' : 'beginning to turn on each other'
         }.`,
+      );
+    }
+
+    if (typeof sim.foodDaysAt === 'function') {
+      const fd = sim.foodDaysAt();
+      lines.push(
+        `Stores and packs hold about ${fd.toFixed(1)} days of food at current numbers.`,
+      );
+    }
+    if (sim.archive?.size) {
+      lines.push(
+        `The camp archive holds ${sim.archive.size} known makings beyond any one mind.`,
       );
     }
 
