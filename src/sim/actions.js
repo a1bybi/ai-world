@@ -1,6 +1,5 @@
-// Full actions: survival-first utilities, real structures
-// (bridge lengths, wall, arena, plaza, field, store, kiln, …),
-// full social set. Process-registry layer is step 2.
+// Everything an inhabitant can choose to do.
+// Bridges cost and place a full bank→bank span (world.findBridgeSpan).
 
 import { clamp, dist, topN } from '../core/util.js';
 import { TERRAIN } from '../world/world.js';
@@ -164,12 +163,12 @@ function normsFor(a, ctx, tags = []) {
   if (!tags.length) return 0;
   let sum = 0;
   let n = 0;
-  const consider = (tag) => {
+  const consider = (key) => {
     let v = 0;
-    if (typeof ctx.sim?.effectiveNorm === 'function') v = ctx.sim.effectiveNorm(a, tag);
-    else if (typeof ctx.sim?.personalNorm === 'function') v = ctx.sim.personalNorm(a, tag);
+    if (typeof ctx.sim?.effectiveNorm === 'function') v = ctx.sim.effectiveNorm(a, key);
+    else if (typeof ctx.sim?.personalNorm === 'function') v = ctx.sim.personalNorm(a, key);
     else {
-      const b = a.memory.belief(`norm:${tag}`);
+      const b = a.memory.belief(`norm:${key}`);
       if (b && b.confidence >= 0.12) v = b.valence * b.confidence;
     }
     if (v !== 0) {
@@ -178,6 +177,15 @@ function normsFor(a, ctx, tags = []) {
     }
   };
   for (const tag of tags) consider(tag);
+  if (typeof a.memory.knownNorms === 'function') {
+    for (const b of a.memory.knownNorms(0.12)) {
+      const sit = b.payload?.situation || b.key.replace(/^norm:/, '');
+      if (tags.includes(sit)) {
+        sum += b.valence * b.confidence;
+        n++;
+      }
+    }
+  }
   return n ? sum / n : 0;
 }
 
@@ -186,8 +194,12 @@ function normPull(a, ctx, key) {
 }
 
 function plazaBoost(ctx, a, mult = 1.25) {
-  if (ctx.world.hasStructureNear?.(a.x, a.y, 'plaza', 6)) return mult;
-  if (ctx.world.hasStructureNear?.(a.x, a.y, 'arena', 6)) return mult;
+  if (
+    typeof ctx.world.hasStructureNear === 'function' &&
+    ctx.world.hasStructureNear(a.x, a.y, 'plaza', 6)
+  ) {
+    return mult;
+  }
   return 1;
 }
 
@@ -224,21 +236,6 @@ function takeMaterial(a, ctx, key, amount = 1, range = 12) {
   return amount - need;
 }
 
-function foodCrisis(ctx) {
-  if (typeof ctx.sim?.foodCrisisLevel === 'function') return ctx.sim.foodCrisisLevel();
-  const s = ctx.sim?.origin;
-  const fd = s?.stats?.foodDays;
-  if (fd == null) {
-    const food = ctx.sim?.totalFood?.() ?? 0;
-    const n = Math.max(1, ctx.sim?.living?.length || 1);
-    return clamp(1 - food / (n * 8));
-  }
-  if (fd < 3) return 1;
-  if (fd < 5) return 0.75;
-  if (fd < 8) return 0.4;
-  return 0;
-}
-
 const U = {
   thirstBase: 2.8,
   thirstCrisis: 8,
@@ -246,7 +243,7 @@ const U = {
   hungerCrisis: 22,
   sleepNeed: 1.7,
   warmth: 3.2,
-  idle: 0.12,
+  idle: 0.15,
 };
 
 const STRUCTURE_KINDS = {
@@ -257,13 +254,11 @@ const STRUCTURE_KINDS = {
   field:    { fn: 'sustenance', cost: 5,  need: (s) => s.fieldDeficit,    desc: 'ground turned for planted grain' },
   well:     { fn: 'vessel',     cost: 8,  need: (s) => s.wellDeficit,     desc: 'water that does not need a walk' },
   shrine:   { fn: 'art',        cost: 6,  need: (s) => s.shrineDeficit,   desc: 'a place for the dead and the questions' },
-  wall:     { fn: 'shelter',    cost: 10, need: (s) => s.wallDeficit,     desc: 'a boundary against what is out there' },
-  hall:     { fn: 'shelter',    cost: 16, need: (s) => s.hallDeficit,     desc: 'one roof big enough for everyone' },
-  bridge:   { fn: 'shelter',    cost: 2,  need: (s) => s.bridgeDeficit,   desc: 'a way across water' },
-  path:     { fn: 'shelter',    cost: 3,  need: (s) => s.pathDeficit,     desc: 'beaten ground easier to walk' },
+  wall:     { fn: 'shelter',    cost: 14, need: (s) => s.wallDeficit,     desc: 'a boundary against what is out there' },
+  hall:     { fn: 'shelter',    cost: 18, need: (s) => s.hallDeficit,     desc: 'one roof big enough for everyone' },
+  bridge:   { fn: 'shelter',    cost: 10, need: (s) => s.bridgeDeficit,   desc: 'a way across water' },
+  path:     { fn: 'shelter',    cost: 3,  need: (s) => s.pathDeficit,     desc: 'beaten ground that is easier to walk' },
   plaza:    { fn: 'art',        cost: 8,  need: (s) => s.plazaDeficit,    desc: 'open ground where people meet' },
-  arena:    { fn: 'art',        cost: 12, need: (s) => s.arenaDeficit ?? (s.plazaDeficit || 0) * 0.65, desc: 'a ring for contests and gathering' },
-  kiln:     { fn: 'heat',       cost: 11, need: (s) => s.kilnDeficit ?? 0, desc: 'a fire hard enough for earth and ore' },
 };
 
 export const ACTIONS = {
@@ -323,8 +318,7 @@ export const ACTIONS = {
   eat: {
     category: 'body',
     propose(a, ctx) {
-      if (a.body.hunger < 0.22) return [];
-      const crisis = foodCrisis(ctx);
+      if (a.body.hunger < 0.28) return [];
       let best = null;
       for (const key of a.inventory.keys()) {
         const c = ctx.ont.get(key);
@@ -338,7 +332,7 @@ export const ACTIONS = {
         if (store) {
           return [{
             kind: 'takeFromStore',
-            u: a.body.hunger * U.hungerBase + Math.max(0, a.body.hunger - 0.3) * 14 + crisis * 6,
+            u: a.body.hunger * U.hungerBase + Math.max(0, a.body.hunger - 0.35) * 12,
             target: store,
             dur: 1,
           }];
@@ -347,10 +341,9 @@ export const ACTIONS = {
       }
       const u =
         (a.body.hunger * U.hungerBase +
-          Math.max(0, a.body.hunger - 0.22) * U.hungerCrisis) *
+          Math.max(0, a.body.hunger - 0.25) * U.hungerCrisis) *
         (0.5 + best.n) *
-        (a.body.hunger > 0.35 ? 2.8 : 1) *
-        (1 + crisis);
+        (a.body.hunger > 0.4 ? 2.5 : 1);
       return [{ kind: 'eat', u, payload: best.key, dur: 1 }];
     },
     run(a, ctx, act) {
@@ -382,15 +375,14 @@ export const ACTIONS = {
   takeFromStore: {
     category: 'body',
     propose(a, ctx) {
-      if (a.body.hunger < 0.25 && a.body.thirst < 0.5) return [];
+      if (a.body.hunger < 0.28 && a.body.thirst < 0.5) return [];
       const store = ctx.world
         .structuresOfKind('store')
         .find((s) => s.stock && [...s.stock.values()].some((v) => v > 0));
       if (!store) return [];
-      const crisis = foodCrisis(ctx);
       return [{
         kind: 'takeFromStore',
-        u: a.body.hunger * 2.5 + Math.max(0, a.body.hunger - 0.35) * 10 + a.body.thirst * 1.5 + crisis * 5,
+        u: a.body.hunger * 2.2 + Math.max(0, a.body.hunger - 0.4) * 8 + a.body.thirst * 1.5,
         target: store,
         dur: 1,
       }];
@@ -436,7 +428,6 @@ export const ACTIONS = {
     category: 'body',
     propose(a, ctx) {
       if (a.body.rest > 0.85 && a.body.energy > 0.7) return [];
-      if (foodCrisis(ctx) > 0.7 && a.body.hunger > 0.45) return [];
       const night = ctx.world.isNight ? 0.35 : 0;
       const need =
         (1 - a.body.rest) * 1.2 + night + (1 - a.body.energy) * 0.4;
@@ -499,10 +490,9 @@ export const ACTIONS = {
   gather: {
     category: 'work',
     propose(a, ctx) {
-      const crisis = foodCrisis(ctx);
       const laden = a.carried() > a.carryLimit;
       const out = [];
-      const hungry = a.body.hunger > 0.35 || crisis > 0.35;
+      const hungry = a.body.hunger > 0.4;
       const known = new Set(
         a.memory.knownKeys('matter').concat([...a.memory.semantic.keys()]),
       );
@@ -514,10 +504,9 @@ export const ACTIONS = {
         const isFood = sust > 0.15 || foodKeys.has(c.key);
         if (!(known.has(c.key) || a.genome.curiosity > 0.5 || (hungry && isFood))) continue;
         if (laden && !(isFood && hungry)) continue;
-        if (crisis > 0.5 && !isFood && c.key !== 'wood' && c.key !== 'stone') continue;
         const desire =
           a.desireFor(c.key, ctx.ont, ctx.sim) +
-          (hungry && isFood ? a.body.hunger * 2.2 + crisis * 2 : 0);
+          (hungry && isFood ? a.body.hunger * 1.8 : 0);
         scored.push({ c, desire });
       }
 
@@ -531,11 +520,9 @@ export const ACTIONS = {
             : null);
         if (!spot) continue;
         const travel = dist(a, spot);
-        const feedsMe = (c.functions?.sustenance || 0) > 0.15
-          ? 1 + a.body.hunger * 2.5 + crisis * 2
-          : 1;
+        const feedsMe = (c.functions?.sustenance || 0) > 0.15 ? 1 + a.body.hunger * 2.5 : 1;
         const u =
-          ((desire * 2.0 * feedsMe * (ctx.bias?.work ?? 1)) / (1 + travel * 0.06)) *
+          ((desire * 1.9 * feedsMe * (ctx.bias?.work ?? 1)) / (1 + travel * 0.06)) *
           (0.6 + a.skills.forage);
         out.push({
           kind: 'gather',
@@ -597,10 +584,9 @@ export const ACTIONS = {
   hunt: {
     category: 'work',
     propose(a, ctx) {
-      const crisis = foodCrisis(ctx);
       const spot = ctx.world.findResource('game', a, 12 + a.genome.acuity * 10);
       if (!spot) return [];
-      const hungerPull = 0.5 + a.body.hunger * 1.6 + crisis * 1.2;
+      const hungerPull = 0.5 + a.body.hunger * 1.6;
       const weapon = a.bestToolFor('weapon', ctx.ont);
       const capability = 0.25 + a.skills.hunt * 0.9 + (weapon ? weapon.score * 0.9 : 0);
       const risk = clamp(0.5 - capability * 0.4);
@@ -644,6 +630,12 @@ export const ACTIONS = {
         for (const k of ['meat', 'hide', 'bone']) {
           a.memory.learn(k, { kind: 'matter', confidence: 0.6, valence: 0.4 });
         }
+        if (a.body.hunger > 0.4) {
+          a.memory.learn('lesson:hunger', {
+            kind: 'lesson', confidence: 0.4, valence: 0.5, source: 'survival',
+            payload: { do: 'hunt', what: 'meat' },
+          });
+        }
       } else {
         const hurt = ctx.rng.float(0.05, 0.3) / Math.max(0.2, a.genome.resilience);
         a.body.injury = clamp(a.body.injury + hurt, 0, 1);
@@ -665,14 +657,16 @@ export const ACTIONS = {
   craft: {
     category: 'work',
     propose(a, ctx) {
-      const crisis = foodCrisis(ctx);
-      if (crisis > 0.55) return [];
       if (a.body.hunger > 0.55) return [];
       if (a.carried() > a.carryLimit * 0.95) return [];
       const out = [];
       const hungryHousehold =
         a.body.hunger > 0.35 || ctx.sim.totalFood() < ctx.sim.living.length * 2;
-      const shopBoost = ctx.world.hasStructureNear?.(a.x, a.y, 'workshop', 5) ? 1.15 : 1;
+      const shopBoost =
+        typeof ctx.world.hasStructureNear === 'function' &&
+        ctx.world.hasStructureNear(a.x, a.y, 'workshop', 5)
+          ? 1.15
+          : 1;
       let looked = 0;
       for (const key of a.memory.knownKeys('recipe')) {
         if (++looked > 24) break;
@@ -696,8 +690,7 @@ export const ACTIONS = {
             (ctx.bias?.work ?? 1) *
             (0.5 + a.skills.craft) *
             (1 + Math.max(0, craftNorm) * 0.25) *
-            shopBoost *
-            (1 - crisis * 0.8),
+            shopBoost,
           payload: key,
           dur: 2 + c.tier,
         });
@@ -716,7 +709,6 @@ export const ACTIONS = {
       a.stats.crafted++;
       a.gainSkill('craft', 0.035);
       a.body.energy = clamp(a.body.energy - 0.07, 0, 1);
-      ctx.sim.archiveKnowledge?.(act.payload);
       if (ctx.world.hasStructureNear?.(a.x, a.y, 'workshop', 5)) {
         learnStructureUse(a, 'workshop', 'cutting', 0.15, 0.4);
       }
@@ -731,10 +723,9 @@ export const ACTIONS = {
   experiment: {
     category: 'thought',
     propose(a, ctx) {
-      if (foodCrisis(ctx) > 0.4) return [];
       if (a.body.hunger > 0.45 || a.body.thirst > 0.5 || a.body.energy < 0.25) return [];
       const owned = [...a.inventory.keys()].filter((k) => ctx.ont.get(k));
-      if (!owned.length) return [];
+      if (owned.length < 1) return [];
       const u =
         (0.55 + a.genome.curiosity * 1.9) *
         (ctx.bias?.explore ?? 1) *
@@ -750,15 +741,15 @@ export const ACTIONS = {
     },
     run(a, ctx, act) {
       if (--act.dur > 0) return 'continue';
-      if (foodCrisis(ctx) > 0.5) return 'abort';
       const owned = [...a.inventory.keys()].filter((k) => ctx.ont.get(k));
       if (!owned.length) return 'abort';
       const procs = ctx.ont.availableProcesses();
       const gaps = ctx.sim.capabilityGaps(a);
+      const short = a.body.hunger > 0.4;
       const weight = (k) => {
         const c = ctx.ont.get(k);
         let w = 0.3 + (a.memory.belief(k)?.confidence || 0) * 0.6;
-        if (a.body.hunger > 0.4 && c.serves('sustenance') > 0.2) w *= 0.05;
+        if (short && c.serves('sustenance') > 0.2) w *= 0.05;
         for (const g of gaps) {
           w += (c.functions[g] || 0) * 1.5 + (c.props.hard + c.props.flexible) * 0.1;
         }
@@ -808,7 +799,6 @@ export const ACTIONS = {
       });
       for (const p of c.parents) a.memory.link(p, 'combines-into', c.key, 0.6);
       a.memory.link(c.key, 'serves', c.bestFn, 0.7);
-      ctx.sim.archiveKnowledge?.(c.key);
       a.stats.inventions++;
       a.gainSkill('craft', 0.05);
       const proud = res.advance ? 0.95 : 0.35;
@@ -824,17 +814,14 @@ export const ACTIONS = {
     category: 'work',
     propose(a, ctx) {
       if (a.isChild(ctx.world.tick)) return [];
-      const crisis = foodCrisis(ctx);
-      const famineOnly = new Set(['field', 'store', 'bridge', 'path', 'shelter', 'hearth']);
-      if (a.body.hunger > 0.78 && crisis > 0.85) return [];
-
+      if (a.body.hunger > 0.72) return [];
+      const foodEasy =
+        a.body.hunger < 0.4 && ctx.sim.totalFood() > ctx.sim.living.length * 1.5;
+      const hungry = a.body.hunger > 0.4;
       const settlement = ctx.sim.nearestSettlement(a.x, a.y);
       const s = ctx.sim.settlementNeeds(settlement);
       const people = s.people || 1;
       const out = [];
-      const pb = ctx.sim.projectBias?.(a, settlement) || 0;
-      const active = ctx.sim.activeProject?.(settlement);
-      const foodEasy = crisis < 0.25 && a.body.hunger < 0.4;
 
       const nearCount = (kind) =>
         ctx.world.structuresOfKind(kind).filter(
@@ -843,32 +830,33 @@ export const ACTIONS = {
 
       const fieldsNear = nearCount('field');
       const needFieldBoost =
-        (crisis > 0.35 || a.body.hunger > 0.4) && fieldsNear < Math.max(1, Math.ceil(people / 6))
-          ? 0.9
-          : fieldsNear < 1
-            ? 0.55
+        hungry && fieldsNear < 1
+          ? 0.85
+          : hungry && fieldsNear < Math.ceil(people / 10)
+            ? 0.45
             : 0;
 
       const far = ctx.sim.farBankTarget?.(a, 22);
 
       for (const [kind, def] of Object.entries(STRUCTURE_KINDS)) {
-        if (crisis > 0.7 && !famineOnly.has(kind)) continue;
-
+        // ── Bridge: full span cost + site ───────────────────────
         if (kind === 'bridge') {
-          const sites =
-            ctx.world.findBridgeWorkSites?.(settlement.x, settlement.y, 26, 12) || [];
-          if (!sites.length) continue;
-          if (ctx.world.bridgeCrosses?.(settlement.x, settlement.y, 28)) continue;
-          if ((ctx.world.bridgeSpanCount?.(settlement.x, settlement.y, 18) ?? 0) >= 4) continue;
+          const spans =
+            ctx.world.bridgeSpanCount?.(settlement.x, settlement.y, 18) ??
+            nearCount('bridge');
+          if (spans >= 2) continue;
 
-          let need = Math.max(def.need(s), 0.5);
-          if (far) need = Math.max(need, 0.85);
-          if (sites.some((x) => x.extends)) need = Math.max(need, 0.9);
-          if (active?.kind === 'bridge') need = Math.max(need, 0.8);
+          const span = ctx.world.findBridgeSpan?.(settlement.x, settlement.y, 26, 8);
+          if (!span?.tiles?.length) continue;
+
+          let need = def.need(s);
+          if (far) need = Math.max(need, 0.75);
+          else need = Math.max(need, 0.5);
+          if (need <= 0.08) continue;
 
           const purpose =
-            nearCount('bridge') === 0
-              ? 0.6 + a.genome.curiosity * 0.5
+            spans === 0
+              ? 0.65 + a.genome.curiosity * 0.55
               : knownStructureUse(a, 'bridge');
 
           let matKey = 'wood';
@@ -878,12 +866,13 @@ export const ACTIONS = {
               break;
             }
           }
-          if (availableMaterial(a, ctx, matKey) < 2) {
+          const cost = Math.max(3, span.length * 2);
+          if (availableMaterial(a, ctx, matKey) < cost) {
             const spot = ctx.world.findResource(matKey, a, 18);
             if (spot && a.carried() <= a.carryLimit) {
               out.push({
                 kind: 'gather',
-                u: need * purpose * 1.4 * (0.5 + a.genome.industry),
+                u: need * purpose * 1.3 * (0.5 + a.genome.industry) * (ctx.bias?.work ?? 1),
                 payload: matKey,
                 target: beside(ctx.world, spot),
                 site: spot,
@@ -893,66 +882,50 @@ export const ACTIONS = {
             continue;
           }
 
-          const site = sites.find((x) => x.extends) || sites[0];
-          let u =
-            need *
-            purpose *
-            1.8 *
-            (ctx.bias?.work ?? 1) *
-            (0.5 + a.genome.industry);
-          if (active?.kind === 'bridge') u *= 1 + pb;
-
           out.push({
             kind: 'build',
-            u,
+            u:
+              need *
+              purpose *
+              1.6 *
+              (ctx.bias?.work ?? 1) *
+              (0.5 + a.genome.industry) *
+              (far ? 1.4 : 1),
             payload: {
               structure: 'bridge',
               material: matKey,
-              cost: 2,
+              cost,
               fn: def.fn,
               settlement,
-              site,
+              span,
             },
-            dur: 2,
+            dur: 3 + span.length,
           });
           continue;
         }
 
-        let need = def.need(s) || 0;
+        // ── Other structures ────────────────────────────────────
+        let need = def.need(s);
         const existing = nearCount(kind);
 
         if (kind === 'shelter' && existing < Math.max(1, Math.ceil(people / 2.5))) {
-          need = Math.max(need, 0.55);
+          need = Math.max(need, 0.5);
         }
-        if (kind === 'store' && existing < Math.max(1, Math.ceil(people / 12))) {
-          need = Math.max(need, 0.55 + crisis * 0.3);
+        if (kind === 'store' && existing < Math.max(1, Math.ceil(people / 14))) {
+          need = Math.max(need, 0.45);
         }
-        if (kind === 'hearth' && existing < 1) need = Math.max(need, 0.45);
+        if (kind === 'hearth' && existing < 1) need = Math.max(need, 0.4);
         if (kind === 'field') {
           need = Math.max(need, needFieldBoost);
-          if (existing < Math.ceil(people / 5)) need = Math.max(need, 0.4 + crisis * 0.4);
+          if (existing < 1) need = Math.max(need, 0.5);
+          if (existing < Math.ceil(people / 5)) need = Math.max(need, 0.35);
         }
-        if (kind === 'wall' && people > 12 && existing < Math.ceil(people / 18)) {
-          need = Math.max(need, 0.38);
-        }
-        if (kind === 'plaza' && people > 14 && existing < 1) need = Math.max(need, 0.32);
-        if (kind === 'arena' && people > 22 && existing < 1) need = Math.max(need, 0.3);
-        if (kind === 'hall' && people > 24 && existing < 1) need = Math.max(need, 0.34);
-        if (kind === 'workshop' && people > 8 && existing < 1) need = Math.max(need, 0.32);
-        if (kind === 'kiln' && people > 16 && existing < 1 && nearCount('workshop') > 0) {
-          need = Math.max(need, 0.28);
-        }
-        if (kind === 'path' && people > 6 && existing < Math.ceil(people / 10)) {
-          need = Math.max(need, 0.24);
-        }
-        if (kind === 'well' && people > 10 && existing < 1) need = Math.max(need, 0.3);
-        if (kind === 'shrine' && people > 16 && existing < 1) need = Math.max(need, 0.22);
 
         if (need <= 0.08) continue;
 
         const purpose =
           existing === 0
-            ? 0.7 + a.genome.curiosity * 0.5
+            ? 0.65 + a.genome.curiosity * 0.55
             : knownStructureUse(a, kind);
 
         const material = ctx.sim.bestBuildMaterial(a, def.fn);
@@ -975,7 +948,7 @@ export const ACTIONS = {
           if (spot && a.carried() <= a.carryLimit) {
             out.push({
               kind: 'gather',
-              u: need * purpose * 1.3 * (0.5 + a.genome.industry),
+              u: need * purpose * 1.2 * (0.5 + a.genome.industry) * (ctx.bias?.work ?? 1),
               payload: matKey,
               target: beside(ctx.world, spot),
               site: spot,
@@ -985,16 +958,14 @@ export const ACTIONS = {
           continue;
         }
 
-        let u =
+        const u =
           need *
           purpose *
-          1.65 *
+          1.5 *
           (ctx.bias?.work ?? 1) *
-          (0.55 + a.skills.build * 0.5) *
+          (0.6 + a.skills.build * 0.5) *
           (0.5 + a.genome.industry) *
-          (foodEasy ? 1.4 : kind === 'field' || kind === 'store' ? 1 + crisis : 1);
-
-        if (active?.kind === kind) u *= 1 + pb;
+          (foodEasy ? 1.35 : hungry && kind === 'field' ? 1.6 : 1);
 
         out.push({
           kind: 'build',
@@ -1006,109 +977,74 @@ export const ACTIONS = {
             fn: def.fn,
             settlement,
           },
-          dur: 3 + Math.round(def.cost / 3),
+          dur: 4 + Math.round(def.cost / 3),
         });
       }
-      return topN(out, 3, (o) => o.u);
+      return topN(out, 2, (o) => o.u);
     },
     run(a, ctx, act) {
       const structure = act.payload.structure;
-      const home = act.payload.settlement || ctx.sim.nearestSettlement(a.x, a.y);
-
-      if (structure === 'bridge') {
-        const site =
-          act.payload.site ||
-          act.spot ||
-          (ctx.world.findBridgeWorkSites?.(home.x, home.y, 26, 8) || [])[0];
-        if (!site) return 'abort';
-        act.spot = { x: site.x, y: site.y };
-
-        let approach = null;
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [0, 0]]) {
-          const ax = act.spot.x + dx;
-          const ay = act.spot.y + dy;
-          if (ctx.world.walkable(ax, ay)) {
-            approach = T(ax, ay);
-            break;
-          }
-        }
-        if (!approach) {
-          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-            const ax = act.spot.x + dx;
-            const ay = act.spot.y + dy;
-            if (!ctx.world.inBounds(ax, ay)) continue;
-            if (ctx.world.at(ax, ay) > TERRAIN.MARSH) {
-              approach = T(ax, ay);
-              break;
-            }
-          }
-        }
-        if (approach && dist(a, approach) > 1.4) {
-          stepToward(a, ctx.world, approach);
-          return 'continue';
-        }
-
-        a.body.energy = clamp(a.body.energy - 0.04, 0, 1);
-        if (--act.dur > 0) return 'continue';
-
-        if (takeMaterial(a, ctx, act.payload.material, 2) < 2) return 'abort';
-        const st = ctx.sim.raiseStructure(a, 'bridge', act.spot, act.payload.material);
-        if (!st) return 'abort';
-
-        a.stats.built++;
-        a.gainSkill('build', 0.05);
-        learnStructureUse(a, 'bridge', 'crossing', 0.12, 0.35);
-        ctx.sim.contributeProject?.(a, home, 'bridge', act.payload.material, 2);
-
-        if (ctx.world.bridgeCrosses?.(home.x, home.y, 28)) {
-          learnStructureUse(a, 'bridge', 'crossing', 0.35, 0.7);
-          appraise(a, {
-            goalCongruence: 0.9,
-            agency: 'self',
-            intensity: 0.85,
-            kind: 'first',
-          });
-        }
-        return 'done';
-      }
 
       if (!act.spot) {
-        act.spot = ctx.sim.pickBuildSite(a, structure, home);
+        act.spot = ctx.sim.pickBuildSite(a, structure, act.payload.settlement);
       }
       if (!act.spot) return 'abort';
-      if (dist(a, act.spot) > 1.2) {
-        stepToward(a, ctx.world, act.spot);
+
+      // Approach dry land next to the span (or the build tile)
+      const approach =
+        structure === 'bridge' && act.payload.span?.startLand
+          ? act.payload.span.startLand
+          : act.spot;
+
+      if (dist(a, approach) > 1.4) {
+        stepToward(a, ctx.world, approach);
         return 'continue';
       }
+
       a.body.energy = clamp(a.body.energy - 0.05, 0, 1);
       if (--act.dur > 0) return 'continue';
-      const { material, cost } = act.payload;
-      if (takeMaterial(a, ctx, material, cost) < cost) return 'abort';
+
+      const { material } = act.payload;
+      let needMat = act.payload.cost;
+
+      if (structure === 'bridge') {
+        const span =
+          act.payload.span ||
+          ctx.world.findBridgeSpan?.(act.spot.x, act.spot.y, 26, 8) ||
+          ctx.world.findBridgeSpan?.(
+            act.payload.settlement.x,
+            act.payload.settlement.y,
+            26,
+            8,
+          );
+        if (!span?.tiles?.length) return 'abort';
+        needMat = Math.max(3, span.length * 2);
+        act.payload.span = span;
+        act.spot = { x: span.tiles[0].x, y: span.tiles[0].y, span };
+      }
+
+      if (takeMaterial(a, ctx, material, needMat) < needMat) return 'abort';
       const st = ctx.sim.raiseStructure(a, structure, act.spot, material);
       if (!st) return 'abort';
+
       a.stats.built++;
       a.gainSkill('build', 0.07);
       learnStructureUse(
         a,
         structure,
         STRUCTURE_KINDS[structure]?.fn || structure,
-        0.15,
-        0.35,
+        0.12,
+        0.3,
       );
-      if (structure === 'field' || structure === 'store') {
-        ctx.sim.contributeProject?.(a, home, structure, material, 0);
+      if (structure === 'bridge') {
+        learnStructureUse(a, 'bridge', 'crossing', 0.2, 0.45);
       }
       if (structure === 'field') {
         st.tended = (st.tended || 0) + 0.3;
         st.ripeness = Math.max(st.ripeness || 0, 0.15);
       }
+      appraise(a, { goalCongruence: 0.8, agency: 'self', intensity: 0.7, kind: 'first' });
       if (!a.home && structure === 'shelter') a.home = st;
-      appraise(a, {
-        goalCongruence: 0.8,
-        agency: 'self',
-        intensity: 0.7,
-        kind: 'first',
-      });
       return 'done';
     },
   },
@@ -1117,10 +1053,10 @@ export const ACTIONS = {
     category: 'work',
     propose(a, ctx) {
       if (a.isChild(ctx.world.tick) || a.ageAt(ctx.world.tick) < 16) return [];
-      if (foodCrisis(ctx) > 0.5 || a.body.hunger > 0.55) return [];
+      if (a.body.hunger > 0.6) return [];
       const home = ctx.sim.nearestSettlement(a.x, a.y);
       const pressure = ctx.sim.settlementPressure(home);
-      if (pressure < 0.4) return [];
+      if (pressure < 0.35) return [];
       const known = a.memory
         .knownKeys('place')
         .map((k) => a.memory.belief(k))
@@ -1146,7 +1082,7 @@ export const ACTIONS = {
         (0.4 + a.genome.risk + a.genome.industry * 0.5) *
         (ctx.bias?.work ?? 1) *
         (0.3 + bestScore);
-      if (u < 0.45) return [];
+      if (u < 0.4) return [];
       return [{ kind: 'expand', u, target: T(best.x, best.y), dur: 1 }];
     },
     run(a, ctx, act) {
@@ -1164,7 +1100,6 @@ export const ACTIONS = {
     propose(a, ctx) {
       const fields = ctx.world.structuresOfKind('field');
       if (!fields.length) return [];
-      const crisis = foodCrisis(ctx);
       const f = topN(fields, 1, (s) => {
         const place = a.memory.belief('where:field-works')?.payload;
         const placeBoost = place && place.x === s.x && place.y === s.y ? 0.5 : 0;
@@ -1173,12 +1108,13 @@ export const ACTIONS = {
       if (!f) return [];
       const ripe = f.ripeness || 0;
       const purpose = knownStructureUse(a, 'field');
+      const hungry = a.body.hunger > 0.38;
       const hungerFarm =
-        (a.body.hunger > 0.35 || crisis > 0.3) && ripe > 0.65
-          ? 3 + a.body.hunger * 4 + crisis * 3
+        hungry && ripe > 0.7
+          ? 2.5 + a.body.hunger * 4
           : ripe > 0.85
-            ? 1.8 + a.body.hunger
-            : 0.4 * purpose + crisis * 0.5;
+            ? 1.6 + a.body.hunger
+            : 0.35 * purpose;
       const u =
         (hungerFarm * (ctx.bias?.work ?? 1) * (0.45 + a.skills.farm) * Math.max(0.5, purpose)) /
         (1 + dist(a, f) * 0.04);
@@ -1190,11 +1126,11 @@ export const ACTIONS = {
         return 'continue';
       }
       const f = act.field;
-      if ((f.ripeness || 0) > 0.8) {
+      if ((f.ripeness || 0) > 0.85) {
         const got =
-          3 +
+          2 +
           Math.round(
-            a.skills.farm * 6 + (ctx.world.fertility?.[ctx.world.idx(f.x, f.y)] || 0.5) * 5,
+            a.skills.farm * 5 + (ctx.world.fertility?.[ctx.world.idx(f.x, f.y)] || 0.5) * 4,
           );
         a.add('grain', got);
         f.ripeness = 0;
@@ -1205,7 +1141,8 @@ export const ACTIONS = {
         if (ctx.world.fertility) {
           ctx.world.fertility[fi] = clamp(ctx.world.fertility[fi] - 0.04, 0.15, 1);
         }
-        learnStructureUse(a, 'field', 'sustenance', 0.3, 0.55);
+
+        learnStructureUse(a, 'field', 'sustenance', 0.28, 0.55);
         a.memory.learn('where:field-works', {
           kind: 'place',
           confidence: 0.45,
@@ -1215,15 +1152,24 @@ export const ACTIONS = {
         a.memory.learn('grain', {
           kind: 'matter', confidence: 0.5, valence: 0.5, source: 'farm',
         });
+
         ctx.sim.record(
           a,
           'harvest',
           `${a.name} took ${Math.round(got)} ${ctx.ont.get('grain')?.word || 'grain'} from the ${f.word}`,
           { valence: 0.6, intensity: 0.5, concept: 'grain' },
         );
+        if ((a.memory.belief('structure:field')?.confidence || 0) < 0.45) {
+          ctx.sim.record(
+            a,
+            'thought',
+            `${a.name} saw that the turned ground gives food`,
+            { valence: 0.4, intensity: 0.35, voice: a.name },
+          );
+        }
         appraise(a, { goalCongruence: 0.65, agency: 'self', intensity: 0.5, kind: 'harvest' });
       } else {
-        f.tended = (f.tended || 0) + 0.18 + a.skills.farm * 0.25;
+        f.tended = (f.tended || 0) + 0.15 + a.skills.farm * 0.2;
         a.gainSkill('farm', 0.02);
         if (--act.dur > 0) return 'continue';
       }
@@ -1234,23 +1180,19 @@ export const ACTIONS = {
   store: {
     category: 'work',
     propose(a, ctx) {
-      if (a.body.hunger > 0.6) return [];
-      const crisis = foodCrisis(ctx);
+      if (a.body.hunger > 0.55) return [];
       const stores = ctx.world.structuresOfKind('store');
       if (!stores.length) return [];
       let surplus = 0;
       for (const [k, v] of a.inventory) {
         const c = ctx.ont.get(k);
-        if (c?.functions.sustenance && v > (crisis < 0.3 ? 2 : 4)) {
-          surplus += v - 2;
-        }
+        if (c?.functions.sustenance && v > 3) surplus += v - 3;
       }
-      if (surplus < 1.5) return [];
+      if (surplus < 2) return [];
       const s = topN(stores, 1, (x) => -dist(a, x))[0];
       const purpose = knownStructureUse(a, 'store');
-      const bankBoost = crisis < 0.35 ? 1.8 : 0.6;
       const u =
-        surplus * 0.2 * purpose * bankBoost * (0.5 + a.genome.patience) * (ctx.bias?.hoard ?? 1);
+        surplus * 0.16 * purpose * (0.5 + a.genome.patience) * (ctx.bias?.hoard ?? 1);
       return [{ kind: 'store', u, target: T(s.x, s.y), store: s, dur: 1 }];
     },
     run(a, ctx, act) {
@@ -1261,15 +1203,15 @@ export const ACTIONS = {
       let moved = 0;
       for (const [k, v] of [...a.inventory]) {
         const c = ctx.ont.get(k);
-        if (c?.functions.sustenance && v > 2) {
-          const give = v - 2;
+        if (c?.functions.sustenance && v > 3) {
+          const give = v - 3;
           a.take(k, give);
           act.store.stock.set(k, (act.store.stock.get(k) || 0) + give);
           moved += give;
         }
       }
       if (moved) {
-        learnStructureUse(a, 'store', 'storage', 0.22, 0.5);
+        learnStructureUse(a, 'store', 'storage', 0.2, 0.45);
         ctx.sim.record(
           a,
           'store',
@@ -1284,11 +1226,10 @@ export const ACTIONS = {
   converse: {
     category: 'social',
     propose(a, ctx) {
-      if (foodCrisis(ctx) > 0.75) return [];
       const near = ctx.nearby(a, 6).filter((o) => o.id !== a.id);
       if (!near.length) return [];
       const out = [];
-      const boost = plazaBoost(ctx, a, 1.3);
+      const boost = plazaBoost(ctx, a, 1.25);
       for (const o of near.slice(0, 4)) {
         const r = a.rel(o);
         const lonely = 1 - clamp(r.familiarity);
@@ -1312,7 +1253,7 @@ export const ACTIONS = {
       }
       ctx.sim.converse(a, o);
       if (ctx.rng.bool(0.25)) {
-        for (const kind of ['field', 'store', 'bridge', 'shelter', 'hearth', 'wall', 'arena']) {
+        for (const kind of ['field', 'store', 'bridge', 'shelter', 'hearth']) {
           const b = a.memory.belief(`structure:${kind}`);
           if (b && b.confidence > 0.25 && !o.memory.knows(`structure:${kind}`, 0.2)) {
             o.memory.learn(`structure:${kind}`, {
@@ -1334,16 +1275,14 @@ export const ACTIONS = {
   teach: {
     category: 'social',
     propose(a, ctx) {
-      if (foodCrisis(ctx) > 0.55 || a.body.hunger > 0.45) return [];
+      if (a.body.hunger > 0.4 || a.body.thirst > 0.55) return [];
       if (ctx.sim.totalFood() < ctx.sim.living.length * 1.5) return [];
 
       const near = ctx.nearby(a, 6).filter((o) => o.id !== a.id);
       if (!near.length) return [];
 
       const mine = a.memory.knownKeys('recipe');
-      const structureLessons = [
-        'field', 'store', 'bridge', 'shelter', 'hearth', 'workshop', 'wall', 'arena',
-      ]
+      const structureLessons = ['field', 'store', 'bridge', 'shelter', 'hearth', 'workshop']
         .map((k) => `structure:${k}`)
         .filter((k) => a.memory.knows(k, 0.25));
 
@@ -1428,7 +1367,6 @@ export const ACTIONS = {
       }
 
       ctx.sim.teach(a, o, act.payload);
-      ctx.sim.archiveKnowledge?.(act.payload);
       return 'done';
     },
   },
@@ -1436,7 +1374,6 @@ export const ACTIONS = {
   trade: {
     category: 'social',
     propose(a, ctx) {
-      if (foodCrisis(ctx) > 0.7) return [];
       const near = ctx.nearby(a, 7).filter((o) => o.id !== a.id && !o.isChild(ctx.world.tick));
       const out = [];
       const boost = plazaBoost(ctx, a, 1.2);
@@ -1493,7 +1430,7 @@ export const ACTIONS = {
           o.body.illness +
           (kinChild ? 0.8 : 0);
         if (theirNeed < (kinChild ? 0.25 : 0.55)) continue;
-        if (a.body.hunger > (kinChild ? 0.8 : 0.55)) continue;
+        if (a.body.hunger > (kinChild ? 0.78 : 0.55)) continue;
 
         let gift = null;
         for (const [k, v] of a.inventory) {
@@ -1567,7 +1504,7 @@ export const ACTIONS = {
   steal: {
     category: 'social',
     propose(a, ctx) {
-      const desperate = a.body.hunger > 0.75 || a.body.illness > 0.5 || foodCrisis(ctx) > 0.85;
+      const desperate = a.body.hunger > 0.75 || a.body.illness > 0.5;
       if (!desperate && a.genome.empathy > 0.35) return [];
       const near = ctx.nearby(a, 5).filter((o) => o.id !== a.id && o.carried() > 2);
       const theftNorm = normsFor(a, ctx, ['theft', 'betrayal', 'neglect']);
@@ -1605,7 +1542,6 @@ export const ACTIONS = {
   court: {
     category: 'social',
     propose(a, ctx) {
-      if (foodCrisis(ctx) > 0.6) return [];
       const age = a.ageAt(ctx.world.tick);
       if (age < 15 || age > 55 || a.partner) return [];
       const near = ctx.nearby(a, 12).filter(
@@ -1695,7 +1631,7 @@ export const ACTIONS = {
           const p = id && ctx.sim.byId(id);
           if (p && p.alive) {
             leader = p;
-            weight = 2.5 - age * 0.12;
+            weight = 2.4 - age * 0.12;
             break;
           }
         }
@@ -1705,7 +1641,7 @@ export const ACTIONS = {
           );
           if (adults.length) {
             leader = adults.sort((x, y) => dist(a, x) - dist(a, y))[0];
-            weight = 1.8;
+            weight = 1.6;
           }
         }
       } else if (a.partner) {
@@ -1714,7 +1650,7 @@ export const ACTIONS = {
           const d = dist(a, p);
           if (d < 8) return [];
           leader = p;
-          weight = 0.3 + a.rel(p).affection * 0.3;
+          weight = 0.25 + a.rel(p).affection * 0.35;
         }
       }
 
@@ -1791,6 +1727,11 @@ export const ACTIONS = {
         kind: 'rescue',
         social: a.id,
       });
+      if (remedyPower > 0.2) {
+        a.memory.learn(act.payload, {
+          kind: 'recipe', confidence: 0.3, valence: 0.6, source: 'healing',
+        });
+      }
       return 'done';
     },
   },
@@ -1824,13 +1765,11 @@ export const ACTIONS = {
   ritual: {
     category: 'ritual',
     propose(a, ctx) {
-      if (foodCrisis(ctx) > 0.65) return [];
-      const sites = ctx.world
+      const shrines = ctx.world
         .structuresOfKind('shrine')
-        .concat(ctx.world.structuresOfKind('arena'))
         .concat(ctx.world.sites?.filter((s) => s.kind === 'graves') || []);
-      if (!sites.length) return [];
-      const s = topN(sites, 1, (x) => -dist(a, x))[0];
+      if (!shrines.length) return [];
+      const s = topN(shrines, 1, (x) => -dist(a, x))[0];
       const u =
         ((a.affect.e.grief * 1.4 +
           a.affect.e.awe * 1.2 +
@@ -1848,7 +1787,6 @@ export const ACTIONS = {
       }
       if (--act.dur > 0) return 'continue';
       ctx.sim.performRitual(a, act.site);
-      if (act.site?.kind === 'arena') learnStructureUse(a, 'arena', 'art', 0.15, 0.4);
       return 'done';
     },
   },
@@ -1856,7 +1794,7 @@ export const ACTIONS = {
   makeArt: {
     category: 'thought',
     propose(a, ctx) {
-      if (foodCrisis(ctx) > 0.4 || a.body.hunger > 0.5) return [];
+      if (a.body.hunger > 0.55) return [];
       const medium = a.bestToolFor('art', ctx.ont) || a.bestToolFor('record', ctx.ont);
       const u =
         (a.genome.expressive * 1.3 +
@@ -1880,17 +1818,19 @@ export const ACTIONS = {
   explore: {
     category: 'thought',
     propose(a, ctx) {
-      if (a.body.hunger > 0.6 || foodCrisis(ctx) > 0.55) return [];
+      if (a.body.hunger > 0.65) return [];
       const u =
         (0.4 + a.genome.curiosity * 1.3) *
         (ctx.bias?.explore ?? 1) *
         (1 - a.body.hunger * 0.6) *
         Math.max(0.35, a.body.energy);
 
-      const crossed = ctx.world.bridgeCrosses?.(a.x, a.y, 30);
+      const spans =
+        ctx.world.bridgeSpanCount?.(a.x, a.y, 30) ??
+        ctx.world.structuresOfKind('bridge').length;
       const far = ctx.sim.farBankTarget?.(a, 22);
 
-      if (far && crossed) {
+      if (far && spans > 0) {
         return [{ kind: 'explore', u: u * 1.45, target: T(far.x, far.y), dur: 24 }];
       }
 
@@ -1980,5 +1920,4 @@ export {
   takeMaterial,
   learnStructureUse,
   knownStructureUse,
-  foodCrisis,
 };
