@@ -254,25 +254,29 @@ export function think(a, ctx) {
         p.u *= 0.08;
       }
 
-      if (a.body.hunger > 0.35 && hasFood) {
-        if (p.kind === 'eat') p.u *= 10;
-        else if (p.kind === 'drink' || p.kind === 'takeFromStore') p.u *= 1.2;
-        else p.u *= 0.04;
+      if (a.body.hunger > 0.3 && hasFood) {
+        if (p.kind === 'eat') p.u *= 12;
+        else if (p.kind === 'drink' || p.kind === 'takeFromStore') p.u *= 1.5;
+        else p.u *= 0.03;
       }
 
-      if (a.body.hunger > 0.4 && !hasFood) {
-        if (p.kind === 'gather' || p.kind === 'takeFromStore' || p.kind === 'farm') {
-          p.u *= 2.2;
+      if (a.body.hunger > 0.35 && !hasFood) {
+        if (p.kind === 'gather' || p.kind === 'takeFromStore' || p.kind === 'farm' || p.kind === 'hunt') {
+          p.u *= 3.0;
         }
-        if (p.kind === 'experiment' || p.kind === 'craft' || p.kind === 'makeArt') {
-          p.u *= 0.05;
+        if (p.kind === 'experiment' || p.kind === 'craft' || p.kind === 'makeArt' || p.kind === 'build') {
+          p.u *= 0.02;
         }
       }
 
-      // Teaching is culture, not a meal
-      if (a.body.hunger > 0.4 || a.body.thirst > 0.5) {
-        if (p.kind === 'teach') p.u *= 0.05;
-        if (p.kind === 'converse') p.u *= 0.25;
+      // Teaching/culture yields to survival — especially for the last adults
+      if (a.body.hunger > 0.35 || a.body.thirst > 0.45) {
+        if (p.kind === 'teach') p.u *= 0.02;
+        if (p.kind === 'converse') p.u *= 0.15;
+        if (p.kind === 'ritual' || p.kind === 'makeArt') p.u *= 0.05;
+      }
+      if (!isChild && a.body.hunger > 0.5) {
+        if (p.kind === 'takeFromStore' || p.kind === 'eat' || p.kind === 'gather') p.u *= 2.5;
       }
       if (worldFoodTight) {
         if (p.kind === 'teach' || p.kind === 'experiment' || p.kind === 'makeArt') {
@@ -360,8 +364,8 @@ export function think(a, ctx) {
     }
   }
 
-  // Nuclear eat
-  if (a.body.hunger > 0.32 && hasFood) {
+  // Nuclear eat — adults especially must not invent beside a full pack
+  if (a.body.hunger > 0.28 && hasFood) {
     const eatCand = candidates.find((c) => c.kind === 'eat');
     if (eatCand) {
       a.action = eatCand;
@@ -372,9 +376,9 @@ export function think(a, ctx) {
   }
 
   // Nuclear drink
-  if (a.body.thirst > 0.4) {
+  if (a.body.thirst > 0.35) {
     const drinkCand = candidates.find((c) => c.kind === 'drink');
-    if (drinkCand && (a.count('water') > 0 || a.body.thirst > 0.55)) {
+    if (drinkCand && (a.count('water') > 0 || a.body.thirst > 0.45)) {
       a.action = drinkCand;
       a.goal = 'drinking';
       a.reasoning = [{ kind: 'drink', u: drinkCand.u, why: 'must drink' }];
@@ -382,8 +386,11 @@ export function think(a, ctx) {
     }
   }
 
-  // Nuclear take from store when hungry and empty-handed
-  if (a.body.hunger > 0.45 && !hasFood) {
+  // Nuclear take from store: hungry/thirsty adults go to the granary before any craft
+  if (
+    (a.body.hunger > 0.38 || a.body.thirst > 0.45) &&
+    (!hasFood || a.body.hunger > 0.55 || a.body.thirst > 0.55)
+  ) {
     const storeCand = candidates.find((c) => c.kind === 'takeFromStore');
     if (storeCand) {
       a.action = storeCand;
