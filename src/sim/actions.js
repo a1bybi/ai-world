@@ -375,17 +375,32 @@ export const ACTIONS = {
   takeFromStore: {
     category: 'body',
     propose(a, ctx) {
-      if (a.body.hunger < 0.28 && a.body.thirst < 0.5) return [];
-      const store = ctx.world
-        .structuresOfKind('store')
-        .find((s) => s.stock && [...s.stock.values()].some((v) => v > 0));
-      if (!store) return [];
-      return [{
-        kind: 'takeFromStore',
-        u: a.body.hunger * 2.2 + Math.max(0, a.body.hunger - 0.4) * 8 + a.body.thirst * 1.5,
-        target: store,
-        dur: 1,
-      }];
+      if (a.body.hunger < 0.22 && a.body.thirst < 0.4) return [];
+      // Prefer a store that still has food or water when those needs are active
+      const stores = ctx.world.structuresOfKind('store').filter((s) => s.stock);
+      let store = null;
+      let best = -1;
+      for (const s of stores) {
+        let score = 0;
+        for (const [k, v] of s.stock) {
+          if (v <= 0) continue;
+          const c = ctx.ont.get(k);
+          if (a.body.thirst > 0.35 && (k === 'water' || c?.functions?.sustenance)) score += v * 2;
+          if (a.body.hunger > 0.25 && c?.functions?.sustenance) score += v * 3;
+          score += v * 0.05;
+        }
+        if (score > best) {
+          best = score;
+          store = s;
+        }
+      }
+      if (!store || best <= 0) return [];
+      const u =
+        a.body.hunger * 3.5 +
+        Math.max(0, a.body.hunger - 0.35) * 12 +
+        a.body.thirst * 2.5 +
+        Math.max(0, a.body.thirst - 0.45) * 8;
+      return [{ kind: 'takeFromStore', u, target: store, dur: 1 }];
     },
     run(a, ctx, act) {
       if (!stepToward(a, ctx.world, act.target) && dist(a, act.target) > 1.5) {
@@ -393,32 +408,54 @@ export const ACTIONS = {
       }
       const s = act.target;
       if (!s?.stock) return 'abort';
-      if (a.body.thirst > 0.4 && (s.stock.get('water') || 0) > 0) {
-        const have = s.stock.get('water') || 0;
-        s.stock.set('water', Math.max(0, have - 1));
-        a.add('water', 1);
-        learnStructureUse(a, 'store', 'storage', 0.2, 0.45);
-        return 'done';
-      }
-      for (const [k, v] of s.stock) {
-        if (v > 0) {
-          s.stock.set(k, Math.max(0, v - 1));
-          a.add(k, 1);
-          learnStructureUse(a, 'store', 'storage', 0.22, 0.5);
-          if (a.body.hunger > 0.35) {
-            a.memory.learn('lesson:hunger', {
-              kind: 'lesson', confidence: 0.3, valence: 0.4, source: 'survival',
-              payload: { do: 'store', what: k },
-            });
-          }
-          ctx.sim.record(
-            a,
-            'store',
-            `${a.name} drew ${ctx.ont.get(k)?.word || k} from the ${s.word}`,
-            { valence: 0.2, intensity: 0.2 },
-          );
-          return 'done';
+
+      const takeKey = (k) => {
+        const have = s.stock.get(k) || 0;
+        if (have <= 0) return false;
+        s.stock.set(k, Math.max(0, have - 1));
+        a.add(k, 1);
+        learnStructureUse(a, 'store', 'storage', 0.22, 0.5);
+        if (a.body.hunger > 0.3) {
+          a.memory.learn('lesson:hunger', {
+            kind: 'lesson',
+            confidence: 0.35,
+            valence: 0.45,
+            source: 'survival',
+            payload: { do: 'store', what: k },
+          });
         }
+        ctx.sim.record(
+          a,
+          'store',
+          `${a.name} drew ${ctx.ont.get(k)?.word || k} from the ${s.word}`,
+          { valence: 0.2, intensity: 0.2, quiet: true },
+        );
+        return true;
+      };
+
+      // Thirst first
+      if (a.body.thirst > 0.35) {
+        if (takeKey('water')) return 'done';
+        for (const [k, v] of s.stock) {
+          if (v > 0 && k !== 'water' && (ctx.ont.get(k)?.functions?.sustenance || 0) > 0.15) {
+            if (takeKey(k)) return 'done';
+          }
+        }
+      }
+      // Then real food when hungry
+      if (a.body.hunger > 0.25) {
+        const foods = [];
+        for (const [k, v] of s.stock) {
+          if (v <= 0) continue;
+          const n = ctx.ont.get(k)?.serves?.('sustenance') || ctx.ont.get(k)?.functions?.sustenance || 0;
+          if (n > 0.15) foods.push([k, n, v]);
+        }
+        foods.sort((a, b) => b[1] - a[1]);
+        if (foods.length && takeKey(foods[0][0])) return 'done';
+      }
+      // Last resort: anything
+      for (const [k, v] of s.stock) {
+        if (v > 0 && takeKey(k)) return 'done';
       }
       return 'abort';
     },
