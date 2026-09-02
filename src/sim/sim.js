@@ -931,8 +931,10 @@ export class Simulation {
               const c = this.byId(id);
               return c?.alive && c.isChild(tick);
             }).length;
-          if (ownKids >= 4) chance *= 0.4;
-          else if (ownKids >= 3) chance *= 0.65;
+          // Pair-level brake: do not keep expanding a huge nursery
+          if (ownKids >= 5) chance = 0;
+          else if (ownKids >= 4) chance *= 0.08;
+          else if (ownKids >= 3) chance *= 0.25;
 
           if (this.rng.bool(chance)) {
             const carrier = a.id < p.id ? a : p;
