@@ -25,7 +25,7 @@ const SPEEDS = [
 const state = {
   sim: null,
   speedIdx: 0,
-  lastSpeedIdx: 1, // remember last non-hold speed for Play
+  lastSpeedIdx: 1,
   running: false,
   selected: null,
   lastFrame: 0,
@@ -41,7 +41,6 @@ const renderer = new Renderer($('#world'));
 const llm = new LLMBridge();
 const panels = new Panels(document, { onSelect: select });
 
-// ── world lifecycle ───────────────────────────────────────────────────────
 function newWorld(seed) {
   state.sim = new Simulation(seed, { population: 14 });
   state.selected = null;
@@ -65,7 +64,6 @@ function select(id) {
   panels.renderRoster(state.sim, id);
 }
 
-// ── the loop ──────────────────────────────────────────────────────────────
 function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min(0.25, (now - state.lastFrame) / 1000 || 0);
@@ -78,7 +76,6 @@ function frame(now) {
     const tps = SPEEDS[state.speedIdx].tps;
     let ran = 0;
     if (tps === Infinity) {
-      // spend a fixed slice of the frame on simulation, keep the rest for drawing
       const budget = now + 9;
       while (performance.now() < budget && sim.living.length) {
         sim.step();
@@ -139,6 +136,20 @@ function paint() {
   sc.textContent = `${w.season}${w.isNight ? ' · night' : ''}`;
   sc.className = `chip season-${w.season}`;
   $('#weatherChip').textContent = w.weather;
+
+  const chip = $('#statusChip');
+  if (chip) {
+    const living = sim.living;
+    const tick = w.tick;
+    const adults = living.filter((a) => !(a.isChild && a.isChild(tick))).length;
+    const fd = typeof sim.foodDaysAt === 'function' ? sim.foodDaysAt() : null;
+    chip.textContent = [
+      `${living.length} living`,
+      `${adults} adults`,
+      fd != null ? `food ~${fd.toFixed(1)}d` : null,
+      sim.archive?.size ? `archive ${sim.archive.size}` : null,
+    ].filter(Boolean).join(' · ');
+  }
 }
 
 let lastRoster = 0;
@@ -147,8 +158,6 @@ function refreshPanels(force = false) {
   const sim = state.sim;
   if (!sim) return;
   const now = performance.now();
-  // the roster and world pane are rebuilt wholesale, so they are refreshed
-  // rarely: a list that redraws under the cursor is a list you cannot click.
   if (panels.active === 'people' && (force || now - lastRoster > 1200)) {
     lastRoster = now;
     panels.renderRoster(sim, state.selected);
@@ -160,7 +169,6 @@ function refreshPanels(force = false) {
   }
 }
 
-// ── the optional voice ────────────────────────────────────────────────────
 let voiceCooldown = 0;
 function maybeVoice(sim) {
   if (!llm.enabled || !llm.ready()) return;
@@ -185,7 +193,6 @@ function maybeVoice(sim) {
   });
 }
 
-// ── report ────────────────────────────────────────────────────────────────
 function openReport(prefaceNote) {
   const sim = state.sim;
   if (!sim) return;
@@ -205,7 +212,6 @@ function closeReport() {
   $('#sheet').dataset.open = 'false';
 }
 
-// ── controls ──────────────────────────────────────────────────────────────
 function setSpeed(i) {
   i = Math.max(0, Math.min(SPEEDS.length - 1, i | 0));
   state.speedIdx = i;
@@ -224,7 +230,6 @@ function updatePlayBtn() {
 
 function togglePlay() {
   if (state.running) {
-    // Pause only — do not force the chronicle open
     setSpeed(0);
   } else {
     closeReport();
@@ -291,7 +296,6 @@ function buildControls() {
     if (e.target.id === 'sheet') closeReport();
   });
 
-  // llm dialog
   const dlg = $('#dialog');
   $('#llmBtn').addEventListener('click', () => {
     $('#llmProvider').value = llm.cfg.provider;
@@ -319,7 +323,6 @@ function buildControls() {
   });
   $('#llmState').textContent = llm.label;
 
-  // canvas interaction
   const cv = $('#world');
   const tip = $('#tip');
   cv.addEventListener('click', (e) => {
