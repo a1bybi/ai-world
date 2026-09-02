@@ -14,6 +14,7 @@ const delta = (v, digits = 0) => {
 
 export function renderReport(host, r, sim) {
   const t = r.totals, d = r.deltas;
+  const demo = r.demography || {};
 
   host.innerHTML = `
     <div class="sheet-head">
@@ -32,12 +33,15 @@ export function renderReport(host, r, sim) {
         <div class="numgrid">
           ${num('living', t.population, delta(d.pop))}
           ${num('ever lived', t.everLived, `${t.births} born · ${t.deaths} lost`)}
+          ${num('adults / children', `${demo.adults ?? '—'} / ${demo.children ?? '—'}`, demo.dependency != null ? `dep ${demo.dependency}` : '')}
           ${num('things known', t.concepts, delta(d.knowledge))}
           ${num('capability', (r.knowledge.capability * 100).toFixed(0), delta(d.capability * 100, 1))}
           ${num('inventions', t.inventions, `${fmtNum(t.attempts)} attempts, ${fmtNum(t.deadEnds)} dead ends`)}
           ${num('structures', t.structures, `${r.society.households} households`)}
           ${num('words', t.words, esc(r.culture.language))}
           ${num('mood', (r.series.at(-1)?.mood ?? 0).toFixed(2), delta(d.mood, 2))}
+          ${t.foodDays != null ? num('food days', t.foodDays, 'near origin') : ''}
+          ${t.archive != null ? num('archive', t.archive, 'shared recipes') : ''}
         </div>
       </div>
 
@@ -56,13 +60,15 @@ export function renderReport(host, r, sim) {
         <div class="cols">
           <div>
             <h5 class="sheet-meta">Ages</h5>
-            ${ageBarsHtml(r.demography.ageBuckets)}
+            ${ageBarsHtml(demo.ageBuckets)}
             <dl class="kv" style="margin-top:var(--s-3)">
-              <dt>mean age</dt><dd>${r.demography.meanAge.toFixed(1)} years</dd>
-              <dt>lifespan</dt><dd>${r.demography.meanLifespan ? r.demography.meanLifespan.toFixed(1) + ' years, of those who died' : 'no one has died yet'}</dd>
-              <dt>pairs</dt><dd>${r.demography.pairs} bonded${r.demography.pregnant ? `, ${r.demography.pregnant} expecting` : ''}</dd>
-              <dt>orphans</dt><dd>${r.demography.orphans}</dd>
-              <dt>generations</dt><dd>${r.demography.generations}</dd>
+              <dt>adults / children</dt>
+              <dd>${demo.adults ?? '—'} / ${demo.children ?? '—'}${demo.dependency != null ? ` · dep ${demo.dependency}` : ''}</dd>
+              <dt>mean age</dt><dd>${(demo.meanAge ?? 0).toFixed(1)} years</dd>
+              <dt>lifespan</dt><dd>${demo.meanLifespan ? demo.meanLifespan.toFixed(1) + ' years, of those who died' : 'no one has died yet'}</dd>
+              <dt>pairs</dt><dd>${demo.pairs} bonded${demo.pregnant ? `, ${demo.pregnant} expecting` : ''}</dd>
+              <dt>orphans</dt><dd>${demo.orphans}</dd>
+              <dt>generations</dt><dd>${demo.generations}</dd>
             </dl>
           </div>
           <div>
@@ -74,7 +80,7 @@ export function renderReport(host, r, sim) {
           <div>
             <h5 class="sheet-meta">Closest bonds</h5>
             <div class="rows">${r.society.strongestBonds.slice(0, 8).map((b) =>
-              row(`${esc(b.a)} &amp; ${esc(b.b)}${b.kin ? ' (kin)' : ''}`, `${pct(b.affection)} · ${b.exchanges} exchanges${b.conflicts ? ` · ${b.conflicts} quarrels` : ''}`)).join('') || '—'}</div>
+              row(`${esc(b.a)} &amp; ${esc(b.b)}${b.kin ? ' (kin)' : ''}`, `${pct(b.affection)} · ${b.exchanges || 0} exchanges${b.conflicts ? ` · ${b.conflicts} quarrels` : ''}`)).join('') || '—'}</div>
           </div>
         </div>
       </div>
@@ -103,7 +109,10 @@ export function renderReport(host, r, sim) {
           <div>
             <h5 class="sheet-meta">Newly made</h5>
             <div class="rows">${(r.knowledge.newInventions || []).slice(0, 10).map((i) =>
-              row(`${esc(i.word)} — ${esc(i.fn)}${i.advance ? ' <b>(an advance)</b>' : ''}`, `by ${esc(i.by)}`)).join('') || '<div class="row2"><span>Nothing new was kept.</span><span></span></div>'}</div>
+              row(
+                `${esc(i.word)} — ${esc(i.fn || i.function || i.label || 'thing')}${i.advance ? ' <b>(an advance)</b>' : ''}`,
+                `by ${esc(i.by || i.maker || 'someone')}`,
+              )).join('') || '<div class="row2"><span>Nothing new was kept.</span><span></span></div>'}</div>
             ${r.knowledge.lostKnowledge?.length ? `<h5 class="sheet-meta" style="margin-top:var(--s-4)">Lost with the dead</h5>
               <div class="rows">${r.knowledge.lostKnowledge.slice(0, 6).map((l) => row(esc(l.word || l.key), `died with ${esc(l.lastKeeper || 'someone')}`)).join('')}</div>` : ''}
           </div>
@@ -119,7 +128,7 @@ export function renderReport(host, r, sim) {
         <div class="cols">
           <div>
             <dl class="kv">
-              <dt>trades</dt><dd>${fmtNum(t.trades)} exchanges, ${fmtNum(t.gifts)} gifts</dd>
+              <dt>trades</dt><dd>${fmtNum(t.trades)} exchanges, ${fmtNum(t.gifts)} civic gifts</dd>
               <dt>thefts</dt><dd>${t.thefts}</dd>
               <dt>inequality</dt><dd>gini ${r.economy.inequality.toFixed(2)}</dd>
               <dt>goods held</dt><dd>${fmtNum(r.economy.totalGoods)}</dd>
