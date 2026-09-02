@@ -200,7 +200,7 @@ export class Simulation {
       case 'violence': return `Fight: ${names}`;
       case 'invention': return `Invention: ${ev.concept || names}`;
       case 'teach': return `Teaching: ${names}${ev.concept ? ` (${ev.concept})` : ''}`;
-      case 'gather': return `Gather: ${names}${ev.concept ? ` → ${ev.concept}` : ''}`;
+      case 'gather': return `Gather: ${names}${ev.concept ? ` â ${ev.concept}` : ''}`;
       case 'build':
       case 'first': return `Build/first: ${(ev.text || '').slice(0, 90)}`;
       case 'speech': return `Said: ${ev.voice || names}: ${(ev.text || '').slice(0, 80)}`;
@@ -309,6 +309,7 @@ export class Simulation {
       a.add('berry', 20);
       a.add('root', 14);
       a.add('grain', 14);
+      a.generation = 1;
       this.addAgent(a);
     }
 
@@ -544,7 +545,7 @@ export class Simulation {
       if (this.lostKnowledge.length > BALANCE.maxLostKnowledge) {
         this.lostKnowledge.shift();
       }
-      this.record(a, 'loss', `How to make ${word} was lost — ${a.name} was the last who knew`, {
+      this.record(a, 'loss', `How to make ${word} was lost â ${a.name} was the last who knew`, {
         valence: -0.55,
         intensity: 0.7,
         concept: key,
@@ -895,8 +896,8 @@ export class Simulation {
         !a.isChild(this.world.tick) &&
         age > 16 &&
         age < 48 &&
-        a.body.hunger < 0.55 &&
-        a.body.health > 0.45
+        a.body.hunger < 0.5 &&
+        a.body.health > 0.5
       ) {
         const p = this.byId(a.partner);
         if (
@@ -904,16 +905,41 @@ export class Simulation {
           !p.body.pregnant &&
           p.ageAt(this.world.tick) > 16 &&
           p.ageAt(this.world.tick) < 48 &&
-          dist(a, p) < 4 &&
-          this.rng.bool(
-            BALANCE.conceptionChance *
-              ((a.genome.fertility + p.genome.fertility) / 2),
-          )
+          p.body.hunger < 0.5 &&
+          p.body.health > 0.45 &&
+          dist(a, p) < 4
         ) {
-          const carrier = a.id < p.id ? a : p;
-          carrier.body.pregnant = true;
-          carrier.pregnantSince = this.world.tick;
-          carrier.otherParentId = carrier === a ? p.id : a.id;
+          // Soft demography: fewer conceptions when dependents overwhelm adults
+          const tick = this.world.tick;
+          const adults = this.living.filter(
+            (x) => !x.isChild(tick) && x.ageAt(tick) >= 16,
+          ).length;
+          const children = this.living.filter(
+            (x) => x.isChild(tick) || x.ageAt(tick) < 16,
+          ).length;
+          const dep = adults > 0 ? children / adults : children;
+          let chance =
+            BALANCE.conceptionChance *
+            ((a.genome.fertility + p.genome.fertility) / 2);
+          if (dep > 4) chance *= 0.35;
+          else if (dep > 2.5) chance *= 0.55;
+          else if (dep > 1.5) chance *= 0.75;
+          // Own living minors also temper (care load)
+          const ownKids = (a.children || [])
+            .concat(p.children || [])
+            .filter((id) => {
+              const c = this.byId(id);
+              return c?.alive && c.isChild(tick);
+            }).length;
+          if (ownKids >= 4) chance *= 0.4;
+          else if (ownKids >= 3) chance *= 0.65;
+
+          if (this.rng.bool(chance)) {
+            const carrier = a.id < p.id ? a : p;
+            carrier.body.pregnant = true;
+            carrier.pregnantSince = this.world.tick;
+            carrier.otherParentId = carrier === a ? p.id : a.id;
+          }
         }
       }
 
@@ -969,6 +995,14 @@ export class Simulation {
 
     this.addAgent(child);
     this.counters.births++;
+    // Cohort generation from parents (for demography reports)
+    const parentGen = Math.max(
+      mother.generation || 1,
+      father?.generation || 1,
+    );
+    child.generation = parentGen + 1;
+    this.generation = Math.max(this.generation, child.generation);
+
     this.record(
       mother,
       'birth',
@@ -1226,7 +1260,7 @@ export class Simulation {
     const word = this.lang.word(`struct:${kind}`);
     this.registerLex(word, kind, 'structure');
 
-    // ── Multi-tile bridge span ─────────────────────────────────
+    // ââ Multi-tile bridge span âââââââââââââââââââââââââââââââââ
     if (kind === 'bridge') {
       const span =
         spot.span ||
@@ -1263,7 +1297,7 @@ export class Simulation {
         a,
         firstEver ? 'first' : 'build',
         firstEver
-          ? `${a.name} spanned the water with ${word} — ${span.length} lengths of ${
+          ? `${a.name} spanned the water with ${word} â ${span.length} lengths of ${
               this.ont.get(materialKey)?.word || materialKey
             }`
           : `${a.name} raised a ${word} across the water (${span.length} lengths)`,
@@ -1272,7 +1306,7 @@ export class Simulation {
       return first;
     }
 
-    // ── Ordinary structures ────────────────────────────────────
+    // ââ Ordinary structures ââââââââââââââââââââââââââââââââââââ
     const s = {
       kind,
       x: spot.x,
@@ -1294,7 +1328,7 @@ export class Simulation {
       a,
       first ? 'first' : 'build',
       first
-        ? `${a.name} raised the first ${word} of ${settlement.name} — ${kind}, out of ${
+        ? `${a.name} raised the first ${word} of ${settlement.name} â ${kind}, out of ${
             this.ont.get(materialKey)?.word || materialKey
           }`
         : `${a.name} raised a ${word}`,
@@ -1399,7 +1433,7 @@ export class Simulation {
     this.record(
       a,
       'invention',
-      `${a.name} made ${concept.word}${record?.advance ? ' — nothing they had served so well' : ''}`,
+      `${a.name} made ${concept.word}${record?.advance ? ' â nothing they had served so well' : ''}`,
       {
         valence: record?.advance ? 0.85 : 0.4,
         intensity: record?.advance ? 0.9 : 0.45,
@@ -1900,7 +1934,7 @@ export class Simulation {
       limit,
       (a) => (a.action ? 2 : 1) + a.body.hunger + a.body.thirst + (1 - a.body.health),
     ).map((a) => ({
-      id: a.id, name: a.name, goal: a.goal || '—',
+      id: a.id, name: a.name, goal: a.goal || 'â',
       action: a.action?.kind || 'idle', where: `${a.x},${a.y}`,
       emotion: dominantEmotion(a), mood: moodWord(a.affect.mood),
       why: a.reasoning?.[0]?.why || null,
