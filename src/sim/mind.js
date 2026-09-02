@@ -20,7 +20,7 @@ const RELIEF = {
   seekWarmth: 'warm', sleep: 'tired', care: 'hurt',
 };
 
-const CHILD_RESTRICTED = new Set(['build', 'trade', 'court', 'fight', 'hunt', 'expand']);
+const CHILD_RESTRICTED = new Set(['build', 'trade', 'court', 'fight', 'hunt', 'expand', 'experiment', 'craft', 'makeArt', 'steal', 'terraform']);
 const ELDER_HARD = new Set(['hunt', 'fight', 'build']);
 const ELDER_FAVOURED = new Set(['teach', 'ritual', 'makeArt']);
 
@@ -210,7 +210,11 @@ export function think(a, ctx) {
     for (const p of props) {
       if (!p.kind) p.kind = name;
 
-      if (isChild && CHILD_RESTRICTED.has(p.kind)) p.u *= 0.15;
+      if (isChild && CHILD_RESTRICTED.has(p.kind)) {
+        // Young children almost never invent/build; older children a little
+        const age = a.ageAt(world.tick);
+        p.u *= age < 10 ? 0.02 : 0.08;
+      }
       if (isElder && ELDER_HARD.has(p.kind)) p.u *= 0.5;
       if (isElder && ELDER_FAVOURED.has(p.kind)) p.u *= 1.6;
       if ((a.frustration || 0) > 2 && p.kind === a.lastAction) p.u *= 0.5;
@@ -299,6 +303,11 @@ export function think(a, ctx) {
         if (p.kind === 'drink') p.u *= 4.0;
         if (p.kind === 'gather') p.u *= 2.0;
         if (p.kind === 'takeFromStore') p.u *= 2.5;
+        if (p.kind === 'experiment' || p.kind === 'craft' || p.kind === 'makeArt') {
+          p.u *= 0.05;
+        }
+        if (p.kind === 'build' || p.kind === 'expand') p.u *= 0.05;
+        if (p.kind === 'bury') p.u *= 0.3;
       }
 
       candidates.push(p);
