@@ -1,6 +1,7 @@
 // The society layer: who knows whom, who owes whom, what is held to be wrong,
 // who is buried where, and what the whole thing adds up to.
 // Bridges are multi-tile spans (world.findBridgeSpan + raiseStructure).
+// Knowledge: personal teach/handoff + institutional archive (no birth lock).
 
 import { RNG } from '../core/rng.js';
 import { Language } from '../core/language.js';
@@ -68,6 +69,8 @@ export class Simulation {
     this.inventionTicks = new Map();
     this.wantedMaterials = new Map();
     this.lexicon = new Map();
+    this.archive = new Set();          // recipe keys that outlive individuals
+    this.campKnowledge = new Map();    // key -> Set of living holder ids
 
     this.generation = 1;
     this.ritualPull = 0;
@@ -241,6 +244,7 @@ export class Simulation {
     const founding = {
       kind: 'settlement', name: firstName, x: cx, y: cy,
       foundedTick: 0, color: hueFor(0), tier: 'camp',
+      archive: new Set(),
     };
     this.settlements = [founding];
     world.sites.push(founding);
@@ -511,6 +515,7 @@ export class Simulation {
           quiet: true,
         },
       );
+      this.archiveKnowledge(key);
     }
     return passed;
   }
@@ -526,6 +531,7 @@ export class Simulation {
     this.handOffKnowledge(a);
 
     for (const key of a.memory.knownKeys('recipe')) {
+      if (this.isArchived(key)) continue;
       const stillKnown = this.living.some(
         (x) => x.id !== a.id && x.memory.knows(key, 0.2),
       );
@@ -782,6 +788,9 @@ export class Simulation {
       intensity: 0.45,
       concept: key,
     });
+    if ((b.kind || 'recipe') === 'recipe' || this.ont.get(key)) {
+      this.archiveKnowledge(key);
+    }
     this.upholdNorm('teaching', 0.02);
     a.adjustRel(o, { affection: 0.04, familiarity: 0.05 });
     o.adjustRel(a, { trust: 0.06, affection: 0.05, familiarity: 0.05 });
@@ -1200,6 +1209,7 @@ export class Simulation {
       foundedTick: this.world.tick,
       color: hueFor(this.settlements.length),
       tier: 'camp',
+      archive: new Set(this.archive),
     };
     this.settlements.push(settlement);
     this.world.sites.push(settlement);
@@ -1385,6 +1395,7 @@ export class Simulation {
     if (concept.word && concept.bestFn) {
       this.registerLex(concept.word, concept.bestFn, 'invention', concept.key);
     }
+    this.archiveKnowledge(concept.key);
     this.record(
       a,
       'invention',
@@ -1602,12 +1613,14 @@ export class Simulation {
   }
 
   dailyReflection() {
+    this.updateCampKnowledge();
     for (const a of this.living) {
       if (this.rng.bool(0.3)) a.memory.consolidate(a);
       for (const [k] of a.inventory) {
         const m = this.marketPrices.get(k);
         if (m) a.updateValue?.(k, m.price, 0.08);
       }
+      if (this.rng.bool(0.12)) this.tryLearnFromArchive(a);
     }
   }
 
@@ -1642,6 +1655,79 @@ export class Simulation {
     return Math.round(t);
   }
 
+  /** Days of food near a settlement at ~1.1 measures / person / day. */
+  foodDaysAt(settlement = null) {
+    const s = settlement || this.origin;
+    if (!s) return 0;
+    const near = this.living.filter(
+      (a) => Math.hypot(a.x - s.x, a.y - s.y) < 18,
+    );
+    const people = Math.max(1, near.length);
+    let food = 0;
+    for (const a of near) {
+      for (const [k, v] of a.inventory) {
+        if (this.ont.get(k)?.functions?.sustenance) food += v;
+      }
+    }
+    for (const st of this.world.structuresOfKind('store')) {
+      if (Math.hypot(st.x - s.x, st.y - s.y) > 16) continue;
+      for (const [k, v] of st.stock || []) {
+        if (this.ont.get(k)?.functions?.sustenance) food += v;
+      }
+    }
+    return food / (people * 1.1);
+  }
+
+  archiveKnowledge(key) {
+    if (!key) return;
+    this.archive.add(key);
+    for (const s of this.settlements) {
+      if (!s.archive) s.archive = new Set();
+      s.archive.add(key);
+    }
+  }
+
+  isArchived(key) {
+    return this.archive.has(key);
+  }
+
+  updateCampKnowledge() {
+    this.campKnowledge.clear();
+    for (const a of this.living) {
+      if (!a.memory?.knownKeys) continue;
+      for (const k of a.memory.knownKeys('recipe')) {
+        if (!this.campKnowledge.has(k)) this.campKnowledge.set(k, new Set());
+        this.campKnowledge.get(k).add(a.id);
+      }
+    }
+    for (const [k, holders] of this.campKnowledge) {
+      if (holders.size >= 2) this.archiveKnowledge(k);
+    }
+  }
+
+  /** Quiet transfer of archived recipes near a store / workshop. */
+  tryLearnFromArchive(a) {
+    if (!this.archive.size) return;
+    if (a.isChild?.(this.world.tick)) return;
+    const nearStore =
+      this.world.hasStructureNear?.(a.x, a.y, 'store', 7) ||
+      this.world.hasStructureNear?.(a.x, a.y, 'workshop', 7) ||
+      this.world.hasStructureNear?.(a.x, a.y, 'hall', 8);
+    if (!nearStore) return;
+    for (const key of this.archive) {
+      if (a.memory.knows(key, 0.3)) continue;
+      if (!this.ont.get(key)) continue;
+      a.memory.learn(key, {
+        kind: 'recipe',
+        confidence: 0.28 * (a.genome.learning || 0.5),
+        valence: 0.25,
+        source: 'archive',
+      });
+      a.stats.learned = (a.stats.learned || 0) + 1;
+      break;
+    }
+  }
+
   settlementReport(settlement = null) {
     const s = settlement || this.origin;
     if (!s) return null;
@@ -1661,6 +1747,8 @@ export class Simulation {
       deficits: n,
       farBankStillBlocked: !!far && spans === 0,
       food: this.totalFood(),
+      foodDays: +this.foodDaysAt(s).toFixed(1),
+      archiveSize: this.archive.size,
     };
   }
 
@@ -1728,6 +1816,7 @@ export class Simulation {
       day: this.world.dayNumber,
       population: this.living.length,
       food: this.totalFood(),
+      archive: this.archive.size,
       settlement: this.settlementReport(),
       topRecipes: top(recipes, 15),
       topMatter: top(matter, 15),
