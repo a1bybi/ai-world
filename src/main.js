@@ -9,21 +9,23 @@ import { LLMBridge } from './llm/bridge.js';
 
 const $ = (s) => document.querySelector(s);
 
-// Speeds are stated as ticks per second — one tick is an hour in the world, so
-// 24 ticks/s is a day a second. "Max" runs as fast as one frame can afford.
+// One tick = one world-hour.
+// Labels are exact multipliers of 1 hour/s (except max = machine budget).
+// 24× ≈ one day per second.
 const SPEEDS = [
   { label: 'hold', tps: 0 },
-  { label: '1×', tps: 4 },
-  { label: '3×', tps: 12 },
-  { label: '8×', tps: 32 },
-  { label: '20×', tps: 80 },
-  { label: '60×', tps: 240 },
-  { label: 'max', tps: Infinity },
+  { label: '1×',   tps: 1 },
+  { label: '3×',   tps: 3 },
+  { label: '8×',   tps: 8 },
+  { label: '24×',  tps: 24 },
+  { label: '60×',  tps: 60 },
+  { label: 'max',  tps: Infinity },
 ];
 
 const state = {
   sim: null,
   speedIdx: 0,
+  lastSpeedIdx: 1, // remember last non-hold speed for Play
   running: false,
   selected: null,
   lastFrame: 0,
@@ -78,12 +80,19 @@ function frame(now) {
     if (tps === Infinity) {
       // spend a fixed slice of the frame on simulation, keep the rest for drawing
       const budget = now + 9;
-      while (performance.now() < budget && sim.living.length) { sim.step(); ran++; if (ran > 4000) break; }
+      while (performance.now() < budget && sim.living.length) {
+        sim.step();
+        ran++;
+        if (ran > 4000) break;
+      }
     } else {
       state.carry += tps * dt;
       const want = Math.min(Math.floor(state.carry), 600);
       state.carry -= want;
-      for (let i = 0; i < want; i++) { sim.step(); ran++; }
+      for (let i = 0; i < want; i++) {
+        sim.step();
+        ran++;
+      }
     }
     state.ticksThisSecond += ran;
     if (ran) {
@@ -101,11 +110,21 @@ function frame(now) {
     state.tickRate = state.ticksThisSecond / ((now - state.rateStamp) / 1000);
     state.ticksThisSecond = 0;
     state.rateStamp = now;
-    $('#rateOut').textContent = state.running ? `${Math.round(state.tickRate)} hours/s` : 'paused';
+    const s = SPEEDS[state.speedIdx];
+    if (!state.running) {
+      $('#rateOut').textContent = 'paused';
+    } else if (s.tps === Infinity) {
+      $('#rateOut').textContent = `${Math.round(state.tickRate)} hours/s · max`;
+    } else {
+      $('#rateOut').textContent = `${Math.round(state.tickRate)} hours/s · target ${s.tps}`;
+    }
   }
 
   paint();
-  if (now - state.lastPanel > 420) { state.lastPanel = now; refreshPanels(); }
+  if (now - state.lastPanel > 420) {
+    state.lastPanel = now;
+    refreshPanels();
+  }
 }
 
 function paint() {
@@ -122,16 +141,23 @@ function paint() {
   $('#weatherChip').textContent = w.weather;
 }
 
-let lastRoster = 0, lastWorldPane = 0;
+let lastRoster = 0;
+let lastWorldPane = 0;
 function refreshPanels(force = false) {
   const sim = state.sim;
   if (!sim) return;
   const now = performance.now();
   // the roster and world pane are rebuilt wholesale, so they are refreshed
   // rarely: a list that redraws under the cursor is a list you cannot click.
-  if (panels.active === 'people' && (force || now - lastRoster > 1200)) { lastRoster = now; panels.renderRoster(sim, state.selected); }
+  if (panels.active === 'people' && (force || now - lastRoster > 1200)) {
+    lastRoster = now;
+    panels.renderRoster(sim, state.selected);
+  }
   if (panels.active === 'mind' || force) panels.renderMind(sim, state.selected);
-  if (panels.active === 'world' && (force || now - lastWorldPane > 1500)) { lastWorldPane = now; panels.renderWorld(sim); }
+  if (panels.active === 'world' && (force || now - lastWorldPane > 1500)) {
+    lastWorldPane = now;
+    panels.renderWorld(sim);
+  }
 }
 
 // ── the optional voice ────────────────────────────────────────────────────
@@ -140,15 +166,21 @@ function maybeVoice(sim) {
   if (!llm.enabled || !llm.ready()) return;
   if (sim.world.tick < voiceCooldown) return;
   voiceCooldown = sim.world.tick + 4;
-  // whoever is most stirred up, or whoever the observer is watching
-  const pool = state.selected ? [sim.byId(state.selected)].filter(Boolean) : sim.living;
+  const pool = state.selected
+    ? [sim.byId(state.selected)].filter(Boolean)
+    : sim.living;
   if (!pool.length) return;
   let who = pool[0];
   for (const a of pool) if (a.affect.arousal > who.affect.arousal) who = a;
   llm.thought(who, sim).then((text) => {
     if (!text || !who.alive) return;
     who.say(text, 'thought');
-    sim.record(who, 'thought', text, { actors: [who.id], intensity: 0.25, valence: who.affect.valence * 0.3, voice: who.name });
+    sim.record(who, 'thought', text, {
+      actors: [who.id],
+      intensity: 0.25,
+      valence: who.affect.valence * 0.3,
+      voice: who.name,
+    });
     $('#llmState').textContent = llm.label;
   });
 }
@@ -175,10 +207,14 @@ function closeReport() {
 
 // ── controls ──────────────────────────────────────────────────────────────
 function setSpeed(i) {
+  i = Math.max(0, Math.min(SPEEDS.length - 1, i | 0));
   state.speedIdx = i;
+  if (SPEEDS[i].tps > 0) state.lastSpeedIdx = i;
   state.running = SPEEDS[i].tps > 0;
   state.carry = 0;
-  for (const b of $('#speeds').children) b.setAttribute('aria-pressed', String(+b.dataset.i === i));
+  for (const b of $('#speeds').children) {
+    b.setAttribute('aria-pressed', String(+b.dataset.i === i));
+  }
   updatePlayBtn();
 }
 
@@ -188,31 +224,46 @@ function updatePlayBtn() {
 
 function togglePlay() {
   if (state.running) {
+    // Pause only — do not force the chronicle open
     setSpeed(0);
-    openReport();
   } else {
     closeReport();
-    setSpeed(state.speedIdx > 0 ? state.speedIdx : 1);
+    setSpeed(state.lastSpeedIdx > 0 ? state.lastSpeedIdx : 1);
   }
 }
 
 function showTab(name) {
   panels.active = name;
-  for (const t of document.querySelectorAll('.tab')) t.setAttribute('aria-selected', String(t.dataset.tab === name));
-  for (const p of document.querySelectorAll('.pane')) p.dataset.active = String(p.id === `pane-${name}`);
+  for (const t of document.querySelectorAll('.tab')) {
+    t.setAttribute('aria-selected', String(t.dataset.tab === name));
+  }
+  for (const p of document.querySelectorAll('.pane')) {
+    p.dataset.active = String(p.id === `pane-${name}`);
+  }
   refreshPanels(true);
 }
 
 function buildControls() {
   const speeds = $('#speeds');
-  speeds.innerHTML = SPEEDS.map((s, i) => `<button class="speed" data-i="${i}" aria-pressed="${i === 0}" title="${s.tps === Infinity ? 'as fast as this machine allows' : `${s.tps} world-hours per second`}">${s.label}</button>`).join('');
+  speeds.innerHTML = SPEEDS.map((s, i) => {
+    const title =
+      s.tps === Infinity
+        ? 'as fast as this machine allows'
+        : s.tps === 0
+          ? 'paused'
+          : `${s.tps} world-hour${s.tps === 1 ? '' : 's'} per second`;
+    return `<button class="speed" data-i="${i}" aria-pressed="${i === 0}" title="${title}">${s.label}</button>`;
+  }).join('');
   speeds.addEventListener('click', (e) => {
     const b = e.target.closest('.speed');
     if (b) setSpeed(+b.dataset.i);
   });
 
   const ov = $('#overlays');
-  ov.innerHTML = OVERLAYS.map((o) => `<button class="overlay-btn" data-ov="${o.key}" aria-pressed="${o.key === renderer.overlay}">${o.label}</button>`).join('');
+  ov.innerHTML = OVERLAYS.map(
+    (o) =>
+      `<button class="overlay-btn" data-ov="${o.key}" aria-pressed="${o.key === renderer.overlay}">${o.label}</button>`,
+  ).join('');
   ov.addEventListener('click', (e) => {
     const b = e.target.closest('.overlay-btn');
     if (!b) return;
@@ -229,10 +280,16 @@ function buildControls() {
 
   $('#playBtn').addEventListener('click', togglePlay);
   $('#reportBtn').addEventListener('click', () => openReport());
-  $('#newBtn').addEventListener('click', () => newWorld($('#seedInput').value.trim() || String(Date.now())));
-  $('#seedInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#newBtn').click(); });
+  $('#newBtn').addEventListener('click', () =>
+    newWorld($('#seedInput').value.trim() || String(Date.now())),
+  );
+  $('#seedInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') $('#newBtn').click();
+  });
 
-  $('#sheet').addEventListener('click', (e) => { if (e.target.id === 'sheet') closeReport(); });
+  $('#sheet').addEventListener('click', (e) => {
+    if (e.target.id === 'sheet') closeReport();
+  });
 
   // llm dialog
   const dlg = $('#dialog');
@@ -243,8 +300,12 @@ function buildControls() {
     $('#llmKey').value = llm.cfg.key;
     dlg.dataset.open = 'true';
   });
-  $('#llmCancel').addEventListener('click', () => { dlg.dataset.open = 'false'; });
-  dlg.addEventListener('click', (e) => { if (e.target.id === 'dialog') dlg.dataset.open = 'false'; });
+  $('#llmCancel').addEventListener('click', () => {
+    dlg.dataset.open = 'false';
+  });
+  dlg.addEventListener('click', (e) => {
+    if (e.target.id === 'dialog') dlg.dataset.open = 'false';
+  });
   $('#llmSave').addEventListener('click', () => {
     llm.errors = 0;
     llm.save({
@@ -269,7 +330,10 @@ function buildControls() {
   cv.addEventListener('mousemove', (e) => {
     const rect = cv.getBoundingClientRect();
     const hit = renderer.pick(e.clientX - rect.left, e.clientY - rect.top, state.sim);
-    if (!hit) { tip.dataset.show = 'false'; return; }
+    if (!hit) {
+      tip.dataset.show = 'false';
+      return;
+    }
     let text = '';
     if (hit.kind === 'person') {
       const a = hit.agent;
@@ -277,8 +341,15 @@ function buildControls() {
     } else if (hit.kind === 'structure') {
       text = `${hit.structure.word || hit.structure.kind} · ${hit.structure.kind} by ${hit.structure.builtBy}`;
     } else {
-      const beds = hit.bed ? Object.entries(hit.bed).filter(([, b]) => b.amount > 0.5)
-        .map(([k, b]) => `${state.sim.ont.get(k)?.word || k} ${Math.round(b.amount)}`).join(', ') : '';
+      const beds = hit.bed
+        ? Object.entries(hit.bed)
+            .filter(([, b]) => b.amount > 0.5)
+            .map(
+              ([k, b]) =>
+                `${state.sim.ont.get(k)?.word || k} ${Math.round(b.amount)}`,
+            )
+            .join(', ')
+        : '';
       text = `${hit.terrain}${beds ? ' · ' + beds : ''}`;
     }
     tip.textContent = text;
@@ -286,18 +357,29 @@ function buildControls() {
     tip.style.top = `${e.clientY - rect.top}px`;
     tip.dataset.show = 'true';
   });
-  cv.addEventListener('mouseleave', () => { tip.dataset.show = 'false'; });
+  cv.addEventListener('mouseleave', () => {
+    tip.dataset.show = 'false';
+  });
 
-  window.addEventListener('resize', () => { renderer.resize(state.sim?.world); paint(); });
+  window.addEventListener('resize', () => {
+    renderer.resize(state.sim?.world);
+    paint();
+  });
 
   document.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
-    if (e.key === ' ') { e.preventDefault(); togglePlay(); }
-    else if (e.key === 'r') openReport();
-    else if (e.key === 'Escape') { closeReport(); $('#dialog').dataset.open = 'false'; }
-    else if (/^[0-6]$/.test(e.key)) setSpeed(+e.key);
+    if (e.key === ' ') {
+      e.preventDefault();
+      togglePlay();
+    } else if (e.key === 'r') openReport();
+    else if (e.key === 'Escape') {
+      closeReport();
+      $('#dialog').dataset.open = 'false';
+    } else if (/^[0-6]$/.test(e.key)) setSpeed(+e.key);
     else if (e.key === 'o') {
-      const i = (OVERLAYS.findIndex((o) => o.key === renderer.overlay) + 1) % OVERLAYS.length;
+      const i =
+        (OVERLAYS.findIndex((o) => o.key === renderer.overlay) + 1) %
+        OVERLAYS.length;
       $(`.overlay-btn[data-ov="${OVERLAYS[i].key}"]`)?.click();
     }
   });
