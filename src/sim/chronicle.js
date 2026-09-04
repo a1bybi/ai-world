@@ -309,6 +309,19 @@ export class Chronicle {
       },
       society: {
         households: sim.households.length,
+        householdList: sim.households.map((h) => {
+          const members = h.memberIds
+            .map((id) => sim.byId(id))
+            .filter((a) => a?.alive);
+          return {
+            id: h.id,
+            size: members.length,
+            names: members.map((a) => a.name).slice(0, 6),
+            home: h.home,
+          };
+        }).filter((h) => h.size > 0)
+          .sort((a, b) => b.size - a.size)
+          .slice(0, 8),
         leaders: sim.leaders().map((a) => ({
           name: a.name,
           respect: +sim.respectFor(a).toFixed(2),
