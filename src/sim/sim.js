@@ -815,72 +815,86 @@ export class Simulation {
 
   // ââ Households ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
+  /**
+   * Household = couple + their dependent children.
+   * Never merge two multi-member houses into a camp-wide clan.
+   */
   formHousehold(a, o = null) {
-    if (a.householdId && o?.householdId && a.householdId === o.householdId) {
+    if (!a) return null;
+    if (o && a.householdId && o.householdId && a.householdId === o.householdId) {
       return this.households.find((h) => h.id === a.householdId) || null;
     }
-    // Join existing
-    if (a.householdId && o && !o.householdId) {
-      return this.joinHousehold(o, a.householdId);
-    }
-    if (o?.householdId && !a.householdId) {
-      return this.joinHousehold(a, o.householdId);
-    }
-    if (a.householdId && o?.householdId && a.householdId !== o.householdId) {
-      // Merge smaller into larger
-      const ha = this.households.find((h) => h.id === a.householdId);
-      const hb = this.households.find((h) => h.id === o.householdId);
-      if (ha && hb) {
-        const [keep, drop] = (ha.memberIds.length >= hb.memberIds.length) ? [ha, hb] : [hb, ha];
-        for (const id of [...drop.memberIds]) {
-          const m = this.byId(id);
-          if (m) this.joinHousehold(m, keep.id);
-        }
-        this.households = this.households.filter((h) => h.id !== drop.id);
-        return keep;
-      }
+
+    // Pick a target house for the couple without swallowing unrelated members
+    let targetId = null;
+    const ha = a.householdId && this.households.find((h) => h.id === a.householdId);
+    const hb = o?.householdId && this.households.find((h) => h.id === o.householdId);
+
+    if (ha && !hb) targetId = ha.id;
+    else if (hb && !ha) targetId = hb.id;
+    else if (ha && hb && ha.id === hb.id) targetId = ha.id;
+    else if (ha && hb) {
+      // Both already housed separately: move only the couple (and minors) into
+      // the house that already holds more of their children â never full merge.
+      const childScore = (h, person) =>
+        (person.children || []).filter(
+          (id) => h.memberIds.includes(id) && this.byId(id)?.alive,
+        ).length;
+      const scoreA = childScore(ha, a) + childScore(ha, o);
+      const scoreB = childScore(hb, a) + childScore(hb, o);
+      targetId = scoreA >= scoreB ? ha.id : hb.id;
     }
 
-    const id = `h${this.households.length + 1}-${this.world.tick}`;
-    const home = a.home || { x: a.x, y: a.y };
-    const h = {
-      id,
-      foundedTick: this.world.tick,
-      memberIds: [],
-      home: { x: home.x, y: home.y },
-      name: null,
-    };
-    this.households.push(h);
-    this.joinHousehold(a, id);
-    if (o) this.joinHousehold(o, id);
-    // Prefer a nearby shelter as home
-    const shelters = this.world.structuresOfKind?.('shelter') || [];
-    let best = null;
-    let bd = 8;
-    for (const s of shelters) {
-      const d = Math.hypot(s.x - a.x, s.y - a.y);
-      if (d < bd) {
-        bd = d;
-        best = s;
+    if (!targetId) {
+      targetId = `h${this.households.length + 1}-${this.world.tick}`;
+      const home = a.home || { x: a.x, y: a.y };
+      const h = {
+        id: targetId,
+        foundedTick: this.world.tick,
+        memberIds: [],
+        home: { x: home.x, y: home.y },
+        name: null,
+      };
+      this.households.push(h);
+      const shelters = this.world.structuresOfKind?.('shelter') || [];
+      let best = null;
+      let bd = 8;
+      for (const s of shelters) {
+        const d = Math.hypot(s.x - a.x, s.y - a.y);
+        if (d < bd) {
+          bd = d;
+          best = s;
+        }
       }
+      if (best) h.home = { x: best.x, y: best.y };
     }
-    if (best) {
-      h.home = { x: best.x, y: best.y };
-      a.home = h.home;
-      if (o) o.home = h.home;
+
+    this.joinHousehold(a, targetId);
+    if (o) this.joinHousehold(o, targetId);
+
+    // Dependent children of the couple follow
+    const tick = this.world.tick;
+    const bring = new Set([...(a.children || []), ...((o && o.children) || [])]);
+    for (const cid of bring) {
+      const c = this.byId(cid);
+      if (c?.alive && c.isChild(tick)) this.joinHousehold(c, targetId);
     }
-    return h;
+
+    const h = this.households.find((x) => x.id === targetId);
+    if (h?.home) {
+      a.home = { x: h.home.x, y: h.home.y };
+      if (o) o.home = { x: h.home.x, y: h.home.y };
+    }
+    this.pruneHouseholds();
+    return h || null;
   }
 
   joinHousehold(a, householdId) {
     const h = this.households.find((x) => x.id === householdId);
     if (!h || !a) return null;
-    // Leave previous
     if (a.householdId && a.householdId !== householdId) {
-      const old = this.households.find((x) => x.id === a.householdId);
-      if (old) {
-        old.memberIds = old.memberIds.filter((id) => id !== a.id);
-      }
+      const prev = this.households.find((x) => x.id === a.householdId);
+      if (prev) prev.memberIds = prev.memberIds.filter((id) => id !== a.id);
     }
     a.householdId = householdId;
     if (!h.memberIds.includes(a.id)) h.memberIds.push(a.id);
@@ -893,6 +907,31 @@ export class Simulation {
       h.memberIds = h.memberIds.filter((id) => this.byId(id)?.alive);
     }
     this.households = this.households.filter((h) => h.memberIds.length > 0);
+  }
+
+  /** Backfill pairs/orphans that predate household logic or lost their house. */
+  ensureHouseholdsFromBonds() {
+    for (const a of this.living) {
+      if (!a.partner) continue;
+      const o = this.byId(a.partner);
+      if (!o?.alive) continue;
+      if (a.id > o.id) continue;
+      if (a.householdId && o.householdId && a.householdId === o.householdId) continue;
+      this.formHousehold(a, o);
+    }
+    const tick = this.world.tick;
+    for (const a of this.living) {
+      if (a.householdId) continue;
+      const m = this.byId(a.motherId);
+      const f = this.byId(a.fatherId);
+      if (m?.alive && m.householdId) this.joinHousehold(a, m.householdId);
+      else if (f?.alive && f.householdId) this.joinHousehold(a, f.householdId);
+      else if (a.isChild(tick) && !a.householdId) {
+        // Lone minor: small household of one so report stays honest
+        this.formHousehold(a, null);
+      }
+    }
+    this.pruneHouseholds();
   }
 
   tryBond(a, o) {
@@ -1704,6 +1743,7 @@ export class Simulation {
   }
 
   updateRoles() {
+    this.ensureHouseholdsFromBonds();
     this.pruneHouseholds();
     for (const a of this.living) {
       if (a.isChild(this.world.tick)) { a.role = 'child'; continue; }
