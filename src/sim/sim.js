@@ -530,6 +530,12 @@ export class Simulation {
     this.counters.deaths++;
 
     this.handOffKnowledge(a);
+    if (a.householdId) {
+      const h = this.households.find((x) => x.id === a.householdId);
+      if (h) h.memberIds = h.memberIds.filter((id) => id !== a.id);
+      a.householdId = null;
+      this.pruneHouseholds();
+    }
 
     for (const key of a.memory.knownKeys('recipe')) {
       if (this.isArchived(key)) continue;
@@ -807,7 +813,90 @@ export class Simulation {
     });
   }
 
+  // ââ Households ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+
+  formHousehold(a, o = null) {
+    if (a.householdId && o?.householdId && a.householdId === o.householdId) {
+      return this.households.find((h) => h.id === a.householdId) || null;
+    }
+    // Join existing
+    if (a.householdId && o && !o.householdId) {
+      return this.joinHousehold(o, a.householdId);
+    }
+    if (o?.householdId && !a.householdId) {
+      return this.joinHousehold(a, o.householdId);
+    }
+    if (a.householdId && o?.householdId && a.householdId !== o.householdId) {
+      // Merge smaller into larger
+      const ha = this.households.find((h) => h.id === a.householdId);
+      const hb = this.households.find((h) => h.id === o.householdId);
+      if (ha && hb) {
+        const [keep, drop] = (ha.memberIds.length >= hb.memberIds.length) ? [ha, hb] : [hb, ha];
+        for (const id of [...drop.memberIds]) {
+          const m = this.byId(id);
+          if (m) this.joinHousehold(m, keep.id);
+        }
+        this.households = this.households.filter((h) => h.id !== drop.id);
+        return keep;
+      }
+    }
+
+    const id = `h${this.households.length + 1}-${this.world.tick}`;
+    const home = a.home || { x: a.x, y: a.y };
+    const h = {
+      id,
+      foundedTick: this.world.tick,
+      memberIds: [],
+      home: { x: home.x, y: home.y },
+      name: null,
+    };
+    this.households.push(h);
+    this.joinHousehold(a, id);
+    if (o) this.joinHousehold(o, id);
+    // Prefer a nearby shelter as home
+    const shelters = this.world.structuresOfKind?.('shelter') || [];
+    let best = null;
+    let bd = 8;
+    for (const s of shelters) {
+      const d = Math.hypot(s.x - a.x, s.y - a.y);
+      if (d < bd) {
+        bd = d;
+        best = s;
+      }
+    }
+    if (best) {
+      h.home = { x: best.x, y: best.y };
+      a.home = h.home;
+      if (o) o.home = h.home;
+    }
+    return h;
+  }
+
+  joinHousehold(a, householdId) {
+    const h = this.households.find((x) => x.id === householdId);
+    if (!h || !a) return null;
+    // Leave previous
+    if (a.householdId && a.householdId !== householdId) {
+      const old = this.households.find((x) => x.id === a.householdId);
+      if (old) {
+        old.memberIds = old.memberIds.filter((id) => id !== a.id);
+      }
+    }
+    a.householdId = householdId;
+    if (!h.memberIds.includes(a.id)) h.memberIds.push(a.id);
+    if (h.home) a.home = { x: h.home.x, y: h.home.y };
+    return h;
+  }
+
+  pruneHouseholds() {
+    for (const h of this.households) {
+      h.memberIds = h.memberIds.filter((id) => this.byId(id)?.alive);
+    }
+    this.households = this.households.filter((h) => h.memberIds.length > 0);
+  }
+
   tryBond(a, o) {
+
     if (!a.alive || !o.alive || a.partner || o.partner) return false;
     const ra = a.rel(o);
     const ro = o.rel(a);
@@ -823,6 +912,7 @@ export class Simulation {
     o.partner = a.id;
     a.adjustRel(o, { affection: 0.2, trust: 0.15, familiarity: 0.1 });
     o.adjustRel(a, { affection: 0.2, trust: 0.15, familiarity: 0.1 });
+    this.formHousehold(a, o);
     this.record(a, 'bond', `${a.name} and ${o.name} bound themselves to one another`, {
       actors: [a.id, o.id], valence: 0.8, intensity: 0.9, landmark: true,
     });
@@ -976,6 +1066,11 @@ export class Simulation {
     child.motherId = mother.id;
     child.fatherId = father?.id || null;
     child.parents = [mother.id, father?.id].filter(Boolean);
+    if (mother.householdId) {
+      this.joinHousehold(child, mother.householdId);
+    } else if (father?.householdId) {
+      this.joinHousehold(child, father.householdId);
+    }
     child.body.hunger = 0.15;
     child.body.thirst = 0.1;
     child.body.health = 0.95;
@@ -1609,23 +1704,27 @@ export class Simulation {
   }
 
   updateRoles() {
+    this.pruneHouseholds();
     for (const a of this.living) {
       if (a.isChild(this.world.tick)) { a.role = 'child'; continue; }
       const s = a.stats;
+      const t = a.actionTally?.() || new Map();
+      const recent = (kind) => t.get(kind) || 0;
+      // Lifetime stats + recent behavior (recent weighted higher); trade damped
       const scores = [
-        ['maker', s.inventions * 3 + a.skills.craft * 4],
-        ['forager', s.harvested * 0.05 + a.skills.forage * 3],
-        ['hunter', a.skills.hunt * 5],
-        ['builder', s.built * 2 + a.skills.build * 4],
-        ['farmer', a.skills.farm * 5],
-        ['healer', s.rescues * 2 + a.skills.heal * 4],
-        ['teacher', s.taught * 1.5 + a.skills.teach * 3],
-        ['trader', s.trades * 0.7 + a.skills.trade * 3],
-        ['speaker', a.skills.speak * 2 + this.respectFor(a) * 5],
-        ['artist', s.crafted * 0.1 + a.skills.art * 5],
+        ['maker', s.inventions * 2.5 + a.skills.craft * 3 + recent('craft') * 1.2 + recent('experiment') * 1.4],
+        ['forager', s.harvested * 0.04 + a.skills.forage * 2.5 + recent('gather') * 1.5],
+        ['hunter', a.skills.hunt * 4 + recent('hunt') * 2],
+        ['builder', s.built * 2.5 + a.skills.build * 3 + recent('build') * 2],
+        ['farmer', a.skills.farm * 4 + recent('farm') * 2.5],
+        ['healer', s.rescues * 2 + a.skills.heal * 3 + recent('care') * 2],
+        ['teacher', s.taught * 1.2 + a.skills.teach * 2.5 + recent('teach') * 2],
+        ['trader', s.trades * 0.25 + a.skills.trade * 1.5 + recent('trade') * 0.8],
+        ['speaker', a.skills.speak * 2 + this.respectFor(a) * 4 + recent('converse') * 0.5],
+        ['artist', s.crafted * 0.08 + a.skills.art * 4 + recent('makeArt') * 2],
       ];
       const best = topN(scores, 1, (x) => x[1])[0];
-      a.role = best && best[1] > 1.2 ? best[0] : 'wanderer';
+      a.role = best && best[1] > 1.5 ? best[0] : 'wanderer';
       if (a.isElder(this.world.tick) && a.skills.teach > 0.3 && !a.titles.includes('elder')) {
         a.titles.push('elder');
       }
