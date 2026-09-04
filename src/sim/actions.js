@@ -194,11 +194,14 @@ function normPull(a, ctx, key) {
 }
 
 function plazaBoost(ctx, a, mult = 1.25) {
-  if (
-    typeof ctx.world.hasStructureNear === 'function' &&
-    ctx.world.hasStructureNear(a.x, a.y, 'plaza', 6)
-  ) {
-    return mult;
+  return structureBoost(ctx, a, ['plaza', 'market'], mult);
+}
+
+/** Multiplier when standing near institutions that make an activity pay. */
+function structureBoost(ctx, a, kinds, mult = 1.25) {
+  if (typeof ctx.world.hasStructureNear !== 'function') return 1;
+  for (const k of kinds) {
+    if (ctx.world.hasStructureNear(a.x, a.y, k, 7)) return mult;
   }
   return 1;
 }
@@ -254,11 +257,12 @@ const STRUCTURE_KINDS = {
   field:    { fn: 'sustenance', cost: 5,  need: (s) => s.fieldDeficit,    desc: 'ground turned for planted grain' },
   well:     { fn: 'vessel',     cost: 8,  need: (s) => s.wellDeficit,     desc: 'water that does not need a walk' },
   shrine:   { fn: 'art',        cost: 6,  need: (s) => s.shrineDeficit,   desc: 'a place for the dead and the questions' },
+  market:   { fn: 'storage',    cost: 8,  need: (s) => s.marketDeficit,   desc: 'ground where goods change hands' },
+  hall:     { fn: 'shelter',    cost: 14, need: (s) => s.hallDeficit,     desc: 'one roof for teaching and talk' },
   wall:     { fn: 'shelter',    cost: 14, need: (s) => s.wallDeficit,     desc: 'a boundary against what is out there' },
-  hall:     { fn: 'shelter',    cost: 18, need: (s) => s.hallDeficit,     desc: 'one roof big enough for everyone' },
   bridge:   { fn: 'shelter',    cost: 10, need: (s) => s.bridgeDeficit,   desc: 'a way across water' },
   path:     { fn: 'shelter',    cost: 3,  need: (s) => s.pathDeficit,     desc: 'beaten ground that is easier to walk' },
-  plaza:    { fn: 'art',        cost: 8,  need: (s) => s.plazaDeficit,    desc: 'open ground where people meet' },
+  plaza:    { fn: 'art',        cost: 7,  need: (s) => s.plazaDeficit,    desc: 'open ground where people meet' },
 };
 
 export const ACTIONS = {
@@ -956,9 +960,32 @@ export const ACTIONS = {
           need = Math.max(need, needFieldBoost);
           if (existing < 1) need = Math.max(need, 0.5);
           if (existing < Math.ceil(people / 5)) need = Math.max(need, 0.35);
+          if (foodEasy && existing < Math.ceil(people / 8)) need = Math.max(need, 0.4);
+        }
+        // Mid-game institutions: keep pressure after survival is solved
+        if (kind === 'workshop') {
+          if (existing < 1 && people >= 8) need = Math.max(need, foodEasy ? 0.72 : 0.4);
+          else if (existing < Math.ceil(people / 16)) need = Math.max(need, 0.35);
+        }
+        if (kind === 'market') {
+          if (existing < 1 && people >= 10) need = Math.max(need, foodEasy ? 0.68 : 0.35);
+        }
+        if (kind === 'hall') {
+          if (existing < 1 && people >= 12) need = Math.max(need, foodEasy ? 0.6 : 0.3);
+        }
+        if (kind === 'plaza') {
+          if (existing < 1 && people >= 10) need = Math.max(need, foodEasy ? 0.55 : 0.28);
+        }
+        if (kind === 'shrine') {
+          const corpses = ctx.world.corpses?.length || 0;
+          if (existing < 1 && (people >= 10 || corpses >= 2)) need = Math.max(need, 0.5 + Math.min(0.3, corpses * 0.08));
+        }
+        if (kind === 'well' && existing < 1 && people >= 8) need = Math.max(need, 0.4);
+        if (kind === 'path' && existing < Math.ceil(people / 12) && people >= 8) {
+          need = Math.max(need, 0.3);
         }
 
-        if (need <= 0.08) continue;
+        if (need <= 0.06) continue;
 
         const purpose =
           existing === 0
@@ -995,14 +1022,18 @@ export const ACTIONS = {
           continue;
         }
 
+        const institution =
+          kind === 'workshop' || kind === 'market' || kind === 'hall' ||
+          kind === 'plaza' || kind === 'shrine';
         const u =
           need *
           purpose *
-          1.5 *
+          1.55 *
           (ctx.bias?.work ?? 1) *
           (0.6 + a.skills.build * 0.5) *
           (0.5 + a.genome.industry) *
-          (foodEasy ? 1.35 : hungry && kind === 'field' ? 1.6 : 1);
+          (foodEasy ? (institution ? 1.85 : 1.4) : 1) *
+          (hungry && kind === 'field' ? 1.6 : 1);
 
         out.push({
           kind: 'build',
@@ -1017,7 +1048,7 @@ export const ACTIONS = {
           dur: 4 + Math.round(def.cost / 3),
         });
       }
-      return topN(out, 2, (o) => o.u);
+      return topN(out, 3, (o) => o.u);
     },
     run(a, ctx, act) {
       const structure = act.payload.structure;
@@ -1319,13 +1350,17 @@ export const ACTIONS = {
       if (!near.length) return [];
 
       const mine = a.memory.knownKeys('recipe');
-      const structureLessons = ['field', 'store', 'bridge', 'shelter', 'hearth', 'workshop']
+      const structureLessons = [
+        'field', 'store', 'bridge', 'shelter', 'hearth', 'workshop',
+        'market', 'hall', 'plaza', 'shrine',
+      ]
         .map((k) => `structure:${k}`)
         .filter((k) => a.memory.knows(k, 0.25));
 
       if (!mine.length && !structureLessons.length) return [];
 
       const teachNorm = normsFor(a, ctx, ['teaching', 'teach']);
+      const hallBoost = structureBoost(ctx, a, ['hall', 'plaza'], 1.45);
       const out = [];
 
       for (const o of near) {
@@ -1357,7 +1392,8 @@ export const ACTIONS = {
           elderBonus *
           childBonus *
           (1 + pick.rarity * 2) *
-          (1 + Math.max(0, teachNorm) * 0.35);
+          (1 + Math.max(0, teachNorm) * 0.35) *
+          hallBoost;
 
         out.push({
           kind: 'teach',
