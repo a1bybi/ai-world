@@ -265,6 +265,27 @@ const STRUCTURE_KINDS = {
   plaza:    { fn: 'art',        cost: 7,  need: (s) => s.plazaDeficit,    desc: 'open ground where people meet' },
 };
 
+/** Soft max copies near a camp; extra copies get no build pressure. */
+function structureCap(kind, people) {
+  const p = Math.max(1, people || 1);
+  switch (kind) {
+    case 'shelter': return Math.max(2, Math.ceil(p / 2.2));
+    case 'hearth': return Math.max(1, Math.ceil(p / 10));
+    case 'store': return Math.max(1, Math.ceil(p / 16));
+    case 'field': return Math.max(1, Math.ceil(p / 7));
+    case 'workshop': return p >= 8 ? Math.min(2, 1 + Math.floor(p / 22)) : 0;
+    case 'market': return p >= 10 ? Math.min(2, 1 + Math.floor(p / 28)) : 0;
+    case 'hall': return p >= 12 ? 1 : 0;
+    case 'plaza': return p >= 10 ? 1 : 0;
+    case 'shrine': return p >= 10 || p >= 8 ? 1 : 0;
+    case 'well': return p >= 8 ? Math.min(2, 1 + Math.floor(p / 24)) : 0;
+    case 'path': return Math.max(0, Math.ceil(p / 10));
+    case 'wall': return p >= 40 ? 1 : 0;
+    case 'bridge': return 2; // spans handled separately
+    default: return 2;
+  }
+}
+
 export const ACTIONS = {
   drink: {
     category: 'body',
@@ -948,6 +969,8 @@ export const ACTIONS = {
         // ── Other structures ────────────────────────────────────
         let need = def.need(s);
         const existing = nearCount(kind);
+        const cap = structureCap(kind, people);
+        if (cap <= 0 || existing >= cap) continue;
 
         if (kind === 'shelter' && existing < Math.max(1, Math.ceil(people / 2.5))) {
           need = Math.max(need, 0.5);
@@ -959,33 +982,40 @@ export const ACTIONS = {
         if (kind === 'field') {
           need = Math.max(need, needFieldBoost);
           if (existing < 1) need = Math.max(need, 0.5);
-          if (existing < Math.ceil(people / 5)) need = Math.max(need, 0.35);
-          if (foodEasy && existing < Math.ceil(people / 8)) need = Math.max(need, 0.4);
+          if (existing < Math.ceil(people / 7)) need = Math.max(need, 0.35);
+          if (foodEasy && existing < Math.ceil(people / 9)) need = Math.max(need, 0.32);
         }
-        // Mid-game institutions: keep pressure after survival is solved
-        if (kind === 'workshop') {
-          if (existing < 1 && people >= 8) need = Math.max(need, foodEasy ? 0.72 : 0.4);
-          else if (existing < Math.ceil(people / 16)) need = Math.max(need, 0.35);
+        // First copy of institutions matters; extras are capped above
+        if (kind === 'workshop' && existing < 1 && people >= 8) {
+          need = Math.max(need, foodEasy ? 0.65 : 0.38);
         }
-        if (kind === 'market') {
-          if (existing < 1 && people >= 10) need = Math.max(need, foodEasy ? 0.68 : 0.35);
+        if (kind === 'market' && existing < 1 && people >= 10) {
+          need = Math.max(need, foodEasy ? 0.6 : 0.32);
         }
-        if (kind === 'hall') {
-          if (existing < 1 && people >= 12) need = Math.max(need, foodEasy ? 0.6 : 0.3);
+        if (kind === 'hall' && existing < 1 && people >= 12) {
+          need = Math.max(need, foodEasy ? 0.55 : 0.28);
         }
-        if (kind === 'plaza') {
-          if (existing < 1 && people >= 10) need = Math.max(need, foodEasy ? 0.55 : 0.28);
+        if (kind === 'plaza' && existing < 1 && people >= 10) {
+          need = Math.max(need, foodEasy ? 0.5 : 0.25);
         }
-        if (kind === 'shrine') {
+        if (kind === 'shrine' && existing < 1) {
           const corpses = ctx.world.corpses?.length || 0;
-          if (existing < 1 && (people >= 10 || corpses >= 2)) need = Math.max(need, 0.5 + Math.min(0.3, corpses * 0.08));
+          if (people >= 10 || corpses >= 2) {
+            need = Math.max(need, 0.45 + Math.min(0.25, corpses * 0.06));
+          }
         }
-        if (kind === 'well' && existing < 1 && people >= 8) need = Math.max(need, 0.4);
-        if (kind === 'path' && existing < Math.ceil(people / 12) && people >= 8) {
-          need = Math.max(need, 0.3);
+        if (kind === 'well' && existing < 1 && people >= 8) need = Math.max(need, 0.38);
+        if (kind === 'path' && existing < cap && people >= 8) need = Math.max(need, 0.28);
+
+        // Diminishing returns: 2nd copy much weaker than 1st
+        need *= 1 / (1 + existing * 1.15);
+        // Household pressure: more households than shelters
+        if (kind === 'shelter') {
+          const hh = ctx.sim.households?.length || 0;
+          if (hh > existing) need = Math.max(need, Math.min(0.55, 0.2 + (hh - existing) * 0.12));
         }
 
-        if (need <= 0.06) continue;
+        if (need <= 0.07) continue;
 
         const purpose =
           existing === 0
