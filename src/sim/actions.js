@@ -286,6 +286,63 @@ function structureCap(kind, people) {
   }
 }
 
+/** Institutions unlock from prerequisites + time — not all on day 0. */
+function structureUnlocked(kind, ctx, settlement, nearCount) {
+  const day = ctx.world.dayNumber || Math.floor((ctx.world.tick || 0) / 24) + 1;
+  const n = (k) => nearCount(k);
+  const hasStore = n('store') >= 1;
+  const hasShelter = n('shelter') >= 1;
+  const hasField = n('field') >= 1;
+  const basics = hasStore && hasShelter;
+
+  switch (kind) {
+    case 'path':
+    case 'shelter':
+    case 'hearth':
+      return true;
+    case 'store':
+      return true;
+    case 'bridge':
+      return day >= 3 || basics;
+    case 'field':
+      return day >= 5 || hasStore;
+    case 'well':
+      return day >= 12 && basics;
+    case 'workshop':
+      return day >= 25 && basics && hasField;
+    case 'market':
+      return day >= 35 && basics && (ctx.sim.counters?.exchanges || 0) >= 15;
+    case 'plaza':
+      return day >= 30 && basics;
+    case 'hall':
+      return day >= 40 && basics && n('workshop') + n('plaza') >= 1;
+    case 'shrine':
+      return day >= 20 && (basics || (ctx.world.corpses?.length || 0) >= 2);
+    case 'wall':
+      return day >= 60 && (nearCount('shelter') >= 4);
+    default:
+      return day >= 10;
+  }
+}
+
+/** One major (non-path) build per settlement per day keeps a skyline from finishing on day 1. */
+function settlementBuildAllowed(ctx, settlement, kind) {
+  if (kind === 'path') return true;
+  const key = settlement?.id || `${settlement?.x},${settlement?.y}` || 'camp';
+  const tick = ctx.world.tick || 0;
+  const map = ctx.sim._lastMajorBuildTick || (ctx.sim._lastMajorBuildTick = new Map());
+  const last = map.get(key) ?? -999;
+  // 18 hours between major structures at a camp
+  return tick - last >= 18;
+}
+
+function noteSettlementBuild(ctx, settlement, kind) {
+  if (kind === 'path') return;
+  const key = settlement?.id || `${settlement?.x},${settlement?.y}` || 'camp';
+  const map = ctx.sim._lastMajorBuildTick || (ctx.sim._lastMajorBuildTick = new Map());
+  map.set(key, ctx.world.tick || 0);
+}
+
 export const ACTIONS = {
   drink: {
     category: 'body',
@@ -971,6 +1028,8 @@ export const ACTIONS = {
         const existing = nearCount(kind);
         const cap = structureCap(kind, people);
         if (cap <= 0 || existing >= cap) continue;
+        if (!structureUnlocked(kind, ctx, settlement, nearCount)) continue;
+        if (!settlementBuildAllowed(ctx, settlement, kind)) continue;
 
         if (kind === 'shelter' && existing < Math.max(1, Math.ceil(people / 2.5))) {
           need = Math.max(need, 0.5);
@@ -1062,7 +1121,7 @@ export const ACTIONS = {
           (ctx.bias?.work ?? 1) *
           (0.6 + a.skills.build * 0.5) *
           (0.5 + a.genome.industry) *
-          (foodEasy ? (institution ? 1.85 : 1.4) : 1) *
+          (foodEasy ? (institution ? 1.35 : 1.2) : 1) *
           (hungry && kind === 'field' ? 1.6 : 1);
 
         out.push({
@@ -1127,6 +1186,7 @@ export const ACTIONS = {
 
       a.stats.built++;
       a.gainSkill('build', 0.07);
+      noteSettlementBuild(ctx, act.payload.settlement, structure);
       learnStructureUse(
         a,
         structure,
