@@ -329,9 +329,9 @@ export class Simulation {
         ['berry', 80],
         ['root', 70],
         ['water', 40],
-        ['wood', 40],
-        ['stone', 20],
-        ['fibre', 25],
+        ['wood', 12],
+        ['stone', 6],
+        ['fibre', 14],
       ]),
     });
   }
