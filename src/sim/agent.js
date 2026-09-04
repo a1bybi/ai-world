@@ -77,6 +77,23 @@ export class Agent {
     }, opts.stats || {});
     this.traits = dominantTraits(this.genome);
     this.titles = opts.titles || [];
+    this.householdId = opts.householdId || null;
+    this.generation = opts.generation || 1;
+    // Ring buffer of recent action kinds for role assignment
+    this.recentActions = opts.recentActions || [];
+  }
+
+  /** Record what this person just did (for roles / report). */
+  noteAction(kind) {
+    if (!kind) return;
+    this.recentActions.push(kind);
+    if (this.recentActions.length > 48) this.recentActions.shift();
+  }
+
+  actionTally() {
+    const m = new Map();
+    for (const k of this.recentActions) m.set(k, (m.get(k) || 0) + 1);
+    return m;
   }
 
   get age() { return (this.worldTick - this.bornTick) / YEAR_TICKS; }
