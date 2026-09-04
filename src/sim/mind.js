@@ -314,6 +314,19 @@ export function think(a, ctx) {
         if (p.kind === 'bury') p.u *= 0.3;
       }
 
+      // Civil works when fed: settlement still missing institutions
+      if (
+        !isChild &&
+        p.kind === 'build' &&
+        a.body.hunger < 0.45 &&
+        a.body.thirst < 0.45
+      ) {
+        const settle = ctx.sim.nearestSettlement?.(a.x, a.y);
+        const pressure = ctx.sim.settlementPressure?.(settle) || 0;
+        if (pressure > 0.12) p.u *= 1.3 + pressure * 1.2;
+        if (a.skills.build > 0.15 || (a.stats.built || 0) > 0) p.u *= 1.15;
+      }
+
       candidates.push(p);
     }
   }
