@@ -37,7 +37,7 @@ export function renderReport(host, r, sim) {
           ${num('things known', t.concepts, delta(d.knowledge))}
           ${num('capability', (r.knowledge.capability * 100).toFixed(0), delta(d.capability * 100, 1))}
           ${num('inventions', t.inventions, `${fmtNum(t.attempts)} attempts, ${fmtNum(t.deadEnds)} dead ends`)}
-          ${num('structures', t.structures, `${r.society.households} households`)}
+          ${num('structures', t.structures, `${r.society.households || 0} households`)}
           ${num('words', t.words, esc(r.culture.language))}
           ${num('mood', (r.series.at(-1)?.mood ?? 0).toFixed(2), delta(d.mood, 2))}
           ${t.foodDays != null ? num('food days', t.foodDays, 'near origin') : ''}
@@ -81,6 +81,9 @@ export function renderReport(host, r, sim) {
             <h5 class="sheet-meta">Closest bonds</h5>
             <div class="rows">${r.society.strongestBonds.slice(0, 8).map((b) =>
               row(`${esc(b.a)} &amp; ${esc(b.b)}${b.kin ? ' (kin)' : ''}`, `${pct(b.affection)} · ${b.exchanges || 0} exchanges${b.conflicts ? ` · ${b.conflicts} quarrels` : ''}`)).join('') || '—'}</div>
+            ${(r.society.householdList || []).length ? `<h5 class="sheet-meta" style="margin-top:var(--s-4)">Households</h5>
+            <div class="rows">${r.society.householdList.slice(0, 6).map((h) =>
+              row(`${esc((h.names || []).join(', ') || h.id)}`, `${h.size} members`)).join('')}</div>` : ''}
           </div>
         </div>
       </div>
