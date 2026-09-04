@@ -1277,30 +1277,30 @@ export class Simulation {
     ).length;
     const trades = this.counters?.exchanges || 0;
 
+    const wantWorkshop = people >= 8 ? Math.min(2, 1 + Math.floor(people / 22)) : 0;
+    const wantMarket = people >= 10 || trades > 100 ? Math.min(2, 1 + Math.floor(people / 28)) : 0;
+    const wantShrine = (people >= 10 || corpsesNear >= 2) ? 1 : 0;
+    const wantHall = people >= 12 ? 1 : 0;
+    const wantPlaza = people >= 10 ? 1 : 0;
+    const wantWell = people >= 8 ? Math.min(2, 1 + Math.floor(people / 24)) : 0;
+    const wantField = Math.max(1, Math.ceil(people / 7));
+    const wantShelter = Math.max(1, Math.ceil(people / 2.2));
+
     return {
       people,
-      shelterDeficit: need(count('shelter'), Math.max(1, Math.ceil(people / 2.5))),
-      hearthDeficit: need(count('hearth'), Math.max(1, Math.ceil(people / 8))),
-      storeDeficit: need(count('store'), Math.max(1, Math.ceil(people / 14))),
-      workshopDeficit: need(
-        count('workshop'),
-        people >= 8 ? Math.max(1, Math.ceil(people / 16)) : 0,
-      ),
-      fieldDeficit: need(count('field'), Math.max(1, Math.ceil(people / 5))),
-      wellDeficit: need(count('well'), people >= 8 ? Math.max(1, Math.ceil(people / 18)) : 0),
-      shrineDeficit: need(
-        count('shrine'),
-        people >= 10 || corpsesNear >= 2 ? 1 : 0,
-      ),
-      marketDeficit: need(
-        count('market'),
-        people >= 10 || trades > 80 ? 1 : 0,
-      ),
+      shelterDeficit: need(count('shelter'), wantShelter),
+      hearthDeficit: need(count('hearth'), Math.max(1, Math.ceil(people / 10))),
+      storeDeficit: need(count('store'), Math.max(1, Math.ceil(people / 16))),
+      workshopDeficit: need(count('workshop'), wantWorkshop),
+      fieldDeficit: need(count('field'), wantField),
+      wellDeficit: need(count('well'), wantWell),
+      shrineDeficit: need(count('shrine'), wantShrine),
+      marketDeficit: need(count('market'), wantMarket),
       wallDeficit: need(count('wall'), people > 40 ? 1 : 0),
-      hallDeficit: need(count('hall'), people >= 12 ? 1 : 0),
+      hallDeficit: need(count('hall'), wantHall),
       bridgeDeficit: need(bridgeSpans, bridgesWanted),
-      pathDeficit: need(count('path'), people >= 8 ? Math.ceil(people / 12) : 0),
-      plazaDeficit: need(count('plaza'), people >= 10 ? 1 : 0),
+      pathDeficit: need(count('path'), people >= 8 ? Math.ceil(people / 10) : 0),
+      plazaDeficit: need(count('plaza'), wantPlaza),
       corpsesNear,
     };
   }
