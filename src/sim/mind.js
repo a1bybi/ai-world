@@ -369,6 +369,7 @@ export function think(a, ctx) {
     const eatCand = candidates.find((c) => c.kind === 'eat');
     if (eatCand) {
       a.action = eatCand;
+      a.noteAction?.('eat');
       a.goal = 'eating';
       a.reasoning = [{ kind: 'eat', u: eatCand.u, why: 'must eat' }];
       return;
@@ -380,6 +381,7 @@ export function think(a, ctx) {
     const drinkCand = candidates.find((c) => c.kind === 'drink');
     if (drinkCand && (a.count('water') > 0 || a.body.thirst > 0.45)) {
       a.action = drinkCand;
+      a.noteAction?.('drink');
       a.goal = 'drinking';
       a.reasoning = [{ kind: 'drink', u: drinkCand.u, why: 'must drink' }];
       return;
@@ -394,6 +396,7 @@ export function think(a, ctx) {
     const storeCand = candidates.find((c) => c.kind === 'takeFromStore');
     if (storeCand) {
       a.action = storeCand;
+      a.noteAction?.('takeFromStore');
       a.goal = 'taking from store';
       a.reasoning = [{ kind: 'takeFromStore', u: storeCand.u, why: 'store has food' }];
       return;
@@ -425,6 +428,7 @@ export function think(a, ctx) {
     why: reasonFor(a, c, ctx),
   }));
   a.action = chosen;
+  if (chosen?.kind) a.noteAction?.(chosen.kind);
   a.goal = describeGoal(a, chosen, ctx);
 
   if (
