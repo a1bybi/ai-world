@@ -1272,20 +1272,36 @@ export class Simulation {
     const bridgesWanted =
       water < 4 ? 0 : Math.min(BALANCE.maxBridgesPerCamp, Math.max(1, Math.ceil(people / 25)));
 
+    const corpsesNear = (this.world.corpses || []).filter(
+      (c) => Math.hypot(c.x - settlement.x, c.y - settlement.y) < 20,
+    ).length;
+    const trades = this.counters?.exchanges || 0;
+
     return {
       people,
       shelterDeficit: need(count('shelter'), Math.max(1, Math.ceil(people / 2.5))),
       hearthDeficit: need(count('hearth'), Math.max(1, Math.ceil(people / 8))),
       storeDeficit: need(count('store'), Math.max(1, Math.ceil(people / 14))),
-      workshopDeficit: need(count('workshop'), people > 10 ? Math.ceil(people / 25) : 0),
+      workshopDeficit: need(
+        count('workshop'),
+        people >= 8 ? Math.max(1, Math.ceil(people / 16)) : 0,
+      ),
       fieldDeficit: need(count('field'), Math.max(1, Math.ceil(people / 5))),
-      wellDeficit: need(count('well'), people > 12 ? 1 : 0),
-      shrineDeficit: need(count('shrine'), people > 18 ? 1 : 0),
+      wellDeficit: need(count('well'), people >= 8 ? Math.max(1, Math.ceil(people / 18)) : 0),
+      shrineDeficit: need(
+        count('shrine'),
+        people >= 10 || corpsesNear >= 2 ? 1 : 0,
+      ),
+      marketDeficit: need(
+        count('market'),
+        people >= 10 || trades > 80 ? 1 : 0,
+      ),
       wallDeficit: need(count('wall'), people > 40 ? 1 : 0),
-      hallDeficit: need(count('hall'), people > 28 ? 1 : 0),
+      hallDeficit: need(count('hall'), people >= 12 ? 1 : 0),
       bridgeDeficit: need(bridgeSpans, bridgesWanted),
-      pathDeficit: need(count('path'), people > 8 ? Math.ceil(people / 15) : 0),
-      plazaDeficit: need(count('plaza'), people > 20 ? 1 : 0),
+      pathDeficit: need(count('path'), people >= 8 ? Math.ceil(people / 12) : 0),
+      plazaDeficit: need(count('plaza'), people >= 10 ? 1 : 0),
+      corpsesNear,
     };
   }
 
@@ -1293,7 +1309,16 @@ export class Simulation {
     if (!settlement) return 0;
     const n = this.settlementNeeds(settlement);
     return clamp(
-      (n.shelterDeficit + n.storeDeficit + n.fieldDeficit + n.bridgeDeficit + n.people / 80) / 4,
+      (
+        n.shelterDeficit +
+        n.storeDeficit +
+        n.fieldDeficit +
+        n.bridgeDeficit +
+        (n.workshopDeficit || 0) +
+        (n.marketDeficit || 0) +
+        (n.hallDeficit || 0) +
+        n.people / 80
+      ) / 5,
     );
   }
 
