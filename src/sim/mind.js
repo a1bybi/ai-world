@@ -43,8 +43,8 @@ export function updateBody(a, world, dt = 1) {
   );
 
   let damage = 0;
-  if (b.hunger > 0.94) damage += (b.hunger - 0.94) * 0.006;
-  if (b.thirst > 0.94) damage += (b.thirst - 0.94) * 0.02;
+  if (b.hunger > 0.92) damage += (b.hunger - 0.92) * 0.0045;
+  if (b.thirst > 0.92) damage += (b.thirst - 0.92) * 0.014;
   if (b.warmth < 0.15) damage += (0.15 - b.warmth) * 0.05;
   if (b.rest < 0.05) damage += 0.004;
   damage += b.illness * 0.02 + b.injury * 0.015;
@@ -77,7 +77,9 @@ function computeClothing(a, ont) {
 
 function holdingFood(a, ont) {
   for (const k of a.inventory.keys()) {
-    if ((ont.get(k)?.serves('sustenance') || 0) > 0.15) return true;
+    const c = ont.get(k);
+    const n = c?.serves?.('sustenance') || c?.functions?.sustenance || 0;
+    if (n > 0.12) return true;
   }
   return false;
 }
@@ -314,17 +316,24 @@ export function think(a, ctx) {
         if (p.kind === 'bury') p.u *= 0.3;
       }
 
-      // Civil works when fed: settlement still missing institutions
+      // Civil works only when fed; starve-builders die
+      if (p.kind === 'build' || p.kind === 'experiment' || p.kind === 'craft') {
+        if (a.body.hunger > 0.42 || a.body.thirst > 0.5) p.u *= 0.08;
+      }
       if (
         !isChild &&
         p.kind === 'build' &&
-        a.body.hunger < 0.45 &&
-        a.body.thirst < 0.45
+        a.body.hunger < 0.4 &&
+        a.body.thirst < 0.4
       ) {
         const settle = ctx.sim.nearestSettlement?.(a.x, a.y);
         const pressure = ctx.sim.settlementPressure?.(settle) || 0;
-        if (pressure > 0.12) p.u *= 1.3 + pressure * 1.2;
-        if (a.skills.build > 0.15 || (a.stats.built || 0) > 0) p.u *= 1.15;
+        if (pressure > 0.12) p.u *= 1.25 + pressure;
+        if (a.skills.build > 0.15 || (a.stats.built || 0) > 0) p.u *= 1.1;
+      }
+      if (p.kind === 'farm' || p.kind === 'gather') {
+        const foodTight = ctx.sim.totalFood() < ctx.sim.living.length * 3;
+        if (foodTight && a.body.hunger > 0.3) p.u *= 2.2;
       }
 
       candidates.push(p);
@@ -377,8 +386,8 @@ export function think(a, ctx) {
     }
   }
 
-  // Nuclear eat — adults especially must not invent beside a full pack
-  if (a.body.hunger > 0.28 && hasFood) {
+  // Nuclear eat — never invent/build while food is in the pack
+  if (a.body.hunger > 0.24 && hasFood) {
     const eatCand = candidates.find((c) => c.kind === 'eat');
     if (eatCand) {
       a.action = eatCand;
@@ -389,10 +398,10 @@ export function think(a, ctx) {
     }
   }
 
-  // Nuclear drink
-  if (a.body.thirst > 0.35) {
+  // Nuclear drink — thirst always wins over work
+  if (a.body.thirst > 0.28) {
     const drinkCand = candidates.find((c) => c.kind === 'drink');
-    if (drinkCand && (a.count('water') > 0 || a.body.thirst > 0.45)) {
+    if (drinkCand) {
       a.action = drinkCand;
       a.noteAction?.('drink');
       a.goal = 'drinking';
@@ -401,13 +410,10 @@ export function think(a, ctx) {
     }
   }
 
-  // Nuclear take from store: hungry/thirsty adults go to the granary before any craft
-  if (
-    (a.body.hunger > 0.38 || a.body.thirst > 0.45) &&
-    (!hasFood || a.body.hunger > 0.55 || a.body.thirst > 0.55)
-  ) {
+  // Nuclear store: granary before craft/build when hungry or thirsty
+  if (a.body.hunger > 0.32 || a.body.thirst > 0.38) {
     const storeCand = candidates.find((c) => c.kind === 'takeFromStore');
-    if (storeCand) {
+    if (storeCand && (!hasFood || a.body.hunger > 0.4 || a.body.thirst > 0.4)) {
       a.action = storeCand;
       a.noteAction?.('takeFromStore');
       a.goal = 'taking from store';
