@@ -347,25 +347,35 @@ export const ACTIONS = {
   drink: {
     category: 'body',
     propose(a, ctx) {
-      if (a.body.thirst < 0.22) return [];
+      if (a.body.thirst < 0.18) return [];
       const own = a.count('water');
+      const wells = ctx.world.structuresOfKind('well') || [];
+      let well = null;
+      let wd = Infinity;
+      for (const w of wells) {
+        const d = dist(a, w);
+        if (d < wd) {
+          wd = d;
+          well = w;
+        }
+      }
       const spot =
         own > 0
           ? null
-          : nearWater(ctx.world, a, 18) || ctx.world.nearestWater?.(a.x, a.y);
-      const well = ctx.world.structuresOfKind('well')[0];
+          : nearWater(ctx.world, a, 22) || ctx.world.nearestWater?.(a.x, a.y);
       const target =
         own > 0
           ? T(a.x, a.y)
-          : well && dist(a, well) < 14
+          : well && wd < 28
             ? well
             : spot
               ? beside(ctx.world, spot)
               : null;
       if (!target) return [];
       const u =
-        a.body.thirst * U.thirstBase +
-        Math.max(0, a.body.thirst - 0.45) * U.thirstCrisis;
+        a.body.thirst * (U.thirstBase * 1.4) +
+        Math.max(0, a.body.thirst - 0.35) * (U.thirstCrisis * 1.5) +
+        (well && wd < 10 ? 2 : 0);
       return [{ kind: 'drink', u, target, dur: 1 }];
     },
     run(a, ctx, act) {
@@ -400,21 +410,30 @@ export const ACTIONS = {
   eat: {
     category: 'body',
     propose(a, ctx) {
-      if (a.body.hunger < 0.28) return [];
+      if (a.body.hunger < 0.22) return [];
       let best = null;
       for (const key of a.inventory.keys()) {
         const c = ctx.ont.get(key);
-        const n = c?.serves('sustenance') || 0;
-        if (n > (best?.n || 0)) best = { key, n, c };
+        const n = c?.serves?.('sustenance') || c?.functions?.sustenance || 0;
+        if (n > (best?.n || 0.15)) best = { key, n, c };
       }
       if (!best) {
         const store = ctx.world
           .structuresOfKind('store')
-          .find((s) => s.stock && [...s.stock.values()].some((v) => v > 0));
+          .find((s) => {
+            if (!s.stock) return false;
+            for (const [k, v] of s.stock) {
+              if (v <= 0) continue;
+              const c = ctx.ont.get(k);
+              if ((c?.serves?.('sustenance') || c?.functions?.sustenance || 0) > 0.15) return true;
+              if (k === 'water') return true;
+            }
+            return false;
+          });
         if (store) {
           return [{
             kind: 'takeFromStore',
-            u: a.body.hunger * U.hungerBase + Math.max(0, a.body.hunger - 0.35) * 12,
+            u: a.body.hunger * U.hungerBase * 1.3 + Math.max(0, a.body.hunger - 0.3) * 14,
             target: store,
             dur: 1,
           }];
@@ -422,10 +441,10 @@ export const ACTIONS = {
         return [];
       }
       const u =
-        (a.body.hunger * U.hungerBase +
-          Math.max(0, a.body.hunger - 0.25) * U.hungerCrisis) *
-        (0.5 + best.n) *
-        (a.body.hunger > 0.4 ? 2.5 : 1);
+        (a.body.hunger * U.hungerBase * 1.25 +
+          Math.max(0, a.body.hunger - 0.22) * U.hungerCrisis * 1.2) *
+        (0.55 + best.n) *
+        (a.body.hunger > 0.35 ? 3.2 : 1.4);
       return [{ kind: 'eat', u, payload: best.key, dur: 1 }];
     },
     run(a, ctx, act) {
@@ -467,9 +486,10 @@ export const ACTIONS = {
         for (const [k, v] of s.stock) {
           if (v <= 0) continue;
           const c = ctx.ont.get(k);
-          if (a.body.thirst > 0.35 && (k === 'water' || c?.functions?.sustenance)) score += v * 2;
-          if (a.body.hunger > 0.25 && c?.functions?.sustenance) score += v * 3;
-          score += v * 0.05;
+          const sust = c?.serves?.('sustenance') || c?.functions?.sustenance || 0;
+          if (a.body.thirst > 0.3 && (k === 'water' || sust > 0.15)) score += v * 3;
+          if (a.body.hunger > 0.22 && sust > 0.15) score += v * (4 + sust);
+          score += v * 0.02;
         }
         if (score > best) {
           best = score;
@@ -497,6 +517,18 @@ export const ACTIONS = {
         s.stock.set(k, Math.max(0, have - 1));
         a.add(k, 1);
         learnStructureUse(a, 'store', 'storage', 0.22, 0.5);
+        const nut =
+          ctx.ont.get(k)?.serves?.('sustenance') ||
+          ctx.ont.get(k)?.functions?.sustenance ||
+          0;
+        // Eat immediately when drawing food — avoids "took food, starved later"
+        if (nut > 0.15 && a.body.hunger > 0.25 && a.take(k, 1)) {
+          a.body.hunger = clamp(a.body.hunger - 0.45 - nut * 0.7, 0, 1);
+          a.stats.meals = (a.stats.meals || 0) + 1;
+        }
+        if (k === 'water' && a.body.thirst > 0.3) {
+          if (a.take('water', 1)) a.body.thirst = clamp(a.body.thirst - 0.7, 0, 1);
+        }
         if (a.body.hunger > 0.3) {
           a.memory.learn('lesson:hunger', {
             kind: 'lesson',
@@ -948,12 +980,15 @@ export const ACTIONS = {
         ).length;
 
       const fieldsNear = nearCount('field');
+      const foodTight = ctx.sim.totalFood() < people * 3;
       const needFieldBoost =
-        hungry && fieldsNear < 1
-          ? 0.85
-          : hungry && fieldsNear < Math.ceil(people / 10)
-            ? 0.45
-            : 0;
+        (hungry || foodTight) && fieldsNear < 1
+          ? 0.9
+          : (hungry || foodTight) && fieldsNear < Math.ceil(people / 8)
+            ? 0.55
+            : foodTight && fieldsNear < 2
+              ? 0.4
+              : 0;
 
       const far = ctx.sim.farBankTarget?.(a, 22);
 
