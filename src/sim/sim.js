@@ -1308,15 +1308,15 @@ export class Simulation {
   settlementPressure(settlement) {
     if (!settlement) return 0;
     const n = this.settlementNeeds(settlement);
-    const crowd = clamp(n.people / 35); // dense camp wants room
+    const crowd = clamp(n.people / 40);
+    const day = this.world.dayNumber || Math.floor(this.world.tick / 24) + 1;
     const sole =
-      this.settlements.length <= 1 && n.people >= 22 ? 0.35 : 0;
-    const farOpen = this.farBankTarget(
-      { x: settlement.x, y: settlement.y },
-      26,
-    )
-      ? 0.25
-      : 0;
+      this.settlements.length <= 1 && n.people >= 30 && day >= 80 ? 0.25 : 0;
+    const farOpen =
+      day >= 80 &&
+      this.farBankTarget({ x: settlement.x, y: settlement.y }, 26)
+        ? 0.15
+        : 0;
     return clamp(
       (
         n.shelterDeficit +
@@ -1334,22 +1334,40 @@ export class Simulation {
     );
   }
 
-  /** Prefer founding when one crowded camp and a crossable far bank. */
+  /** Prefer founding only when the home camp is stable and fed. */
   fissionUrge(settlement = null) {
     const home = settlement || this.origin;
     if (!home) return 0;
     if (this.settlements.length >= 4) return 0;
+    const day = this.world.dayNumber || Math.floor(this.world.tick / 24) + 1;
+    if (day < 80) return 0;
+
     const people = this.living.filter(
       (a) => Math.hypot(a.x - home.x, a.y - home.y) < 18,
     ).length;
-    if (people < 18) return 0;
+    if (people < 28) return 0;
+
+    const adults = this.living.filter(
+      (a) =>
+        Math.hypot(a.x - home.x, a.y - home.y) < 18 &&
+        !a.isChild?.(this.world.tick) &&
+        a.ageAt(this.world.tick) >= 16,
+    ).length;
+    if (adults < 10) return 0;
+
+    const foodDays = this.foodDaysAt?.(home) ?? 0;
+    const total = this.totalFood();
+    if (foodDays < 10 && total < people * 2.5) return 0;
+
     const spans =
       this.world.bridgeSpanCount?.(home.x, home.y, 22) ?? 0;
     const far = this.farBankTarget({ x: home.x, y: home.y }, 28);
-    if (!far) return people >= 30 ? 0.2 : 0;
-    let urge = 0.15 + clamp((people - 18) / 40);
-    if (spans >= 1) urge += 0.35;
-    if (this.settlements.length === 1) urge += 0.25;
+    if (!far) return people >= 40 ? 0.15 : 0;
+
+    let urge = 0.1 + clamp((people - 28) / 50);
+    if (spans >= 1) urge += 0.3;
+    if (this.settlements.length === 1) urge += 0.2;
+    if (foodDays >= 14) urge += 0.15;
     return clamp(urge);
   }
 
@@ -1556,16 +1574,18 @@ export class Simulation {
     };
     this.world.addStructure(s);
 
-    // Fission: a store/field/shelter raised far from every camp founds a place
+    // Fission: distant structure founds a place only when the world is stable enough
     if (
       (kind === 'store' || kind === 'field' || kind === 'shelter' || kind === 'hearth') &&
       this.settlements.length < 5
     ) {
+      const day = this.world.dayNumber || Math.floor(this.world.tick / 24) + 1;
+      const alive = this.living.length;
       let nearest = Infinity;
       for (const st of this.settlements) {
         nearest = Math.min(nearest, Math.hypot(st.x - spot.x, st.y - spot.y));
       }
-      if (nearest > 16) {
+      if (nearest > 16 && day >= 80 && alive >= 24) {
         this.foundSettlement(a, { x: spot.x, y: spot.y });
       }
     }
