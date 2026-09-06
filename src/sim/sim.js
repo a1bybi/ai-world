@@ -1283,7 +1283,7 @@ export class Simulation {
     const wantHall = people >= 12 ? 1 : 0;
     const wantPlaza = people >= 10 ? 1 : 0;
     const wantWell = people >= 8 ? Math.min(2, 1 + Math.floor(people / 24)) : 0;
-    const wantField = Math.max(1, Math.ceil(people / 7));
+    const wantField = Math.max(1, Math.min(5, Math.ceil(people / 12)));
     const wantShelter = Math.max(1, Math.ceil(people / 2.2));
 
     return {
