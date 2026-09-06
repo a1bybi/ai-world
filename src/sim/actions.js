@@ -1004,7 +1004,48 @@ export const ACTIONS = {
               ? 0.4
               : 0;
 
-      const far = ctx.sim.farBankTarget?.(a, 22);
+      const far = ctx.sim.farBankTarget?.(a, 28);
+      const fission = ctx.sim.fissionUrge?.(settlement) || 0;
+
+      // Explicit far-bank nuclei: store or field on the other shore
+      if (
+        far &&
+        fission > 0.3 &&
+        a.body.hunger < 0.5 &&
+        ctx.sim.settlements.length < 4
+      ) {
+        for (const kind of ['store', 'field', 'shelter']) {
+          const nearFar = ctx.world.structuresOfKind(kind).filter(
+            (st) => Math.hypot(st.x - far.x, st.y - far.y) < 12,
+          ).length;
+          if (nearFar >= (kind === 'field' ? 2 : 1)) continue;
+          const matKey =
+            ['wood', 'stone', 'fibre', 'reed', 'clay'].find(
+              (k) => availableMaterial(a, ctx, k) >= 3,
+            ) || null;
+          if (!matKey) continue;
+          const cost = kind === 'field' ? 4 : kind === 'store' ? 6 : 5;
+          out.push({
+            kind: 'build',
+            u:
+              fission *
+              1.7 *
+              (0.5 + a.genome.industry) *
+              (0.5 + a.genome.risk) *
+              (ctx.bias?.work ?? 1) *
+              (kind === 'store' ? 1.2 : 1),
+            payload: {
+              structure: kind,
+              material: matKey,
+              cost,
+              fn: STRUCTURE_KINDS[kind]?.fn || kind,
+              settlement: { ...settlement, farFocus: far },
+              farFocus: far,
+            },
+            dur: 5,
+          });
+        }
+      }
 
       for (const [kind, def] of Object.entries(STRUCTURE_KINDS)) {
         // ── Bridge: full span cost + site ───────────────────────
@@ -1203,11 +1244,13 @@ export const ACTIONS = {
       }
       if (!act.spot) return 'abort';
 
-      // Approach dry land next to the span (or the build tile)
+      // Approach dry land next to the span (or the build tile / far focus)
       const approach =
         structure === 'bridge' && act.payload.span?.startLand
           ? act.payload.span.startLand
-          : act.spot;
+          : act.payload.farFocus && dist(a, act.payload.farFocus) > 3
+            ? act.payload.farFocus
+            : act.spot;
 
       if (dist(a, approach) > 1.4) {
         stepToward(a, ctx.world, approach);
@@ -1267,44 +1310,62 @@ export const ACTIONS = {
     category: 'work',
     propose(a, ctx) {
       if (a.isChild(ctx.world.tick) || a.ageAt(ctx.world.tick) < 16) return [];
-      if (a.body.hunger > 0.6) return [];
+      if (a.body.hunger > 0.55 || a.body.thirst > 0.55) return [];
+      if (ctx.sim.settlements.length >= 4) return [];
+
       const home = ctx.sim.nearestSettlement(a.x, a.y);
       const pressure = ctx.sim.settlementPressure(home);
-      if (pressure < 0.35) return [];
+      const fission = ctx.sim.fissionUrge?.(home) || 0;
+      if (pressure < 0.18 && fission < 0.25) return [];
+
+      // Prefer a concrete far-bank tile once bridges exist
+      let best = ctx.sim.farBankTarget?.(a, 28) || null;
+      let bestScore = best ? 0.55 + fission : 0;
+
       const known = a.memory
         .knownKeys('place')
         .map((k) => a.memory.belief(k))
         .filter((b) => b?.payload);
-      let best = null;
-      let bestScore = 0;
       for (const belief of known) {
         const p = belief.payload;
+        if (p.x == null || p.y == null) continue;
         const nearestD = Math.min(...ctx.sim.settlements.map((s) => dist(p, s)));
-        if (nearestD < 24) continue;
+        if (nearestD < 18) continue;
         const score =
           clamp(belief.confidence) *
-          (0.4 + clamp(belief.valence, 0, 1)) *
-          Math.min(1, nearestD * 0.02);
+          (0.35 + clamp(belief.valence, 0, 1)) *
+          Math.min(1.2, nearestD * 0.03) +
+          fission * 0.3;
         if (score > bestScore) {
           bestScore = score;
           best = p;
         }
       }
       if (!best) return [];
+
       const u =
-        pressure *
-        (0.4 + a.genome.risk + a.genome.industry * 0.5) *
+        Math.max(pressure, fission) *
+        (0.55 + a.genome.risk * 0.8 + a.genome.industry * 0.5 + a.genome.curiosity * 0.4) *
         (ctx.bias?.work ?? 1) *
-        (0.3 + bestScore);
-      if (u < 0.4) return [];
+        (0.4 + bestScore) *
+        (ctx.sim.settlements.length === 1 ? 1.35 : 1);
+      if (u < 0.28) return [];
       return [{ kind: 'expand', u, target: T(best.x, best.y), dur: 1 }];
     },
     run(a, ctx, act) {
       if (dist(a, act.target) > 1.4) {
         stepToward(a, ctx.world, act.target);
+        a.body.energy = clamp(a.body.energy - 0.01, 0, 1);
         return 'continue';
       }
       ctx.sim.foundSettlement(a, act.target);
+      a.memory.learn('lesson:expand', {
+        kind: 'lesson',
+        confidence: 0.4,
+        valence: 0.5,
+        source: 'experience',
+        payload: { do: 'expand' },
+      });
       return 'done';
     },
   },
