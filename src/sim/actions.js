@@ -1007,12 +1007,16 @@ export const ACTIONS = {
       const far = ctx.sim.farBankTarget?.(a, 28);
       const fission = ctx.sim.fissionUrge?.(settlement) || 0;
 
-      // Explicit far-bank nuclei: store or field on the other shore
+      // Explicit far-bank nuclei only when fission is actually allowed
+      const day = ctx.world.dayNumber || Math.floor(ctx.world.tick / 24) + 1;
       if (
         far &&
-        fission > 0.3 &&
-        a.body.hunger < 0.5 &&
-        ctx.sim.settlements.length < 4
+        fission > 0.35 &&
+        day >= 80 &&
+        a.body.hunger < 0.38 &&
+        a.body.thirst < 0.4 &&
+        ctx.sim.settlements.length < 4 &&
+        (s.people || people) >= 28
       ) {
         for (const kind of ['store', 'field', 'shelter']) {
           const nearFar = ctx.world.structuresOfKind(kind).filter(
@@ -1309,14 +1313,20 @@ export const ACTIONS = {
   expand: {
     category: 'work',
     propose(a, ctx) {
-      if (a.isChild(ctx.world.tick) || a.ageAt(ctx.world.tick) < 16) return [];
-      if (a.body.hunger > 0.55 || a.body.thirst > 0.55) return [];
+      if (a.isChild(ctx.world.tick) || a.ageAt(ctx.world.tick) < 18) return [];
+      // Never found a colony while personally food-stressed
+      if (a.body.hunger > 0.4 || a.body.thirst > 0.4) return [];
+      if (a.body.energy < 0.35) return [];
       if (ctx.sim.settlements.length >= 4) return [];
+      const day = ctx.world.dayNumber || Math.floor(ctx.world.tick / 24) + 1;
+      if (day < 80) return [];
 
       const home = ctx.sim.nearestSettlement(a.x, a.y);
       const pressure = ctx.sim.settlementPressure(home);
       const fission = ctx.sim.fissionUrge?.(home) || 0;
-      if (pressure < 0.18 && fission < 0.25) return [];
+      // Require real fission urge — pressure alone is not enough early
+      if (fission < 0.28) return [];
+      if (pressure < 0.12 && fission < 0.4) return [];
 
       // Prefer a concrete far-bank tile once bridges exist
       let best = ctx.sim.farBankTarget?.(a, 28) || null;
