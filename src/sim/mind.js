@@ -349,17 +349,17 @@ export function think(a, ctx) {
         if (ctx.sim.totalFood() < n * 2.2) p.u *= 0.25;
       }
       if (p.kind === 'expand') {
-        const home = ctx.sim.nearestSettlement?.(a.x, a.y);
-        const urge = ctx.sim.fissionUrge?.(home) || 0;
-        if (urge > 0.2) p.u *= 1.5 + urge * 2;
-        if (a.genome.risk > 0.55 || a.genome.curiosity > 0.55) p.u *= 1.25;
+        if (a.body.hunger > 0.38 || a.body.thirst > 0.4) p.u *= 0.05;
+        else {
+          const home = ctx.sim.nearestSettlement?.(a.x, a.y);
+          const urge = ctx.sim.fissionUrge?.(home) || 0;
+          if (urge > 0.3) p.u *= 1.4 + urge * 1.5;
+          if (a.genome.risk > 0.55 || a.genome.curiosity > 0.55) p.u *= 1.2;
+        }
       }
-      if (
-        p.kind === 'build' &&
-        p.payload?.farFocus &&
-        a.body.hunger < 0.5
-      ) {
-        p.u *= 1.6;
+      if (p.kind === 'build' && p.payload?.farFocus) {
+        if (a.body.hunger > 0.38 || a.body.thirst > 0.4) p.u *= 0.05;
+        else p.u *= 1.45;
       }
 
       candidates.push(p);
