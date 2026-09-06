@@ -1308,6 +1308,15 @@ export class Simulation {
   settlementPressure(settlement) {
     if (!settlement) return 0;
     const n = this.settlementNeeds(settlement);
+    const crowd = clamp(n.people / 35); // dense camp wants room
+    const sole =
+      this.settlements.length <= 1 && n.people >= 22 ? 0.35 : 0;
+    const farOpen = this.farBankTarget(
+      { x: settlement.x, y: settlement.y },
+      26,
+    )
+      ? 0.25
+      : 0;
     return clamp(
       (
         n.shelterDeficit +
@@ -1317,9 +1326,31 @@ export class Simulation {
         (n.workshopDeficit || 0) +
         (n.marketDeficit || 0) +
         (n.hallDeficit || 0) +
-        n.people / 80
+        n.people / 55 +
+        crowd +
+        sole +
+        farOpen
       ) / 5,
     );
+  }
+
+  /** Prefer founding when one crowded camp and a crossable far bank. */
+  fissionUrge(settlement = null) {
+    const home = settlement || this.origin;
+    if (!home) return 0;
+    if (this.settlements.length >= 4) return 0;
+    const people = this.living.filter(
+      (a) => Math.hypot(a.x - home.x, a.y - home.y) < 18,
+    ).length;
+    if (people < 18) return 0;
+    const spans =
+      this.world.bridgeSpanCount?.(home.x, home.y, 22) ?? 0;
+    const far = this.farBankTarget({ x: home.x, y: home.y }, 28);
+    if (!far) return people >= 30 ? 0.2 : 0;
+    let urge = 0.15 + clamp((people - 18) / 40);
+    if (spans >= 1) urge += 0.35;
+    if (this.settlements.length === 1) urge += 0.25;
+    return clamp(urge);
   }
 
   bestBuildMaterial(a, fn) {
@@ -1351,10 +1382,13 @@ export class Simulation {
   }
 
   pickBuildSite(a, kind, settlement) {
-    const center = settlement || this.nearestSettlement(a.x, a.y);
+    const base = settlement || this.nearestSettlement(a.x, a.y);
+    const center = settlement?.farFocus
+      ? settlement.farFocus
+      : base;
 
     if (kind === 'bridge') {
-      const span = this.world.findBridgeSpan?.(center.x, center.y, 26, 8);
+      const span = this.world.findBridgeSpan?.(base.x, base.y, 26, 8);
       if (span?.tiles?.length) {
         return { x: span.tiles[0].x, y: span.tiles[0].y, span };
       }
@@ -1368,9 +1402,9 @@ export class Simulation {
       kind === 'plaza' || kind === 'shrine' ? 6 :
       kind === 'workshop' ? 5 : 4;
 
-    for (let attempt = 0; attempt < 60; attempt++) {
+    for (let attempt = 0; attempt < 80; attempt++) {
       const angle = this.rng.float(0, Math.PI * 2);
-      const rad = ring + this.rng.float(-1.5, 2.2);
+      const rad = ring + this.rng.float(-1.5, 2.5);
       const x = clamp(Math.round(center.x + Math.cos(angle) * rad), 1, this.world.w - 2);
       const y = clamp(Math.round(center.y + Math.sin(angle) * rad), 1, this.world.h - 2);
 
@@ -1383,17 +1417,21 @@ export class Simulation {
       return { x, y };
     }
 
-    for (let i = 0; i < 40; i++) {
-      const x = clamp(center.x + this.rng.int(-8, 8), 1, this.world.w - 2);
-      const y = clamp(center.y + this.rng.int(-8, 8), 1, this.world.h - 2);
+    for (let i = 0; i < 50; i++) {
+      const x = clamp(center.x + this.rng.int(-10, 10), 1, this.world.w - 2);
+      const y = clamp(center.y + this.rng.int(-10, 10), 1, this.world.h - 2);
       if (!this.world.walkable(x, y)) continue;
       if (this.world.structureAt(x, y)) continue;
       return { x, y };
     }
-    return { x: a.x, y: a.y };
+    return { x: Math.round(center.x), y: Math.round(center.y) };
   }
 
   foundSettlement(a, spot) {
+    // Avoid double-founding on top of an existing camp
+    for (const s of this.settlements) {
+      if (Math.hypot(s.x - spot.x, s.y - spot.y) < 14) return s;
+    }
     const name = this.lang.placeName(this.rng);
     this.registerLex(name, 'new settlement', 'place');
     const settlement = {
@@ -1405,14 +1443,48 @@ export class Simulation {
       color: hueFor(this.settlements.length),
       tier: 'camp',
       archive: new Set(this.archive),
+      foundedBy: a?.id,
     };
     this.settlements.push(settlement);
     this.world.sites.push(settlement);
-    this.record(a, 'first', `${a.name} founded ${name}`, {
-      valence: 0.6, intensity: 0.9, landmark: true,
+
+    // Seed a small store so the new place is a real economic node
+    const storeWord = this.lang.word('struct:store');
+    this.registerLex(storeWord, 'store', 'structure');
+    if (!this.world.structureAt(spot.x, spot.y) && this.world.walkable(spot.x, spot.y)) {
+      this.world.addStructure({
+        kind: 'store',
+        x: spot.x,
+        y: spot.y,
+        word: storeWord,
+        builtBy: a?.name || 'founders',
+        builtTick: this.world.tick,
+        material: 'wood',
+        condition: 1,
+        stock: new Map([
+          ['grain', 24],
+          ['berry', 12],
+          ['water', 16],
+          ['wood', 8],
+        ]),
+      });
+    }
+
+    this.record(a, 'first', `${a.name} founded ${name} across the land`, {
+      valence: 0.7, intensity: 0.95, landmark: true,
     });
-    appraise(a, { goalCongruence: 0.7, agency: 'self', intensity: 0.8, kind: 'first', novelty: 1 });
-    this.reputationDelta(a, 0.06);
+    appraise(a, { goalCongruence: 0.75, agency: 'self', intensity: 0.85, kind: 'first', novelty: 1 });
+    this.reputationDelta(a, 0.08);
+    if (a) {
+      a.memory.learn(`where:${name}`, {
+        kind: 'place',
+        confidence: 0.8,
+        valence: 0.6,
+        payload: { x: spot.x, y: spot.y },
+        source: 'founding',
+      });
+      a.home = a.home || { x: spot.x, y: spot.y };
+    }
     return settlement;
   }
 
@@ -1483,6 +1555,21 @@ export class Simulation {
       occupants: [],
     };
     this.world.addStructure(s);
+
+    // Fission: a store/field/shelter raised far from every camp founds a place
+    if (
+      (kind === 'store' || kind === 'field' || kind === 'shelter' || kind === 'hearth') &&
+      this.settlements.length < 5
+    ) {
+      let nearest = Infinity;
+      for (const st of this.settlements) {
+        nearest = Math.min(nearest, Math.hypot(st.x - spot.x, st.y - spot.y));
+      }
+      if (nearest > 16) {
+        this.foundSettlement(a, { x: spot.x, y: spot.y });
+      }
+    }
+
     const existing = this.world.structuresOfKind(kind).length;
     const first = existing === 1;
     this.record(
