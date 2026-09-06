@@ -331,9 +331,22 @@ export function think(a, ctx) {
         if (pressure > 0.12) p.u *= 1.25 + pressure;
         if (a.skills.build > 0.15 || (a.stats.built || 0) > 0) p.u *= 1.1;
       }
-      if (p.kind === 'farm' || p.kind === 'gather') {
-        const foodTight = ctx.sim.totalFood() < ctx.sim.living.length * 3;
-        if (foodTight && a.body.hunger > 0.3) p.u *= 2.2;
+      if (p.kind === 'farm' || p.kind === 'gather' || p.kind === 'hunt') {
+        const n = ctx.sim.living.length;
+        const foodTight = ctx.sim.totalFood() < n * 3;
+        if (foodTight) p.u *= p.kind === 'farm' ? 3.0 : 2.2;
+        else if (a.body.hunger > 0.35 && p.kind === 'farm') p.u *= 1.6;
+      }
+      // Expand fields when under-provisioned for population
+      if (p.kind === 'build' && p.payload?.structure === 'field') {
+        const n = ctx.sim.living.length;
+        const fields = ctx.world.structuresOfKind('field').length;
+        const want = Math.max(1, Math.min(5, Math.ceil(n / 12)));
+        if (fields < want && a.body.hunger < 0.55) p.u *= 1.8 + (want - fields) * 0.35;
+      }
+      if (p.kind === 'teach' || p.kind === 'trade' || p.kind === 'converse') {
+        const n = ctx.sim.living.length;
+        if (ctx.sim.totalFood() < n * 2.2) p.u *= 0.25;
       }
 
       candidates.push(p);
