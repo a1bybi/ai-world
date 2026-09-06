@@ -272,7 +272,9 @@ function structureCap(kind, people) {
     case 'shelter': return Math.max(2, Math.ceil(p / 2.2));
     case 'hearth': return Math.max(1, Math.ceil(p / 10));
     case 'store': return Math.max(1, Math.ceil(p / 16));
-    case 'field': return Math.max(1, Math.ceil(p / 7));
+    case 'field':
+      // Intensify with scale: ~1 field per 12 people, max 5
+      return Math.max(1, Math.min(5, Math.ceil(p / 12)));
     case 'workshop': return p >= 8 ? Math.min(2, 1 + Math.floor(p / 22)) : 0;
     case 'market': return p >= 10 ? Math.min(2, 1 + Math.floor(p / 28)) : 0;
     case 'hall': return p >= 12 ? 1 : 0;
@@ -304,8 +306,17 @@ function structureUnlocked(kind, ctx, settlement, nearCount) {
       return true;
     case 'bridge':
       return day >= 3 || basics;
-    case 'field':
-      return day >= 5 || hasStore;
+    case 'field': {
+      const fields = n('field');
+      if (fields < 1) return day >= 5 || hasStore;
+      // Further fields: need some footing + population or scarcity
+      const peopleApprox = ctx.sim.living?.length || 10;
+      const tight = ctx.sim.totalFood() < peopleApprox * 2.5;
+      if (fields < 2) return day >= 20 && (peopleApprox >= 14 || tight);
+      if (fields < 3) return day >= 40 && (peopleApprox >= 28 || tight);
+      if (fields < 4) return day >= 60 && peopleApprox >= 40;
+      return day >= 80 && peopleApprox >= 55;
+    }
     case 'well':
       return day >= 12 && basics;
     case 'workshop':
@@ -981,12 +992,15 @@ export const ACTIONS = {
 
       const fieldsNear = nearCount('field');
       const foodTight = ctx.sim.totalFood() < people * 3;
+      const foodDays = ctx.sim.foodDaysAt?.(settlement.x, settlement.y) ?? null;
+      const daysTight = foodDays != null && foodDays < 12;
+      const wantFields = Math.max(1, Math.min(5, Math.ceil(people / 12)));
       const needFieldBoost =
-        (hungry || foodTight) && fieldsNear < 1
-          ? 0.9
-          : (hungry || foodTight) && fieldsNear < Math.ceil(people / 8)
-            ? 0.55
-            : foodTight && fieldsNear < 2
+        fieldsNear < 1
+          ? 0.95
+          : fieldsNear < wantFields && (hungry || foodTight || daysTight || people >= 18)
+            ? 0.55 + Math.min(0.35, (wantFields - fieldsNear) * 0.15)
+            : fieldsNear < wantFields && people >= 30
               ? 0.4
               : 0;
 
@@ -1075,9 +1089,14 @@ export const ACTIONS = {
         if (kind === 'hearth' && existing < 1) need = Math.max(need, 0.4);
         if (kind === 'field') {
           need = Math.max(need, needFieldBoost);
-          if (existing < 1) need = Math.max(need, 0.5);
-          if (existing < Math.ceil(people / 7)) need = Math.max(need, 0.35);
-          if (foodEasy && existing < Math.ceil(people / 9)) need = Math.max(need, 0.32);
+          if (existing < 1) need = Math.max(need, 0.55);
+          if (existing < cap) {
+            need = Math.max(need, 0.28 + (cap - existing) * 0.1);
+          }
+          // When fed but under-fielded for population, still push expansion
+          if (!hungry && existing < Math.ceil(people / 14)) {
+            need = Math.max(need, 0.38);
+          }
         }
         // First copy of institutions matters; extras are capped above
         if (kind === 'workshop' && existing < 1 && people >= 8) {
@@ -1157,7 +1176,9 @@ export const ACTIONS = {
           (0.6 + a.skills.build * 0.5) *
           (0.5 + a.genome.industry) *
           (foodEasy ? (institution ? 1.35 : 1.2) : 1) *
-          (hungry && kind === 'field' ? 1.6 : 1);
+          (kind === 'field'
+            ? (hungry || foodTight ? 2.1 : people >= 20 ? 1.5 : 1.15)
+            : 1);
 
         out.push({
           kind: 'build',
@@ -1291,26 +1312,42 @@ export const ACTIONS = {
   farm: {
     category: 'work',
     propose(a, ctx) {
+      if (a.isChild?.(ctx.world.tick)) return [];
       const fields = ctx.world.structuresOfKind('field');
       if (!fields.length) return [];
       const f = topN(fields, 1, (s) => {
         const place = a.memory.belief('where:field-works')?.payload;
         const placeBoost = place && place.x === s.x && place.y === s.y ? 0.5 : 0;
-        return (s.ripeness || 0) * 3 + placeBoost - dist(a, s) * 0.04;
+        // Prefer less tended / lower ripeness for tending; high ripeness for harvest
+        const ripe = s.ripeness || 0;
+        const tendNeed = ripe < 0.85 ? (1 - ripe) * 2 : ripe * 3;
+        return tendNeed + placeBoost - dist(a, s) * 0.04;
       })[0];
       if (!f) return [];
       const ripe = f.ripeness || 0;
-      const purpose = knownStructureUse(a, 'field');
-      const hungry = a.body.hunger > 0.38;
+      const purpose = Math.max(0.4, knownStructureUse(a, 'field'));
+      const hungry = a.body.hunger > 0.35;
+      const people = ctx.sim.living.length;
+      const foodTight = ctx.sim.totalFood() < people * 2.8;
+      const storeEmpty = ![...ctx.world.structuresOfKind('store')].some(
+        (s) => s.stock && [...s.stock.values()].some((v) => v > 2),
+      );
+      const scarcity = foodTight || storeEmpty ? 2.4 : 1;
       const hungerFarm =
-        hungry && ripe > 0.7
-          ? 2.5 + a.body.hunger * 4
+        hungry && ripe > 0.65
+          ? 3.2 + a.body.hunger * 5
           : ripe > 0.85
-            ? 1.6 + a.body.hunger
-            : 0.35 * purpose;
+            ? 2.0 + a.body.hunger * 2
+            : ripe > 0.4
+              ? 0.9 * purpose * scarcity
+              : 0.45 * purpose * scarcity;
       const u =
-        (hungerFarm * (ctx.bias?.work ?? 1) * (0.45 + a.skills.farm) * Math.max(0.5, purpose)) /
-        (1 + dist(a, f) * 0.04);
+        (hungerFarm *
+          (ctx.bias?.work ?? 1) *
+          (0.5 + a.skills.farm) *
+          purpose *
+          scarcity) /
+        (1 + dist(a, f) * 0.035);
       return [{ kind: 'farm', u, target: T(f.x, f.y), field: f, dur: 2 }];
     },
     run(a, ctx, act) {
