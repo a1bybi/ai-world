@@ -348,6 +348,19 @@ export function think(a, ctx) {
         const n = ctx.sim.living.length;
         if (ctx.sim.totalFood() < n * 2.2) p.u *= 0.25;
       }
+      if (p.kind === 'expand') {
+        const home = ctx.sim.nearestSettlement?.(a.x, a.y);
+        const urge = ctx.sim.fissionUrge?.(home) || 0;
+        if (urge > 0.2) p.u *= 1.5 + urge * 2;
+        if (a.genome.risk > 0.55 || a.genome.curiosity > 0.55) p.u *= 1.25;
+      }
+      if (
+        p.kind === 'build' &&
+        p.payload?.farFocus &&
+        a.body.hunger < 0.5
+      ) {
+        p.u *= 1.6;
+      }
 
       candidates.push(p);
     }
