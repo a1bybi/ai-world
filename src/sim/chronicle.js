@@ -106,7 +106,7 @@ export class Chronicle {
         population: sim.living.length,
       };
       this.eras.push(era);
-      sim.record(null, 'era', `A new age begins â ${era.name}`, {
+      sim.record(null, 'era', `A new age begins - ${era.name}`, {
         valence: 0.5, intensity: 1, landmark: true,
       });
       return era;
@@ -530,7 +530,7 @@ export class Chronicle {
         ? `store about ${p.store.pct}% full (${p.store.held} measures)`
         : 'no common store nearby';
       lines.push(
-        `${p.name} (${p.tier}): ${p.people} living close by Â· ${p.structureLine} Â· ${storeBit}.`,
+        `${p.name} (${p.tier}): ${p.people} living close by | ${p.structureLine} | ${storeBit}.`,
       );
       if (p.topHeld.length) {
         lines.push(
@@ -566,7 +566,7 @@ export class Chronicle {
     const hunger = last.hunger ?? 0;
     if (hunger > 0.6) {
       lines.push(
-        `Hunger is the ruling fact â the average belly sits at ${Math.round(hunger * 100)}% empty and the stores are thin.`,
+        `Hunger is the ruling fact - the average belly sits at ${Math.round(hunger * 100)}% empty and the stores are thin.`,
       );
     } else if (hunger < 0.3) {
       lines.push('Food is not a worry at present; the fields and beds are keeping pace.');
