@@ -67,6 +67,8 @@ export class Simulation {
     this.marketPrices = new Map();
     this.lostKnowledge = [];
     this.inventionTicks = new Map();
+    this.decisionLog = []; // observer samples {tick, name, goal, chose, why, also}
+    this.techEffects = []; // advances with human-readable impact
     this.wantedMaterials = new Map();
     this.lexicon = new Map();
     this.archive = new Set();          // recipe keys that outlive individuals
@@ -1697,6 +1699,22 @@ export class Simulation {
     appraise(a, { goalCongruence: 0.35, agency: 'self', intensity: 0.35, kind: 'art' });
   }
 
+  logDecision(a, reasoning, goal) {
+    if (!this.decisionLog) this.decisionLog = [];
+    const top = (reasoning || []).slice(0, 4);
+    const chose = top[0];
+    this.decisionLog.push({
+      tick: this.world.tick,
+      day: Math.floor(this.world.tick / 24) + 1,
+      name: a.name,
+      goal: goal || chose?.kind || 'acting',
+      chose: chose?.kind,
+      why: chose?.why || '',
+      also: top.slice(1).map((r) => ({ kind: r.kind, why: r.why, u: r.u })),
+    });
+    if (this.decisionLog.length > 80) this.decisionLog.splice(0, this.decisionLog.length - 80);
+  }
+
   onInvention(a, record, concept) {
     this.inventionTicks.set(concept.key, this.world.tick);
     if (concept.word && concept.bestFn) {
@@ -1722,6 +1740,17 @@ export class Simulation {
         cordage: 'binding holds more load',
       };
       effect = hints[fn] ? ` â ${hints[fn]}` : ` â better ${fn}`;
+      if (!this.techEffects) this.techEffects = [];
+      this.techEffects.push({
+        tick: this.world.tick,
+        day: Math.floor(this.world.tick / 24) + 1,
+        word: concept.word,
+        fn,
+        score,
+        by: a.name,
+        hint: hints[fn] || `better ${fn}`,
+      });
+      if (this.techEffects.length > 40) this.techEffects.shift();
       this.record(
         a,
         'thought',
