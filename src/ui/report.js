@@ -101,6 +101,30 @@ export function renderReport(host, r, sim) {
         </div>
       </div>` : ''}
 
+      ${(r.decisions?.length || r.techEffects?.length) ? `<div class="sect">
+        <h3>Why they chose</h3>
+        <div class="cols">
+          <div>
+            <h5 class="sheet-meta">Recent decisions</h5>
+            <div class="rows">${(r.decisions || []).slice(0, 12).map((d) =>
+              row(
+                `${esc(d.name)} → <b>${esc(d.chose || d.goal)}</b>`,
+                `d${d.day}`,
+              ) + (d.why ? `<div style="font-size:var(--text-xs);color:var(--ink-muted);margin:-0.25rem 0 0.5rem 0.25rem">${esc(d.why)}${(d.also || []).length ? ` · also considered ${(d.also || []).map((x) => x.kind).join(', ')}` : ''}</div>` : '')
+            ).join('') || '—'}</div>
+          </div>
+          <div>
+            <h5 class="sheet-meta">Tools that changed the work</h5>
+            <div class="rows">${(r.techEffects || []).slice(0, 8).map((t) =>
+              row(
+                `${esc(t.word)} — ${esc(t.fn)}`,
+                `d${t.day} · ${esc(t.by)}`,
+              ) + (t.hint ? `<div style="font-size:var(--text-xs);color:var(--ink-muted);margin:-0.25rem 0 0.5rem 0.25rem">${esc(t.hint)}</div>` : '')
+            ).join('') || '<div class="row2"><span>No advance has yet rewritten how they work.</span><span></span></div>'}</div>
+          </div>
+        </div>
+      </div>` : ''}
+
       <div class="sect">
         <h3>What they figured out</h3>
         <div class="cols">
