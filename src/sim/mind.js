@@ -271,7 +271,7 @@ export function think(a, ctx) {
         }
       }
 
-      // Teaching/culture yields to survival — especially for the last adults
+      // Teaching/culture yields to survival - especially for the last adults
       if (a.body.hunger > 0.35 || a.body.thirst > 0.45) {
         if (p.kind === 'teach') p.u *= 0.02;
         if (p.kind === 'converse') p.u *= 0.15;
@@ -421,14 +421,14 @@ export function think(a, ctx) {
     }
   }
 
-  // Nuclear eat — never invent/build while food is in the pack
+  // Nuclear eat - never invent/build while food is in the pack
   if (a.body.hunger > 0.24 && hasFood) {
     const eatCand = candidates.find((c) => c.kind === 'eat');
     if (eatCand) {
       a.action = eatCand;
       a.noteAction?.('eat');
       a.goal = 'eating';
-      a.reasoning = [{ kind: 'eat', u: eatCand.u, why: 'must eat — food in hand' }];
+      a.reasoning = [{ kind: 'eat', u: eatCand.u, why: 'must eat - food in hand' }];
       if (ctx.sim.logDecision && ctx.rng.bool(0.08)) {
         ctx.sim.logDecision(a, a.reasoning, 'eating');
       }
@@ -436,14 +436,14 @@ export function think(a, ctx) {
     }
   }
 
-  // Nuclear drink — thirst always wins over work
+  // Nuclear drink - thirst always wins over work
   if (a.body.thirst > 0.28) {
     const drinkCand = candidates.find((c) => c.kind === 'drink');
     if (drinkCand) {
       a.action = drinkCand;
       a.noteAction?.('drink');
       a.goal = 'drinking';
-      a.reasoning = [{ kind: 'drink', u: drinkCand.u, why: 'must drink — thirst first' }];
+      a.reasoning = [{ kind: 'drink', u: drinkCand.u, why: 'must drink - thirst first' }];
       if (ctx.sim.logDecision && ctx.rng.bool(0.08)) {
         ctx.sim.logDecision(a, a.reasoning, 'drinking');
       }
@@ -458,7 +458,7 @@ export function think(a, ctx) {
       a.action = storeCand;
       a.noteAction?.('takeFromStore');
       a.goal = 'taking from store';
-      a.reasoning = [{ kind: 'takeFromStore', u: storeCand.u, why: 'store has food — before other work' }];
+      a.reasoning = [{ kind: 'takeFromStore', u: storeCand.u, why: 'store has food - before other work' }];
       if (ctx.sim.logDecision && ctx.rng.bool(0.08)) {
         ctx.sim.logDecision(a, a.reasoning, 'taking from store');
       }
@@ -519,13 +519,13 @@ function reasonFor(a, c, ctx) {
     case 'takeFromStore':
       return foodTight
         ? 'the common store is the sure way to eat'
-        : `hunger at ${Math.round(b.hunger * 100)}% — drawing from the store`;
+        : `hunger at ${Math.round(b.hunger * 100)}% - drawing from the store`;
     case 'sleep':
       return `rest at ${Math.round(b.rest * 100)}%${ctx.world.isNight ? ', and it is dark' : ''}`;
     case 'seekWarmth': return `warmth at ${Math.round(b.warmth * 100)}%`;
     case 'gather': {
       const w = ctx.ont.get(c.payload)?.word || c.payload;
-      return foodTight ? `food is short — seeking ${w}` : `wants ${w}`;
+      return foodTight ? `food is short - seeking ${w}` : `wants ${w}`;
     }
     case 'hunt': return 'meat is worth the risk';
     case 'craft': {
