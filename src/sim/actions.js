@@ -206,6 +206,23 @@ function structureBoost(ctx, a, kinds, mult = 1.25) {
   return 1;
 }
 
+/** Best known/held score for a function — inventions that change outcomes. */
+function techScore(a, ctx, fn) {
+  const mine = a.bestToolFor?.(fn, ctx.ont);
+  const world = ctx.ont.bestScoreFor?.(fn) || 0;
+  const held = mine?.score || 0;
+  // Camp archive knowledge (shared technique)
+  let arch = 0;
+  if (ctx.sim.archive) {
+    for (const key of ctx.sim.archive) {
+      const c = ctx.ont.get(key);
+      if (c) arch = Math.max(arch, (c.serves?.(fn) || 0) * 0.45);
+    }
+  }
+  return Math.max(held, world * 0.35, arch);
+}
+
+
 function availableMaterial(a, ctx, key, range = 12) {
   let n = a.count(key);
   for (const s of ctx.world.structuresOfKind('store')) {
@@ -702,8 +719,14 @@ export const ACTIONS = {
         stepToward(a, ctx.world, act.target);
         return 'continue';
       }
+      const tool =
+        1 +
+        techScore(a, ctx, 'cutting') * 0.45 +
+        techScore(a, ctx, 'cordage') * 0.2 +
+        techScore(a, ctx, 'vessel') * 0.15;
       const yieldAmt =
-        6 + Math.floor((1.4 + a.skills.forage * 4) * ctx.rng.float(0.85, 1.7));
+        6 +
+        Math.floor((1.4 + a.skills.forage * 4) * tool * ctx.rng.float(0.85, 1.7));
       const got = ctx.world.harvest(act.site.x, act.site.y, act.payload, yieldAmt);
       if (got <= 0) {
         a.memory.learn(`where:${act.payload}`, {
@@ -844,6 +867,11 @@ export const ACTIONS = {
         }
         const desire = a.desireFor(key, ctx.ont, ctx.sim);
         const craftNorm = normsFor(a, ctx, ['craft', 'invention']);
+        const fn = c.bestFn;
+        const world = fn ? (ctx.ont.bestScoreFor?.(fn) || 0) : 0;
+        const advancePull =
+          fn && c.bestScore > world * 0.95 ? 1.35 :
+          fn && c.serves(fn) > 0.5 ? 1.15 : 1;
         out.push({
           kind: 'craft',
           u:
@@ -852,7 +880,8 @@ export const ACTIONS = {
             (ctx.bias?.work ?? 1) *
             (0.5 + a.skills.craft) *
             (1 + Math.max(0, craftNorm) * 0.25) *
-            shopBoost,
+            shopBoost *
+            advancePull,
           payload: key,
           dur: 2 + c.tier,
         });
@@ -860,21 +889,34 @@ export const ACTIONS = {
       return topN(out, 2, (o) => o.u);
     },
     run(a, ctx, act) {
+      // Better cutting tools finish work faster
+      const cut = techScore(a, ctx, 'cutting');
+      if (cut > 0.3 && act.dur > 1 && ctx.rng.bool(clamp(cut * 0.4))) act.dur -= 1;
       if (--act.dur > 0) return 'continue';
       const c = ctx.ont.get(act.payload);
       if (!c) return 'abort';
       for (const p of c.parents) {
         if (takeMaterial(a, ctx, p, 1) < 1) return 'abort';
       }
-      a.add(act.payload, 1);
+      let qty = 1;
+      // Workshop + tools can yield a spare piece
+      if (
+        ctx.world.hasStructureNear?.(a.x, a.y, 'workshop', 5) &&
+        cut > 0.4 &&
+        ctx.rng.bool(0.15 + cut * 0.2)
+      ) {
+        qty = 2;
+      }
+      a.add(act.payload, qty);
       c.uses++;
       a.stats.crafted++;
-      a.gainSkill('craft', 0.035);
+      a.gainSkill('craft', 0.035 + cut * 0.02);
       a.body.energy = clamp(a.body.energy - 0.07, 0, 1);
       if (ctx.world.hasStructureNear?.(a.x, a.y, 'workshop', 5)) {
         learnStructureUse(a, 'workshop', 'cutting', 0.15, 0.4);
       }
-      ctx.sim.record(a, 'craft', `${a.name} made ${c.word}`, {
+      const note = qty > 1 ? ` (${qty})` : '';
+      ctx.sim.record(a, 'craft', `${a.name} made ${c.word}${note}`, {
         valence: 0.4, intensity: 0.35, concept: c.key, quiet: true,
       });
       appraise(a, { goalCongruence: 0.45, agency: 'self', intensity: 0.4, kind: 'craft' });
@@ -1194,7 +1236,11 @@ export const ACTIONS = {
         }
         if (!matKey) continue;
 
-        const cost = Math.ceil(def.cost / (0.5 + matScore));
+        const cutTech = techScore(a, ctx, 'cutting');
+        const cost = Math.max(
+          2,
+          Math.ceil(def.cost / (0.5 + matScore + cutTech * 0.35)),
+        );
         if (availableMaterial(a, ctx, matKey) < cost) {
           const spot = ctx.world.findResource(matKey, a, 16);
           if (spot && a.carried() <= a.carryLimit) {
@@ -1428,10 +1474,15 @@ export const ACTIONS = {
       }
       const f = act.field;
       if ((f.ripeness || 0) > 0.85) {
+        const sust = techScore(a, ctx, 'sustenance');
+        const cut = techScore(a, ctx, 'cutting');
+        const blade = techScore(a, ctx, 'blade');
+        const tech = 1 + sust * 0.9 + cut * 0.35 + blade * 0.2;
         const got =
           2 +
           Math.round(
-            a.skills.farm * 5 + (ctx.world.fertility?.[ctx.world.idx(f.x, f.y)] || 0.5) * 4,
+            (a.skills.farm * 5 + (ctx.world.fertility?.[ctx.world.idx(f.x, f.y)] || 0.5) * 4) *
+              tech,
           );
         a.add('grain', got);
         f.ripeness = 0;
@@ -1470,7 +1521,9 @@ export const ACTIONS = {
         }
         appraise(a, { goalCongruence: 0.65, agency: 'self', intensity: 0.5, kind: 'harvest' });
       } else {
-        f.tended = (f.tended || 0) + 0.15 + a.skills.farm * 0.2;
+        const tool = 1 + techScore(a, ctx, 'cutting') * 0.4 + techScore(a, ctx, 'sustenance') * 0.25;
+        f.tended = (f.tended || 0) + (0.15 + a.skills.farm * 0.2) * tool;
+        f.ripeness = clamp((f.ripeness || 0) + 0.04 * tool * (0.5 + a.skills.farm), 0, 1);
         a.gainSkill('farm', 0.02);
         if (--act.dur > 0) return 'continue';
       }
