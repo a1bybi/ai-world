@@ -330,6 +330,8 @@ export class Chronicle {
         roles: this.roleCensus(living),
         strongestBonds: this.bonds(sim),
       },
+      decisions: (sim.decisionLog || []).slice(-16).reverse(),
+      techEffects: (sim.techEffects || []).slice(-12).reverse(),
       notable: notable.map((a) => this.life(sim, a)),
       deaths: dead.slice(-14).reverse().map((a) => {
         const t = a.deathTick ?? a.diedTick ?? sim.world.tick;
