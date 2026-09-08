@@ -336,6 +336,15 @@ export function think(a, ctx) {
         const foodTight = ctx.sim.totalFood() < n * 3;
         if (foodTight) p.u *= p.kind === 'farm' ? 3.0 : 2.2;
         else if (a.body.hunger > 0.35 && p.kind === 'farm') p.u *= 1.6;
+        // Better tools → farming/foraging pays more (inventions matter)
+        if (p.kind === 'farm') {
+          const sust = a.bestToolFor?.('sustenance', ctx.ont)?.score || 0;
+          if (sust > 0.3) p.u *= 1 + sust * 0.6;
+        }
+      }
+      if (p.kind === 'experiment' || p.kind === 'craft') {
+        const gaps = ctx.sim.capabilityGaps?.(a) || [];
+        if (gaps.length) p.u *= 1.2 + Math.min(0.5, gaps.length * 0.08);
       }
       // Expand fields when under-provisioned for population
       if (p.kind === 'build' && p.payload?.structure === 'field') {
