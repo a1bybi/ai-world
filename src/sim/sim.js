@@ -558,7 +558,7 @@ export class Simulation {
       if (this.lostKnowledge.length > BALANCE.maxLostKnowledge) {
         this.lostKnowledge.shift();
       }
-      this.record(a, 'loss', `How to make ${word} was lost â ${a.name} was the last who knew`, {
+      this.record(a, 'loss', `How to make ${word} was lost - ${a.name} was the last who knew`, {
         valence: -0.55,
         intensity: 0.7,
         concept: key,
@@ -842,7 +842,7 @@ export class Simulation {
     else if (ha && hb && ha.id === hb.id) targetId = ha.id;
     else if (ha && hb) {
       // Both already housed separately: move only the couple (and minors) into
-      // the house that already holds more of their children â never full merge.
+      // the house that already holds more of their children - never full merge.
       const childScore = (h, person) =>
         (person.children || []).filter(
           (id) => h.memberIds.includes(id) && this.byId(id)?.alive,
@@ -1555,7 +1555,7 @@ export class Simulation {
         a,
         firstEver ? 'first' : 'build',
         firstEver
-          ? `${a.name} spanned the water with ${word} â ${span.length} lengths of ${
+          ? `${a.name} spanned the water with ${word} - ${span.length} lengths of ${
               this.ont.get(materialKey)?.word || materialKey
             }`
           : `${a.name} raised a ${word} across the water (${span.length} lengths)`,
@@ -1603,7 +1603,7 @@ export class Simulation {
       a,
       first ? 'first' : 'build',
       first
-        ? `${a.name} raised the first ${word} of ${settlement.name} â ${kind}, out of ${
+        ? `${a.name} raised the first ${word} of ${settlement.name} - ${kind}, out of ${
             this.ont.get(materialKey)?.word || materialKey
           }`
         : `${a.name} raised a ${word}`,
@@ -1739,7 +1739,7 @@ export class Simulation {
         shelter: 'walls stand easier',
         cordage: 'binding holds more load',
       };
-      effect = hints[fn] ? ` â ${hints[fn]}` : ` â better ${fn}`;
+      effect = hints[fn] ? ` - ${hints[fn]}` : ` - better ${fn}`;
       if (!this.techEffects) this.techEffects = [];
       this.techEffects.push({
         tick: this.world.tick,
@@ -1761,7 +1761,7 @@ export class Simulation {
     this.record(
       a,
       'invention',
-      `${a.name} made ${concept.word}${record?.advance ? ' â nothing they had served so well' : ''}${effect}`,
+      `${a.name} made ${concept.word}${record?.advance ? ' - nothing they had served so well' : ''}${effect}`,
       {
         valence: record?.advance ? 0.85 : 0.4,
         intensity: record?.advance ? 0.9 : 0.45,
@@ -2269,7 +2269,7 @@ export class Simulation {
       limit,
       (a) => (a.action ? 2 : 1) + a.body.hunger + a.body.thirst + (1 - a.body.health),
     ).map((a) => ({
-      id: a.id, name: a.name, goal: a.goal || 'â',
+      id: a.id, name: a.name, goal: a.goal || ' - ',
       action: a.action?.kind || 'idle', where: `${a.x},${a.y}`,
       emotion: dominantEmotion(a), mood: moodWord(a.affect.mood),
       why: a.reasoning?.[0]?.why || null,
