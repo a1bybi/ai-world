@@ -119,11 +119,21 @@ export class Agent {
     if (this._toolTick !== this.worldTick) { this._toolTick = this.worldTick; this._toolMemo = new Map(); }
     if (this._toolMemo && this._toolMemo.has && this._toolMemo.has(fn)) return this._toolMemo.get(fn);
     let best = null, score = 0;
+    // Physical tools in hand
     for (const key of this.inventory.keys()) {
       const c = ontology.get(key);
       if (!c) continue;
       const s = c.serves(fn);
-      if (s > score) { score = s; best = { key, concept: c, score: s }; }
+      if (s > score) { score = s; best = { key, concept: c, score: s, held: true }; }
+    }
+    // Known recipes: technique without holding the object (weaker)
+    if (this.memory?.knownKeys) {
+      for (const key of this.memory.knownKeys('recipe')) {
+        const c = ontology.get(key);
+        if (!c) continue;
+        const s = c.serves(fn) * 0.75;
+        if (s > score) { score = s; best = { key, concept: c, score: s, held: false }; }
+      }
     }
     if (!this._toolMemo) this._toolMemo = new Map();
     this._toolMemo.set(fn, best);
