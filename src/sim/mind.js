@@ -428,7 +428,10 @@ export function think(a, ctx) {
       a.action = eatCand;
       a.noteAction?.('eat');
       a.goal = 'eating';
-      a.reasoning = [{ kind: 'eat', u: eatCand.u, why: 'must eat' }];
+      a.reasoning = [{ kind: 'eat', u: eatCand.u, why: 'must eat — food in hand' }];
+      if (ctx.sim.logDecision && ctx.rng.bool(0.08)) {
+        ctx.sim.logDecision(a, a.reasoning, 'eating');
+      }
       return;
     }
   }
@@ -440,7 +443,10 @@ export function think(a, ctx) {
       a.action = drinkCand;
       a.noteAction?.('drink');
       a.goal = 'drinking';
-      a.reasoning = [{ kind: 'drink', u: drinkCand.u, why: 'must drink' }];
+      a.reasoning = [{ kind: 'drink', u: drinkCand.u, why: 'must drink — thirst first' }];
+      if (ctx.sim.logDecision && ctx.rng.bool(0.08)) {
+        ctx.sim.logDecision(a, a.reasoning, 'drinking');
+      }
       return;
     }
   }
@@ -452,7 +458,10 @@ export function think(a, ctx) {
       a.action = storeCand;
       a.noteAction?.('takeFromStore');
       a.goal = 'taking from store';
-      a.reasoning = [{ kind: 'takeFromStore', u: storeCand.u, why: 'store has food' }];
+      a.reasoning = [{ kind: 'takeFromStore', u: storeCand.u, why: 'store has food — before other work' }];
+      if (ctx.sim.logDecision && ctx.rng.bool(0.08)) {
+        ctx.sim.logDecision(a, a.reasoning, 'taking from store');
+      }
       return;
     }
   }
@@ -484,6 +493,10 @@ export function think(a, ctx) {
   a.action = chosen;
   if (chosen?.kind) a.noteAction?.(chosen.kind);
   a.goal = describeGoal(a, chosen, ctx);
+  // Observer sample: keep a short ring of real decisions
+  if (ctx.sim.logDecision && chosen && ctx.rng.bool(0.12)) {
+    ctx.sim.logDecision(a, a.reasoning, a.goal);
+  }
 
   if (
     a.genome.expressive > 0.45 &&
@@ -496,19 +509,49 @@ export function think(a, ctx) {
 function reasonFor(a, c, ctx) {
   const b = a.body;
   const name = (id) => ctx.sim.byId(id)?.name || 'someone';
+  const nPeople = ctx.sim.living?.length || 0;
+  const foodTight = ctx.sim.totalFood() < nPeople * 2.8;
+  const tool = (fn) => a.bestToolFor?.(fn, ctx.ont)?.score || 0;
+
   switch (c.kind) {
     case 'drink': return `thirst at ${Math.round(b.thirst * 100)}%`;
-    case 'eat': return `hunger at ${Math.round(b.hunger * 100)}%`;
+    case 'eat': return `hunger at ${Math.round(b.hunger * 100)}%` + (foodTight ? ', stores thin' : '');
+    case 'takeFromStore':
+      return foodTight
+        ? 'the common store is the sure way to eat'
+        : `hunger at ${Math.round(b.hunger * 100)}% — drawing from the store`;
     case 'sleep':
       return `rest at ${Math.round(b.rest * 100)}%${ctx.world.isNight ? ', and it is dark' : ''}`;
     case 'seekWarmth': return `warmth at ${Math.round(b.warmth * 100)}%`;
-    case 'gather': return `wants ${ctx.ont.get(c.payload)?.word || c.payload}`;
+    case 'gather': {
+      const w = ctx.ont.get(c.payload)?.word || c.payload;
+      return foodTight ? `food is short — seeking ${w}` : `wants ${w}`;
+    }
     case 'hunt': return 'meat is worth the risk';
-    case 'craft': return `knows how to make ${ctx.ont.get(c.payload)?.word || c.payload}`;
-    case 'experiment': return 'has a hunch about what these might become';
-    case 'build': return `the settlement lacks ${c.payload?.structure || 'something'}`;
-    case 'expand': return 'there is no room left here';
-    case 'farm': return 'the field needs hands';
+    case 'craft': {
+      const cnc = ctx.ont.get(c.payload);
+      const fn = cnc?.bestFn;
+      const tip = fn && tool(fn) > 0.3 ? ` (better ${fn} in hand)` : '';
+      return `knows how to make ${cnc?.word || c.payload}${tip}`;
+    }
+    case 'experiment': {
+      const gaps = ctx.sim.capabilityGaps?.(a) || [];
+      return gaps.length
+        ? `hunch toward what they lack (${gaps.slice(0, 2).join(', ')})`
+        : 'has a hunch about what these might become';
+    }
+    case 'build': {
+      const st = c.payload?.structure || 'something';
+      if (c.payload?.farFocus) return `opening ${st} on the far shore`;
+      return `the settlement lacks ${st}`;
+    }
+    case 'expand': return 'the camp is crowded; new ground may hold';
+    case 'farm': {
+      const sust = tool('sustenance');
+      if (foodTight) return 'fields must feed them while stores are thin';
+      if (sust > 0.4) return 'good tools make the field worth the day';
+      return 'the field needs hands';
+    }
     case 'store': return 'winter is a fact';
     case 'converse': return `curious about ${name(c.targetId)}`;
     case 'teach': return `${name(c.targetId)} does not know this yet`;
@@ -523,6 +566,7 @@ function reasonFor(a, c, ctx) {
     case 'ritual': return 'grief and awe need somewhere to go';
     case 'makeArt': return 'has something to say that words will not hold';
     case 'explore': return 'does not know what is over there';
+    case 'idle': return 'nothing pressing';
     default: return 'nothing pressing';
   }
 }
