@@ -19,10 +19,10 @@ export function renderReport(host, r, sim) {
   host.innerHTML = `
     <div class="sheet-head">
       <div>
-        <div class="sheet-meta">Chronicle · report ${r.reportNumber} · ${esc(r.time)} · year ${r.year}</div>
+        <div class="sheet-meta">Chronicle | report ${r.reportNumber} | ${esc(r.time)} | year ${r.year}</div>
         <h2 class="sheet-title" id="sheetTitle">${esc(sim.settlementName)}, ${esc(r.era.name)}</h2>
       </div>
-      <button class="sheet-close" id="sheetClose" aria-label="Close report">✕</button>
+      <button class="sheet-close" id="sheetClose" aria-label="Close report">X</button>
     </div>
     <div class="sheet-body">
 
@@ -32,8 +32,8 @@ export function renderReport(host, r, sim) {
         <h3>Where things stand</h3>
         <div class="numgrid">
           ${num('living', t.population, delta(d.pop))}
-          ${num('ever lived', t.everLived, `${t.births} born · ${t.deaths} lost`)}
-          ${num('adults / children', `${demo.adults ?? '—'} / ${demo.children ?? '—'}`, demo.dependency != null ? `dep ${demo.dependency}` : '')}
+          ${num('ever lived', t.everLived, `${t.births} born | ${t.deaths} lost`)}
+          ${num('adults / children', `${demo.adults ?? ' - '} / ${demo.children ?? ' - '}`, demo.dependency != null ? `dep ${demo.dependency}` : '')}
           ${num('things known', t.concepts, delta(d.knowledge))}
           ${num('capability', (r.knowledge.capability * 100).toFixed(0), delta(d.capability * 100, 1))}
           ${num('inventions', t.inventions, `${fmtNum(t.attempts)} attempts, ${fmtNum(t.deadEnds)} dead ends`)}
@@ -63,7 +63,7 @@ export function renderReport(host, r, sim) {
             ${ageBarsHtml(demo.ageBuckets)}
             <dl class="kv" style="margin-top:var(--s-3)">
               <dt>adults / children</dt>
-              <dd>${demo.adults ?? '—'} / ${demo.children ?? '—'}${demo.dependency != null ? ` · dep ${demo.dependency}` : ''}</dd>
+              <dd>${demo.adults ?? ' - '} / ${demo.children ?? ' - '}${demo.dependency != null ? ` | dep ${demo.dependency}` : ''}</dd>
               <dt>mean age</dt><dd>${(demo.meanAge ?? 0).toFixed(1)} years</dd>
               <dt>lifespan</dt><dd>${demo.meanLifespan ? demo.meanLifespan.toFixed(1) + ' years, of those who died' : 'no one has died yet'}</dd>
               <dt>pairs</dt><dd>${demo.pairs} bonded${demo.pregnant ? `, ${demo.pregnant} expecting` : ''}</dd>
@@ -75,12 +75,12 @@ export function renderReport(host, r, sim) {
             <h5 class="sheet-meta">Who does what</h5>
             <div class="rows">${r.society.roles.map((x) => row(titleCase(x.role), x.n)).join('')}</div>
             <h5 class="sheet-meta" style="margin-top:var(--s-4)">Most respected</h5>
-            <div class="rows">${r.society.leaders.map((l) => row(`${esc(l.name)} — ${esc(l.role)}`, pct(l.respect))).join('') || '<div class="row2"><span>No one has authority.</span><span></span></div>'}</div>
+            <div class="rows">${r.society.leaders.map((l) => row(`${esc(l.name)} - ${esc(l.role)}`, pct(l.respect))).join('') || '<div class="row2"><span>No one has authority.</span><span></span></div>'}</div>
           </div>
           <div>
             <h5 class="sheet-meta">Closest bonds</h5>
             <div class="rows">${r.society.strongestBonds.slice(0, 8).map((b) =>
-              row(`${esc(b.a)} &amp; ${esc(b.b)}${b.kin ? ' (kin)' : ''}`, `${pct(b.affection)} · ${b.exchanges || 0} exchanges${b.conflicts ? ` · ${b.conflicts} quarrels` : ''}`)).join('') || '—'}</div>
+              row(`${esc(b.a)} &amp; ${esc(b.b)}${b.kin ? ' (kin)' : ''}`, `${pct(b.affection)} | ${b.exchanges || 0} exchanges${b.conflicts ? ` | ${b.conflicts} quarrels` : ''}`)).join('') || ' - '}</div>
             ${(r.society.householdList || []).length ? `<h5 class="sheet-meta" style="margin-top:var(--s-4)">Households</h5>
             <div class="rows">${r.society.householdList.slice(0, 6).map((h) =>
               row(`${esc((h.names || []).join(', ') || h.id)}`, `${h.size} members`)).join('')}</div>` : ''}
@@ -92,7 +92,7 @@ export function renderReport(host, r, sim) {
         <h3>Those who did not make it</h3>
         <div class="cols">
           <div><div class="rows">${r.deaths.slice(0, 12).map((x) =>
-            row(`${esc(x.name)}, ${x.age < 1 ? 'an infant' : `${x.age.toFixed(0)} years`} — ${esc(x.cause || 'unknown')}${x.buried ? ', buried' : ', never found'}`, `day ${x.day ?? ''}`)).join('')}</div></div>
+            row(`${esc(x.name)}, ${x.age < 1 ? 'an infant' : `${x.age.toFixed(0)} years`} - ${esc(x.cause || 'unknown')}${x.buried ? ', buried' : ', never found'}`, `day ${x.day ?? ''}`)).join('')}</div></div>
           <div>
             <h5 class="sheet-meta">Why they died</h5>
             <div class="rows">${r.causes.map(([c, n]) => row(esc(c), n)).join('')}</div>
@@ -108,17 +108,17 @@ export function renderReport(host, r, sim) {
             <h5 class="sheet-meta">Recent decisions</h5>
             <div class="rows">${(r.decisions || []).slice(0, 12).map((d) =>
               row(
-                `${esc(d.name)} → <b>${esc(d.chose || d.goal)}</b>`,
+                `${esc(d.name)} -> <b>${esc(d.chose || d.goal)}</b>`,
                 `d${d.day}`,
-              ) + (d.why ? `<div style="font-size:var(--text-xs);color:var(--ink-muted);margin:-0.25rem 0 0.5rem 0.25rem">${esc(d.why)}${(d.also || []).length ? ` · also considered ${(d.also || []).map((x) => x.kind).join(', ')}` : ''}</div>` : '')
-            ).join('') || '—'}</div>
+              ) + (d.why ? `<div style="font-size:var(--text-xs);color:var(--ink-muted);margin:-0.25rem 0 0.5rem 0.25rem">${esc(d.why)}${(d.also || []).length ? ` | also considered ${(d.also || []).map((x) => x.kind).join(', ')}` : ''}</div>` : '')
+            ).join('') || ' - '}</div>
           </div>
           <div>
             <h5 class="sheet-meta">Tools that changed the work</h5>
             <div class="rows">${(r.techEffects || []).slice(0, 8).map((t) =>
               row(
-                `${esc(t.word)} — ${esc(t.fn)}`,
-                `d${t.day} · ${esc(t.by)}`,
+                `${esc(t.word)} - ${esc(t.fn)}`,
+                `d${t.day} | ${esc(t.by)}`,
               ) + (t.hint ? `<div style="font-size:var(--text-xs);color:var(--ink-muted);margin:-0.25rem 0 0.5rem 0.25rem">${esc(t.hint)}</div>` : '')
             ).join('') || '<div class="row2"><span>No advance has yet rewritten how they work.</span><span></span></div>'}</div>
           </div>
@@ -131,13 +131,13 @@ export function renderReport(host, r, sim) {
           <div>
             <h5 class="sheet-meta">Best answer to each need</h5>
             <div class="rows">${(r.knowledge.bestFor || []).map((b) =>
-              row(`${esc(b.fn)} — <b>${esc(b.word)}</b>`, b.score?.toFixed?.(2) ?? '')).join('')}</div>
+              row(`${esc(b.fn)} - <b>${esc(b.word)}</b>`, b.score?.toFixed?.(2) ?? '')).join('')}</div>
           </div>
           <div>
             <h5 class="sheet-meta">Newly made</h5>
             <div class="rows">${(r.knowledge.newInventions || []).slice(0, 10).map((i) =>
               row(
-                `${esc(i.word)} — ${esc(i.fn || i.function || i.label || 'thing')}${i.advance ? ' <b>(an advance)</b>' : ''}`,
+                `${esc(i.word)} - ${esc(i.fn || i.function || i.label || 'thing')}${i.advance ? ' <b>(an advance)</b>' : ''}`,
                 `by ${esc(i.by || i.maker || 'someone')}`,
               )).join('') || '<div class="row2"><span>Nothing new was kept.</span><span></span></div>'}</div>
             ${r.knowledge.lostKnowledge?.length ? `<h5 class="sheet-meta" style="margin-top:var(--s-4)">Lost with the dead</h5>
@@ -164,11 +164,11 @@ export function renderReport(host, r, sim) {
           </div>
           <div>
             <h5 class="sheet-meta">What things fetch</h5>
-            <div class="rows">${(r.economy.prices || []).slice(0, 8).map((p) => row(esc(p.word || p.key), (p.price ?? 0).toFixed(2))).join('') || '—'}</div>
+            <div class="rows">${(r.economy.prices || []).slice(0, 8).map((p) => row(esc(p.word || p.key), (p.price ?? 0).toFixed(2))).join('') || ' - '}</div>
           </div>
           <div>
             <h5 class="sheet-meta">Most held</h5>
-            <div class="rows">${(r.economy.topGoods || []).slice(0, 8).map((g) => row(esc(g.word), fmtNum(g.qty))).join('') || '—'}</div>
+            <div class="rows">${(r.economy.topGoods || []).slice(0, 8).map((g) => row(esc(g.word), fmtNum(g.qty))).join('') || ' - '}</div>
           </div>
         </div>
       </div>
@@ -179,12 +179,12 @@ export function renderReport(host, r, sim) {
           <div>
             <h5 class="sheet-meta">Expectations</h5>
             <div class="rows">${(r.culture.norms || []).map((n) =>
-              row(`${esc(n.label)}${n.becameLaw ? ' <b>— now law</b>' : ''}`, `${pct(n.strength)} · ${n.violations} broken`)).join('')}</div>
+              row(`${esc(n.label)}${n.becameLaw ? ' <b> - now law</b>' : ''}`, `${pct(n.strength)} | ${n.violations} broken`)).join('')}</div>
           </div>
           <div>
             <h5 class="sheet-meta">The tongue drifts</h5>
             <div class="rows">${(r.culture.drift || []).slice(-6).map((x) =>
-              row(`generation ${x.generation}: “${esc(x.from)}” became “${esc(x.to)}”`, `${x.changed} words`)).join('') || '<div class="row2"><span>Speech is unchanged since the founding.</span><span></span></div>'}</div>
+              row(`generation ${x.generation}: "${esc(x.from)}" became "${esc(x.to)}"`, `${x.changed} words`)).join('') || '<div class="row2"><span>Speech is unchanged since the founding.</span><span></span></div>'}</div>
           </div>
           <div>
             <h5 class="sheet-meta">Rites and things made for their own sake</h5>
@@ -202,11 +202,11 @@ export function renderReport(host, r, sim) {
         <h3>Lives worth following</h3>
         <div class="cols">
           ${r.notable.slice(0, 6).map((p) => `<div class="card">
-            <h4>${esc(p.name)}${p.alive ? '' : ' †'}</h4>
-            <div class="card-sub">${p.age.toFixed(0)} years · ${esc(p.role)}${p.titles.length ? ' · ' + p.titles.map(esc).join(', ') : ''}${p.alive ? '' : ` · died of ${esc(p.cause || 'unknown')}`}</div>
+            <h4>${esc(p.name)}${p.alive ? '' : ' +'}</h4>
+            <div class="card-sub">${p.age.toFixed(0)} years | ${esc(p.role)}${p.titles.length ? ' | ' + p.titles.map(esc).join(', ') : ''}${p.alive ? '' : ` | died of ${esc(p.cause || 'unknown')}`}</div>
             <div style="font-size:var(--text-xs);color:var(--ink-muted)">
-              ${esc(p.traits.join(', '))} · knows ${p.knows} things · remembers ${fmtNum(p.remembers.episodes)} moments (${fmtNum(p.remembers.permanent)} forever)
-              ${p.partner ? ` · with ${esc(p.partner)}` : ''}${p.children ? ` · ${p.children} children` : ''}
+              ${esc(p.traits.join(', '))} | knows ${p.knows} things | remembers ${fmtNum(p.remembers.episodes)} moments (${fmtNum(p.remembers.permanent)} forever)
+              ${p.partner ? ` | with ${esc(p.partner)}` : ''}${p.children ? ` | ${p.children} children` : ''}
             </div>
             ${p.milestones?.length ? `<ul>${p.milestones.slice(-4).map((m) => `<li><b>d${m.day}</b> ${esc(m.text)}</li>`).join('')}</ul>` : ''}
           </div>`).join('')}
@@ -216,8 +216,8 @@ export function renderReport(host, r, sim) {
       <div class="sect">
         <h3>Ages of this world</h3>
         <div class="timeline">
-          ${r.eras.map((e) => `<div class="tl-item"><span class="tl-day">day ${Math.floor(e.startTick / 24)}${e.endTick ? `–${Math.floor(e.endTick / 24)}` : ' — present'}</span>
-            <b>${esc(e.name)}</b> — capability ${(e.capability * 100).toFixed(0)}, ${e.population} living</div>`).join('')}
+          ${r.eras.map((e) => `<div class="tl-item"><span class="tl-day">day ${Math.floor(e.startTick / 24)}${e.endTick ? `-${Math.floor(e.endTick / 24)}` : ' - present'}</span>
+            <b>${esc(e.name)}</b> - capability ${(e.capability * 100).toFixed(0)}, ${e.population} living</div>`).join('')}
         </div>
       </div>
 
