@@ -426,20 +426,25 @@ export class Simulation {
   }
 
   spoilTick() {
-    const rot = (map) => {
+    const worldStore = this.ont.bestScoreFor?.('storage') || 0;
+    const rot = (map, inStore = false) => {
       for (const [k, v] of map) {
         const c = this.ont.get(k);
         if (!c) continue;
         const food = c.serves('sustenance');
         if (food <= 0.15) continue;
-        const keeps = (c.props.dry || 0) * 0.6 + (c.functions.storage || 0) * 0.4;
-        const left = v * (1 - 0.015 * (1 - keeps));
+        const keeps =
+          (c.props.dry || 0) * 0.6 +
+          (c.functions.storage || 0) * 0.4 +
+          (inStore ? worldStore * 0.5 : 0);
+        const rate = 0.015 * (1 - clamp(keeps, 0, 0.92));
+        const left = v * (1 - rate);
         if (left < 0.05) map.delete(k);
         else map.set(k, left);
       }
     };
-    for (const a of this.living) rot(a.inventory);
-    for (const s of this.world.structuresOfKind('store')) if (s.stock) rot(s.stock);
+    for (const a of this.living) rot(a.inventory, false);
+    for (const s of this.world.structuresOfKind('store')) if (s.stock) rot(s.stock, true);
   }
 
   causeOfDeath(a) {
@@ -1698,16 +1703,44 @@ export class Simulation {
       this.registerLex(concept.word, concept.bestFn, 'invention', concept.key);
     }
     this.archiveKnowledge(concept.key);
+    const fn = concept.bestFn;
+    const score = concept.bestScore || concept.serves?.(fn) || 0;
+    let effect = '';
+    if (record?.advance && fn) {
+      const hints = {
+        sustenance: 'fields and meals will go further',
+        cutting: 'work and harvest grow sharper',
+        storage: 'food keeps longer in the store',
+        heat: 'cold nights cost less',
+        clothing: 'warmth holds on the body',
+        furnace: 'harder makings come within reach',
+        blade: 'cutting goes deeper',
+        vessel: 'water and grain travel better',
+        medicine: 'sickness may yield',
+        weapon: 'the hunt has more force',
+        shelter: 'walls stand easier',
+        cordage: 'binding holds more load',
+      };
+      effect = hints[fn] ? ` â ${hints[fn]}` : ` â better ${fn}`;
+      this.record(
+        a,
+        'thought',
+        `Among them it was felt: ${concept.word} changes how they ${fn}`,
+        { valence: 0.5, intensity: 0.55, concept: concept.key },
+      );
+    }
     this.record(
       a,
       'invention',
-      `${a.name} made ${concept.word}${record?.advance ? ' â nothing they had served so well' : ''}`,
+      `${a.name} made ${concept.word}${record?.advance ? ' â nothing they had served so well' : ''}${effect}`,
       {
         valence: record?.advance ? 0.85 : 0.4,
         intensity: record?.advance ? 0.9 : 0.45,
         concept: concept.key,
         advance: !!record?.advance,
         landmark: !!record?.advance,
+        function: fn,
+        score,
       },
     );
   }
