@@ -397,6 +397,22 @@ export function think(a, ctx) {
           if (p.kind === 'farm' && (a.skills.farm || 0) < 0.5) p.u *= 1.15;
         }
       }
+      // Skyline done: pressure is zero - invent, improve tools, or leave
+      {
+        const settle = ctx.sim.nearestSettlement?.(a.x, a.y);
+        const pressure = ctx.sim.settlementPressure?.(settle) || 0;
+        const n = ctx.sim.living.length || 1;
+        const fed =
+          a.body.hunger < 0.4 &&
+          ctx.sim.totalFood() > n * 2.5;
+        if (fed && pressure < 0.2 && a.body.energy > 0.3) {
+          if (p.kind === 'experiment') p.u *= 1.8;
+          if (p.kind === 'craft') p.u *= 1.35;
+          if (p.kind === 'expand') p.u *= 1.5;
+          if (p.kind === 'build' && !p.payload?.farFocus) p.u *= 0.55;
+          if (p.kind === 'makeArt') p.u *= 1.25;
+        }
+      }
       if (p.kind === 'expand') {
         if (a.body.hunger > 0.38 || a.body.thirst > 0.4) p.u *= 0.05;
         else {
@@ -492,9 +508,9 @@ export function think(a, ctx) {
   }
 
   // Nuclear store: granary before craft/build when hungry or thirsty
-  if (a.body.hunger > 0.32 || a.body.thirst > 0.38) {
+  if (a.body.hunger > 0.26 || a.body.thirst > 0.32) {
     const storeCand = candidates.find((c) => c.kind === 'takeFromStore');
-    if (storeCand && (!hasFood || a.body.hunger > 0.4 || a.body.thirst > 0.4)) {
+    if (storeCand && (!hasFood || a.body.hunger > 0.28 || a.body.thirst > 0.32)) {
       a.action = storeCand;
       a.noteAction?.('takeFromStore');
       a.goal = 'taking from store';
