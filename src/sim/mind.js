@@ -357,6 +357,31 @@ export function think(a, ctx) {
         const n = ctx.sim.living.length;
         if (ctx.sim.totalFood() < n * 2.2) p.u *= 0.25;
       }
+      // Fed society: endless tutoring is not the only story
+      {
+        const n = ctx.sim.living.length || 1;
+        const foodDays = ctx.sim.foodDaysAt?.(ctx.sim.origin) ?? 99;
+        const wellFed =
+          a.body.hunger < 0.35 &&
+          a.body.thirst < 0.35 &&
+          ctx.sim.totalFood() > n * 3 &&
+          foodDays > 12;
+        if (wellFed) {
+          if (p.kind === 'teach') {
+            // Structure lessons especially dull when everyone already farms
+            if (p.structureLesson || String(p.payload || '').startsWith('structure:')) {
+              p.u *= 0.2;
+            } else {
+              p.u *= 0.55;
+            }
+          }
+          if (p.kind === 'experiment') p.u *= 1.55;
+          if (p.kind === 'craft') p.u *= 1.25;
+          if (p.kind === 'makeArt' || p.kind === 'ritual') p.u *= 1.35;
+          if (p.kind === 'expand') p.u *= 1.2;
+          if (p.kind === 'farm' && (a.skills.farm || 0) < 0.5) p.u *= 1.15;
+        }
+      }
       if (p.kind === 'expand') {
         if (a.body.hunger > 0.38 || a.body.thirst > 0.4) p.u *= 0.05;
         else {
