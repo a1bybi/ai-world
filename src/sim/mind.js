@@ -459,23 +459,58 @@ export function think(a, ctx) {
     home &&
     Math.hypot(a.x - home.x, a.y - home.y) < 4 &&
     (a.stats.steps || 0) < world.tick * 0.08;
-  if ((stagnant || campBound) && a.body.hunger < 0.7 && a.body.thirst < 0.7) {
+  if ((stagnant || campBound) && a.body.hunger < 0.65 && a.body.thirst < 0.65) {
     for (const p of candidates) {
-      if (p.kind === 'explore') p.u = Math.max(p.u, 8);
-      if (p.kind === 'gather') p.u = Math.max(p.u, 5);
-      if (p.kind === 'idle') p.u = Math.max(p.u, 4);
+      if (p.kind === 'explore') p.u = Math.max(p.u, 11);
+      if (p.kind === 'gather') p.u = Math.max(p.u, 6);
+      if (p.kind === 'idle') p.u = Math.max(p.u, 3);
       if (p.kind === 'sleep') p.u *= 0.05;
-      if (p.kind === 'follow') p.u *= 0.25;
+      if (p.kind === 'follow') p.u *= 0.2;
+      if (p.kind === 'teach' && a.body.hunger < 0.4) p.u *= 0.45;
     }
     if (!candidates.some((c) => c.kind === 'explore')) {
-      const tx = clamp(a.x + ctx.rng.int(-14, 14), 1, world.w - 2);
-      const ty = clamp(a.y + ctx.rng.int(-14, 14), 1, world.h - 2);
+      const tx = clamp(a.x + ctx.rng.int(-18, 18), 1, world.w - 2);
+      const ty = clamp(a.y + ctx.rng.int(-18, 18), 1, world.h - 2);
       candidates.push({
         kind: 'explore',
-        u: 8,
+        u: 11,
         target: { x: tx, y: ty },
-        dur: 12,
+        dur: 14,
       });
+    }
+  }
+
+  // Nuclear harvest: do not ignore standing grain
+  {
+    const ripeField = (ctx.world.structuresOfKind('field') || []).some(
+      (f) => (f.ripeness || 0) >= 0.85,
+    );
+    if (ripeField && a.body.hunger < 0.85 && a.body.thirst < 0.85) {
+      const farmCand = candidates.find((c) => c.kind === 'farm');
+      if (farmCand) {
+        farmCand.u = Math.max(farmCand.u, 12);
+        // Prefer farm over teach/give when the fields are ready
+        for (const p of candidates) {
+          if (p.kind === 'teach' || p.kind === 'converse') p.u *= 0.35;
+          if (p.kind === 'give' && a.body.hunger < 0.5) p.u *= 0.55;
+        }
+      }
+    }
+  }
+
+  // Nuclear store: heavy food pack -> granary
+  {
+    let foodCarried = 0;
+    for (const [k, v] of a.inventory) {
+      if ((ctx.ont.get(k)?.serves?.('sustenance') || ctx.ont.get(k)?.functions?.sustenance || 0) > 0.15) {
+        foodCarried += v;
+      }
+    }
+    if (foodCarried > 6 && a.body.hunger < 0.5) {
+      const storeCand = candidates.find((c) => c.kind === 'store');
+      if (storeCand) {
+        storeCand.u = Math.max(storeCand.u, 9);
+      }
     }
   }
 
