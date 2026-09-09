@@ -350,8 +350,23 @@ export function think(a, ctx) {
       if (p.kind === 'build' && p.payload?.structure === 'field') {
         const n = ctx.sim.living.length;
         const fields = ctx.world.structuresOfKind('field').length;
-        const want = Math.max(1, Math.min(5, Math.ceil(n / 12)));
+        const want = Math.max(1, Math.min(6, Math.ceil(n / 10)));
         if (fields < want && a.body.hunger < 0.55) p.u *= 1.8 + (want - fields) * 0.35;
+      }
+      if (p.kind === 'build' && a.body.hunger < 0.45 && a.body.thirst < 0.45) {
+        const n = ctx.sim.living.length;
+        const children = ctx.sim.living.filter((x) => x.isChild?.(ctx.world.tick)).length;
+        const st = p.payload?.structure;
+        if (st === 'shelter') {
+          const shelters = ctx.world.structuresOfKind('shelter').length;
+          const want = Math.ceil(n / 1.8);
+          if (shelters < want) p.u *= 1.5 + Math.min(1.2, (want - shelters) * 0.2);
+          if (children > n * 0.4) p.u *= 1.35;
+        }
+        if (st === 'well' || st === 'hearth' || st === 'path') {
+          const have = ctx.world.structuresOfKind(st).length;
+          if (have < Math.ceil(n / 12)) p.u *= 1.4;
+        }
       }
       if (p.kind === 'teach' || p.kind === 'trade' || p.kind === 'converse') {
         const n = ctx.sim.living.length;
