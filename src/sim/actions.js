@@ -286,21 +286,20 @@ const STRUCTURE_KINDS = {
 function structureCap(kind, people) {
   const p = Math.max(1, people || 1);
   switch (kind) {
-    case 'shelter': return Math.max(2, Math.ceil(p / 2.2));
-    case 'hearth': return Math.max(1, Math.ceil(p / 10));
-    case 'store': return Math.max(1, Math.ceil(p / 16));
+    case 'shelter': return Math.max(2, Math.ceil(p / 1.8));
+    case 'hearth': return Math.max(1, Math.ceil(p / 8));
+    case 'store': return Math.max(1, Math.min(3, Math.ceil(p / 14)));
     case 'field':
-      // Intensify with scale: ~1 field per 12 people, max 5
-      return Math.max(1, Math.min(5, Math.ceil(p / 12)));
-    case 'workshop': return p >= 8 ? Math.min(2, 1 + Math.floor(p / 22)) : 0;
-    case 'market': return p >= 10 ? Math.min(2, 1 + Math.floor(p / 28)) : 0;
-    case 'hall': return p >= 12 ? 1 : 0;
-    case 'plaza': return p >= 10 ? 1 : 0;
-    case 'shrine': return p >= 10 || p >= 8 ? 1 : 0;
-    case 'well': return p >= 8 ? Math.min(2, 1 + Math.floor(p / 24)) : 0;
-    case 'path': return Math.max(0, Math.ceil(p / 10));
+      return Math.max(1, Math.min(6, Math.ceil(p / 10)));
+    case 'workshop': return p >= 8 ? Math.min(2, 1 + Math.floor(p / 20)) : 0;
+    case 'market': return p >= 12 ? Math.min(2, 1 + Math.floor(p / 28)) : 0;
+    case 'hall': return p >= 14 ? 1 : 0;
+    case 'plaza': return p >= 12 ? 1 : 0;
+    case 'shrine': return p >= 16 ? 2 : p >= 8 ? 1 : 0;
+    case 'well': return Math.max(1, Math.min(3, Math.ceil(p / 12)));
+    case 'path': return Math.max(0, Math.ceil(p / 8));
     case 'wall': return p >= 40 ? 1 : 0;
-    case 'bridge': return 2; // spans handled separately
+    case 'bridge': return 2;
     default: return 2;
   }
 }
@@ -360,9 +359,11 @@ function settlementBuildAllowed(ctx, settlement, kind) {
   const tick = ctx.world.tick || 0;
   const map = ctx.sim._lastMajorBuildTick || (ctx.sim._lastMajorBuildTick = new Map());
   const last = map.get(key) ?? -999;
-  // 18 hours between major structures at a camp
-  return tick - last >= 18;
+  const basic = kind === 'shelter' || kind === 'hearth' || kind === 'well' || kind === 'field';
+  const gap = basic ? 10 : 18;
+  return tick - last >= gap;
 }
+
 
 function noteSettlementBuild(ctx, settlement, kind) {
   if (kind === 'path') return;
@@ -1167,13 +1168,24 @@ export const ACTIONS = {
         if (!structureUnlocked(kind, ctx, settlement, nearCount)) continue;
         if (!settlementBuildAllowed(ctx, settlement, kind)) continue;
 
-        if (kind === 'shelter' && existing < Math.max(1, Math.ceil(people / 2.5))) {
-          need = Math.max(need, 0.5);
+        if (kind === 'shelter' && existing < cap) {
+          const children = ctx.sim.living.filter(
+            (x) => x.isChild?.(ctx.world.tick),
+          ).length;
+          const want = Math.max(
+            Math.ceil(people / 2.2),
+            Math.ceil((people + children) / 2.5),
+          );
+          if (existing < want) {
+            need = Math.max(need, 0.4 + Math.min(0.45, (want - existing) * 0.12));
+          }
         }
         if (kind === 'store' && existing < Math.max(1, Math.ceil(people / 14))) {
           need = Math.max(need, 0.45);
         }
-        if (kind === 'hearth' && existing < 1) need = Math.max(need, 0.4);
+        if (kind === 'hearth' && existing < Math.min(cap, Math.ceil(people / 9))) {
+          need = Math.max(need, existing < 1 ? 0.45 : 0.28);
+        }
         if (kind === 'field') {
           need = Math.max(need, needFieldBoost);
           if (existing < 1) need = Math.max(need, 0.55);
@@ -1204,18 +1216,22 @@ export const ACTIONS = {
             need = Math.max(need, 0.45 + Math.min(0.25, corpses * 0.06));
           }
         }
-        if (kind === 'well' && existing < 1 && people >= 8) need = Math.max(need, 0.38);
-        if (kind === 'path' && existing < cap && people >= 8) need = Math.max(need, 0.28);
+        if (kind === 'well' && existing < cap && people >= 8) {
+          need = Math.max(need, existing < 1 ? 0.42 : 0.28);
+        }
+        if (kind === 'path' && existing < cap && people >= 8) {
+          need = Math.max(need, 0.3);
+        }
 
-        // Diminishing returns: 2nd copy much weaker than 1st
-        need *= 1 / (1 + existing * 1.15);
+        // Soft diminishing - still leave room under the cap
+        need *= 1 / (1 + existing * 0.55);
         // Household pressure: more households than shelters
         if (kind === 'shelter') {
           const hh = ctx.sim.households?.length || 0;
-          if (hh > existing) need = Math.max(need, Math.min(0.55, 0.2 + (hh - existing) * 0.12));
+          if (hh > existing) need = Math.max(need, Math.min(0.6, 0.22 + (hh - existing) * 0.12));
         }
 
-        if (need <= 0.07) continue;
+        if (need <= 0.06) continue;
 
         const purpose =
           existing === 0
