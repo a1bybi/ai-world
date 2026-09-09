@@ -293,8 +293,11 @@ function showTab(name) {
 
 function showStructureInspect(sim, s) {
   if (!sim || !s) return;
-  const text = sim.describeStructure?.(s) || `${s.kind}`;
-  // Prefer the mind pane as a durable inspector; fall back to tip-only
+  const narrow = window.innerWidth < 720;
+  const full = sim.describeStructure?.(s) || `${s.kind}`;
+  const text = narrow
+    ? (sim.describeStructureShort?.(s) || full.split(' | ').slice(0, 3).join(' | '))
+    : full;
   const mind = document.querySelector('#pane-mind .mind-body, #pane-mind, #mindDetail');
   const block = [
     'PLACE',
@@ -428,8 +431,10 @@ function buildControls() {
       const a = hit.agent;
       text = `${a.name} - ${a.goal || 'thinking'}`;
     } else if (hit.kind === 'structure') {
-      text = state.sim.describeStructure?.(hit.structure)
-        || `${hit.structure.word || hit.structure.kind} (${hit.structure.kind}) by ${hit.structure.builtBy || '?'}`;
+      text =
+        state.sim.describeStructureShort?.(hit.structure) ||
+        state.sim.describeStructure?.(hit.structure) ||
+        `${hit.structure.word || hit.structure.kind}`;
     } else {
       const beds = hit.bed
         ? Object.entries(hit.bed)
