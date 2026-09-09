@@ -1636,49 +1636,66 @@ export const ACTIONS = {
       if (!near.length) return [];
 
       const mine = a.memory.knownKeys('recipe');
+      // Structure tutorials only when pupil is a child or truly ignorant - not endless
       const structureLessons = [
         'field', 'store', 'bridge', 'shelter', 'hearth', 'workshop',
         'market', 'hall', 'plaza', 'shrine',
       ]
         .map((k) => `structure:${k}`)
-        .filter((k) => a.memory.knows(k, 0.25));
+        .filter((k) => a.memory.knows(k, 0.35));
 
       if (!mine.length && !structureLessons.length) return [];
 
       const teachNorm = normsFor(a, ctx, ['teaching', 'teach']);
-      const hallBoost = structureBoost(ctx, a, ['hall', 'plaza'], 1.45);
+      const hallBoost = structureBoost(ctx, a, ['hall', 'plaza'], 1.25);
       const out = [];
+      const day = ctx.world.dayNumber || Math.floor(ctx.world.tick / 24) + 1;
 
       for (const o of near) {
         const candidates = [];
         for (const k of mine) {
-          if (o.memory.knows(k, 0.3)) continue;
+          if (o.memory.knows(k, 0.35)) continue;
+          // Cooldown: same pair+recipe not re-taught every tick
+          const coolKey = `taught:${a.id}:${o.id}:${k}`;
+          const last = ctx.sim._teachCool?.get(coolKey) || -999;
+          if (day - last < 8) continue;
           const holders = ctx.sim.living.filter(
             (x) => x.id !== a.id && x.memory.knows(k, 0.25),
           ).length;
-          candidates.push({ key: k, rarity: 1 / Math.max(1, holders), isStructure: false });
+          candidates.push({
+            key: k,
+            rarity: 1 / Math.max(1, holders) + (holders === 0 ? 1.5 : 0),
+            isStructure: false,
+          });
         }
         for (const k of structureLessons) {
-          if (o.memory.knows(k, 0.25)) continue;
-          candidates.push({ key: k, rarity: 1.2, isStructure: true });
+          if (o.memory.knows(k, 0.3)) continue;
+          const coolKey = `taught:${a.id}:${o.id}:${k}`;
+          const last = ctx.sim._teachCool?.get(coolKey) || -999;
+          if (day - last < 20) continue;
+          // Only children or very new adults get structure tours
+          if (!o.isChild(ctx.world.tick) && o.ageAt(ctx.world.tick) > 14) continue;
+          candidates.push({ key: k, rarity: 0.35, isStructure: true });
         }
         if (!candidates.length) continue;
 
         candidates.sort((x, y) => y.rarity - x.rarity);
         const pick = candidates[0];
 
-        const kinBonus = a.children.includes(o.id) ? 1.5 : 0;
-        const childBonus = o.isChild(ctx.world.tick) ? 1.35 : 1;
-        const elderBonus = a.isElder(ctx.world.tick) ? 1.4 : 1;
+        const kinBonus = a.children.includes(o.id) ? 1.35 : 0;
+        const childBonus = o.isChild(ctx.world.tick) ? 1.2 : 0.85;
+        const elderBonus = a.isElder(ctx.world.tick) ? 1.25 : 1;
+        const recipeBoost = pick.isStructure ? 0.45 : 1.35;
 
         const u =
-          (0.35 + a.genome.empathy * 0.9 + kinBonus) *
+          (0.28 + a.genome.empathy * 0.7 + kinBonus) *
           (ctx.bias?.social ?? 1) *
-          (0.45 + a.skills.teach) *
+          (0.4 + a.skills.teach) *
           elderBonus *
           childBonus *
-          (1 + pick.rarity * 2) *
-          (1 + Math.max(0, teachNorm) * 0.35) *
+          recipeBoost *
+          (1 + pick.rarity * 1.6) *
+          (1 + Math.max(0, teachNorm) * 0.25) *
           hallBoost;
 
         out.push({
@@ -1690,7 +1707,7 @@ export const ACTIONS = {
           dur: 3,
         });
       }
-      return topN(out, 2, (x) => x.u);
+      return topN(out, 1, (x) => x.u);
     },
     run(a, ctx, act) {
       const o = ctx.sim.byId(act.targetId);
@@ -1700,6 +1717,10 @@ export const ACTIONS = {
         return 'continue';
       }
       if (--act.dur > 0) return 'continue';
+
+      const day = ctx.world.dayNumber || Math.floor(ctx.world.tick / 24) + 1;
+      if (!ctx.sim._teachCool) ctx.sim._teachCool = new Map();
+      ctx.sim._teachCool.set(`taught:${a.id}:${o.id}:${act.payload}`, day);
 
       if (act.structureLesson || String(act.payload).startsWith('structure:')) {
         const b = a.memory.belief(act.payload);
@@ -1715,11 +1736,18 @@ export const ACTIONS = {
           o.stats.learned = (o.stats.learned || 0) + 1;
           ctx.sim.counters.lessons++;
           const kind = act.payload.replace('structure:', '');
+          // Quiet by default - structure tours clutter the chronicle
+          const firstish = (o.stats.learned || 0) <= 2;
           ctx.sim.record(
             a,
             'teach',
             `${a.name} taught ${o.name} what a ${kind} is for`,
-            { actors: [a.id, o.id], valence: 0.4, intensity: 0.4 },
+            {
+              actors: [a.id, o.id],
+              valence: 0.35,
+              intensity: firstish ? 0.45 : 0.2,
+              quiet: !firstish,
+            },
           );
         }
         return 'done';
