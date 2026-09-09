@@ -1030,6 +1030,23 @@ export class Simulation {
     return `A ${kind} of ${mat}, ${wear}.`;
   }
 
+  /** Compact place line for small screens / map tip. */
+  describeStructureShort(s) {
+    if (!s) return '';
+    const look = this.structureAppearance?.(s) || s.kind;
+    const bits = [look];
+    if (s.kind === 'field') {
+      bits.push(
+        `${Math.round(clamp(s.ripeness || 0, 0, 1) * 100)}% ripe` +
+          ((s.tended || 0) < 0.2 ? ', untended' : ''),
+      );
+    } else if (s.condition != null) {
+      bits.push(`${Math.round(clamp(s.condition, 0, 1) * 100)}%`);
+    }
+    if (s.builtBy) bits.push(`by ${s.builtBy}`);
+    return bits.join(' Â· ');
+  }
+
   describeStructure(s) {
     if (!s) return 'Nothing stands here.';
     const day = Math.floor((s.builtTick ?? 0) / 24) + 1;
