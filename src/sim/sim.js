@@ -974,8 +974,8 @@ export class Simulation {
   /** Pull food/water from the nearest stocked store into the belly when critical. */
   emergencyFromStore(a) {
     if (!a?.alive) return false;
-    const needFood = a.body.hunger >= 0.55;
-    const needDrink = a.body.thirst >= 0.5;
+    const needFood = a.body.hunger >= 0.42;
+    const needDrink = a.body.thirst >= 0.4;
     if (!needFood && !needDrink) return false;
     const stores = this.world.structuresOfKind('store').filter((s) => s.stock);
     if (!stores.length) return false;
@@ -988,7 +988,8 @@ export class Simulation {
         store = s;
       }
     }
-    if (!store || bd > 28) return false;
+    // Anywhere in the home region; stores are communal knowledge
+    if (!store || bd > 48) return false;
     // Too far: bias them by setting a goal memory, still try if moderately close
     const take = (k, eat = false) => {
       const have = store.stock.get(k) || 0;
@@ -1033,7 +1034,11 @@ export class Simulation {
       const age = a.ageAt(this.world.tick);
 
       // Full granary must not coexist with routine starvation
-      if (a.body.hunger >= 0.55 || a.body.thirst >= 0.5) {
+      if (a.body.hunger >= 0.42 || a.body.thirst >= 0.4) {
+        this.emergencyFromStore(a);
+      }
+      // Children: second chance from store even if slightly less critical
+      if (a.isChild(this.world.tick) && (a.body.hunger >= 0.35 || a.body.thirst >= 0.35)) {
         this.emergencyFromStore(a);
       }
 
@@ -1657,7 +1662,7 @@ export class Simulation {
       for (const st of this.settlements) {
         nearest = Math.min(nearest, Math.hypot(st.x - spot.x, st.y - spot.y));
       }
-      if (nearest > 16 && day >= 80 && alive >= 24) {
+      if (nearest > 14 && day >= 70 && alive >= 22) {
         this.foundSettlement(a, { x: spot.x, y: spot.y });
       }
     }
@@ -1668,11 +1673,16 @@ export class Simulation {
       a,
       first ? 'first' : 'build',
       first
-        ? `${a.name} raised the first ${word} of ${settlement.name} - ${kind}, out of ${
+        ? `${a.name} raised the first ${word} of ${settlement.name} (${kind}) from ${
             this.ont.get(materialKey)?.word || materialKey
           }`
-        : `${a.name} raised a ${word}`,
-      { valence: 0.7, intensity: first ? 0.95 : 0.5, landmark: first },
+        : `${a.name} raised another ${kind} (${word})`,
+      {
+        valence: 0.7,
+        intensity: first ? 0.95 : 0.25,
+        landmark: first,
+        quiet: !first, // only the first of each kind clutters the feed
+      },
     );
     if (kind === 'shelter') {
       for (const o of this.living) {
@@ -1819,7 +1829,7 @@ export class Simulation {
       this.record(
         a,
         'thought',
-        `Among them it was felt: ${concept.word} changes how they ${fn}`,
+        `Among them it was felt: ${concept.word} changes how they handle ${fn}`,
         { valence: 0.5, intensity: 0.55, concept: concept.key },
       );
     }
@@ -2011,19 +2021,20 @@ export class Simulation {
       const recent = (kind) => t.get(kind) || 0;
       // Lifetime stats + recent behavior (recent weighted higher); trade damped
       const scores = [
-        ['maker', s.inventions * 2.5 + a.skills.craft * 3 + recent('craft') * 1.2 + recent('experiment') * 1.4],
-        ['forager', s.harvested * 0.04 + a.skills.forage * 2.5 + recent('gather') * 1.5],
-        ['hunter', a.skills.hunt * 4 + recent('hunt') * 2],
-        ['builder', s.built * 2.5 + a.skills.build * 3 + recent('build') * 2],
-        ['farmer', a.skills.farm * 4 + recent('farm') * 2.5],
-        ['healer', s.rescues * 2 + a.skills.heal * 3 + recent('care') * 2],
-        ['teacher', s.taught * 1.2 + a.skills.teach * 2.5 + recent('teach') * 2],
-        ['trader', s.trades * 0.25 + a.skills.trade * 1.5 + recent('trade') * 0.8],
-        ['speaker', a.skills.speak * 2 + this.respectFor(a) * 4 + recent('converse') * 0.5],
-        ['artist', s.crafted * 0.08 + a.skills.art * 4 + recent('makeArt') * 2],
+        ['maker', s.inventions * 2.2 + a.skills.craft * 3 + recent('craft') * 2 + recent('experiment') * 2],
+        ['forager', s.harvested * 0.05 + a.skills.forage * 3 + recent('gather') * 2.2],
+        ['hunter', a.skills.hunt * 4 + recent('hunt') * 2.5],
+        ['builder', s.built * 2.5 + a.skills.build * 3 + recent('build') * 2.5],
+        ['farmer', a.skills.farm * 4.5 + recent('farm') * 3],
+        ['healer', s.rescues * 2 + a.skills.heal * 3 + recent('care') * 2.5],
+        // Lifetime taught counts less so a few lessons do not lock everyone as teacher
+        ['teacher', s.taught * 0.35 + a.skills.teach * 2 + recent('teach') * 1.6],
+        ['trader', s.trades * 0.4 + a.skills.trade * 2 + recent('trade') * 1.5],
+        ['speaker', a.skills.speak * 2 + this.respectFor(a) * 3 + recent('converse') * 1],
+        ['artist', s.crafted * 0.1 + a.skills.art * 4 + recent('makeArt') * 2.5],
       ];
       const best = topN(scores, 1, (x) => x[1])[0];
-      a.role = best && best[1] > 1.5 ? best[0] : 'wanderer';
+      a.role = best && best[1] > 2.0 ? best[0] : 'wanderer';
       if (a.isElder(this.world.tick) && a.skills.teach > 0.3 && !a.titles.includes('elder')) {
         a.titles.push('elder');
       }
