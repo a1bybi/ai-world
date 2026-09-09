@@ -37,6 +37,7 @@ const state = {
   lastPaint: 0,
   lastLogPush: 0,
   reportOpen: false,
+  selectedStructure: null,
 };
 
 const renderer = new Renderer($('#world'));
@@ -288,6 +289,37 @@ function showTab(name) {
   refreshPanels(true);
 }
 
+function showStructureInspect(sim, s) {
+  if (!sim || !s) return;
+  const text = sim.describeStructure?.(s) || `${s.kind}`;
+  // Prefer the mind pane as a durable inspector; fall back to tip-only
+  const mind = document.querySelector('#pane-mind .mind-body, #pane-mind, #mindDetail');
+  const block = [
+    'PLACE',
+    text.replace(/ \| /g, '\n'),
+    '',
+    'Click a person to open their mind again.',
+  ].join('\n');
+  if (mind) {
+    // Keep roster working: write into a dedicated slot if present
+    let slot = document.querySelector('#structureInspect');
+    if (!slot) {
+      slot = document.createElement('div');
+      slot.id = 'structureInspect';
+      slot.style.cssText = 'padding:0.75rem 1rem;font-size:0.85rem;line-height:1.45;white-space:pre-wrap;border-bottom:1px solid rgba(255,255,255,0.08)';
+      const pane = document.querySelector('#pane-mind') || document.querySelector('#pane-world');
+      if (pane) pane.insertBefore(slot, pane.firstChild);
+    }
+    if (slot) slot.textContent = block;
+  }
+  const tip = $('#tip');
+  if (tip) {
+    tip.textContent = text;
+    tip.dataset.show = 'true';
+  }
+  showTab('mind');
+}
+
 function buildControls() {
   const speeds = $('#speeds');
   speeds.innerHTML = SPEEDS.map((s, i) => {
@@ -368,7 +400,19 @@ function buildControls() {
   cv.addEventListener('click', (e) => {
     const rect = cv.getBoundingClientRect();
     const hit = renderer.pick(e.clientX - rect.left, e.clientY - rect.top, state.sim);
-    if (hit?.kind === 'person') select(hit.agent.id);
+    if (hit?.kind === 'person') {
+      state.selectedStructure = null;
+      select(hit.agent.id);
+      return;
+    }
+    if (hit?.kind === 'structure') {
+      state.selected = null;
+      renderer.selected = null;
+      state.selectedStructure = hit.structure;
+      showStructureInspect(state.sim, hit.structure);
+      return;
+    }
+    state.selectedStructure = null;
   });
   cv.addEventListener('mousemove', (e) => {
     const rect = cv.getBoundingClientRect();
@@ -380,9 +424,10 @@ function buildControls() {
     let text = '';
     if (hit.kind === 'person') {
       const a = hit.agent;
-      text = `${a.name} · ${a.goal || 'thinking'}`;
+      text = `${a.name} - ${a.goal || 'thinking'}`;
     } else if (hit.kind === 'structure') {
-      text = `${hit.structure.word || hit.structure.kind} · ${hit.structure.kind} by ${hit.structure.builtBy}`;
+      text = state.sim.describeStructure?.(hit.structure)
+        || `${hit.structure.word || hit.structure.kind} (${hit.structure.kind}) by ${hit.structure.builtBy || '?'}`;
     } else {
       const beds = hit.bed
         ? Object.entries(hit.bed)
@@ -393,7 +438,7 @@ function buildControls() {
             )
             .join(', ')
         : '';
-      text = `${hit.terrain}${beds ? ' · ' + beds : ''}`;
+      text = `${hit.terrain}${beds ? ' - ' + beds : ''}`;
     }
     tip.textContent = text;
     tip.style.left = `${e.clientX - rect.left}px`;
