@@ -34,6 +34,8 @@ const state = {
   tickRate: 0,
   rateStamp: 0,
   lastPanel: 0,
+  lastPaint: 0,
+  lastLogPush: 0,
   reportOpen: false,
 };
 
@@ -66,59 +68,91 @@ function select(id) {
 
 function frame(now) {
   requestAnimationFrame(frame);
-  const dt = Math.min(0.25, (now - state.lastFrame) / 1000 || 0);
+  // Cap dt so a background tab does not dump thousands of ticks at once
+  const dt = Math.min(0.05, Math.max(0, (now - state.lastFrame) / 1000 || 0));
   state.lastFrame = now;
 
   const sim = state.sim;
   if (!sim) return;
 
+  const speed = SPEEDS[state.speedIdx];
+  const tps = speed.tps;
+  const fast = tps === Infinity || tps >= 24;
+
   if (state.running && !state.reportOpen) {
-    const tps = SPEEDS[state.speedIdx].tps;
     let ran = 0;
     if (tps === Infinity) {
-      const budget = now + 9;
-      while (performance.now() < budget && sim.living.length) {
+      // Spend most of the frame on simulation; leave a little for paint/UI
+      const t0 = performance.now();
+      const budgetMs = 14;
+      while (performance.now() - t0 < budgetMs && sim.living.length) {
         sim.step();
         ran++;
-        if (ran > 4000) break;
+        if (ran >= 6000) break;
       }
-    } else {
+    } else if (tps > 0) {
       state.carry += tps * dt;
-      const want = Math.min(Math.floor(state.carry), 600);
+      // At high multipliers, allow larger bursts so 60x can keep up
+      const burstCap = tps >= 60 ? 1200 : tps >= 24 ? 400 : tps >= 8 ? 120 : 40;
+      const want = Math.min(Math.floor(state.carry), burstCap);
       state.carry -= want;
       for (let i = 0; i < want; i++) {
         sim.step();
         ran++;
+        if (!sim.living.length) break;
       }
     }
     state.ticksThisSecond += ran;
-    if (ran) {
+
+    // Drain log less often when racing - DOM is the usual bottleneck
+    const logInterval = fast ? 180 : 50;
+    if (ran && now - state.lastLogPush >= logInterval) {
+      state.lastLogPush = now;
       panels.pushEvents(sim.drainLog(), sim);
       maybeVoice(sim);
+    } else if (!ran && now - state.lastLogPush >= 400) {
+      // still flush quiet backlog occasionally
+      const buf = sim.drainLog();
+      if (buf.length) {
+        state.lastLogPush = now;
+        panels.pushEvents(buf, sim);
+      }
     }
+
     if (!sim.living.length && state.running) {
       state.running = false;
       updatePlayBtn();
+      panels.pushEvents(sim.drainLog(), sim);
       openReport('Everyone is dead. This is what their world amounted to.');
     }
   }
 
-  if (now - state.rateStamp > 500) {
-    state.tickRate = state.ticksThisSecond / ((now - state.rateStamp) / 1000);
+  if (now - state.rateStamp > 400) {
+    const elapsed = (now - state.rateStamp) / 1000;
+    state.tickRate = elapsed > 0 ? state.ticksThisSecond / elapsed : 0;
     state.ticksThisSecond = 0;
     state.rateStamp = now;
-    const s = SPEEDS[state.speedIdx];
-    if (!state.running) {
-      $('#rateOut').textContent = 'paused';
-    } else if (s.tps === Infinity) {
-      $('#rateOut').textContent = `${Math.round(state.tickRate)} hours/s · max`;
-    } else {
-      $('#rateOut').textContent = `${Math.round(state.tickRate)} hours/s · target ${s.tps}`;
+    const el = $('#rateOut');
+    if (el) {
+      if (!state.running) {
+        el.textContent = 'paused';
+      } else if (tps === Infinity) {
+        el.textContent = `${Math.round(state.tickRate)} hours/s - max`;
+      } else {
+        el.textContent = `${Math.round(state.tickRate)} hours/s - target ${tps}`;
+      }
     }
   }
 
-  paint();
-  if (now - state.lastPanel > 420) {
+  // Throttle canvas: full rate when watching closely, slower when accelerating
+  const paintEvery = tps === 0 ? 200 : tps === Infinity ? 100 : tps >= 24 ? 80 : tps >= 8 ? 50 : 33;
+  if (now - state.lastPaint >= paintEvery) {
+    state.lastPaint = now;
+    paint();
+  }
+
+  const panelEvery = fast ? 700 : 420;
+  if (now - state.lastPanel > panelEvery) {
     state.lastPanel = now;
     refreshPanels();
   }
@@ -218,14 +252,19 @@ function setSpeed(i) {
   if (SPEEDS[i].tps > 0) state.lastSpeedIdx = i;
   state.running = SPEEDS[i].tps > 0;
   state.carry = 0;
-  for (const b of $('#speeds').children) {
-    b.setAttribute('aria-pressed', String(+b.dataset.i === i));
+  state.ticksThisSecond = 0;
+  state.rateStamp = performance.now();
+  const speeds = $('#speeds');
+  if (speeds) {
+    for (const b of speeds.children) {
+      b.setAttribute('aria-pressed', String(+b.dataset.i === i));
+    }
   }
   updatePlayBtn();
 }
 
 function updatePlayBtn() {
-  $('#playBtn').textContent = state.running ? '❚❚ Pause' : '▶ Play';
+  $('#playBtn').textContent = state.running ? 'Pause' : 'Play';
 }
 
 function togglePlay() {
@@ -233,7 +272,8 @@ function togglePlay() {
     setSpeed(0);
   } else {
     closeReport();
-    setSpeed(state.lastSpeedIdx > 0 ? state.lastSpeedIdx : 1);
+    const resume = state.lastSpeedIdx > 0 ? state.lastSpeedIdx : 1;
+    setSpeed(resume);
   }
 }
 
