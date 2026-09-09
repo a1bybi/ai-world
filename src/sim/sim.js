@@ -67,7 +67,8 @@ export class Simulation {
     this.marketPrices = new Map();
     this.lostKnowledge = [];
     this.inventionTicks = new Map();
-    this.decisionLog = []; // observer samples {tick, name, goal, chose, why, also}
+    this.decisionLog = [];
+    this._teachCool = new Map(); // observer samples {tick, name, goal, chose, why, also}
     this.techEffects = []; // advances with human-readable impact
     this.wantedMaterials = new Map();
     this.lexicon = new Map();
@@ -796,11 +797,14 @@ export class Simulation {
     const word = c?.word || key;
     if (c?.bestFn) this.registerLex(word, c.bestFn, 'recipe', key);
 
+    const holders = this.living.filter((x) => x.memory.knows(key, 0.25)).length;
+    const rare = holders <= 3;
     this.record(a, 'teach', `${a.name} taught ${o.name} the making of ${word}`, {
       actors: [a.id, o.id],
       valence: 0.45,
-      intensity: 0.45,
+      intensity: rare ? 0.5 : 0.25,
       concept: key,
+      quiet: !rare && holders > 6,
     });
     if ((b.kind || 'recipe') === 'recipe' || this.ont.get(key)) {
       this.archiveKnowledge(key);
