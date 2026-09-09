@@ -973,6 +973,63 @@ export class Simulation {
 
   /** Pull food/water from the nearest stocked store into the belly when critical. */
   /** Observer-facing summary of a built place. */
+  /** Short visual reading of a place for the observer. */
+  structureAppearance(s) {
+    if (!s) return '';
+    const mat = s.material
+      ? (this.ont.get(s.material)?.word || s.material)
+      : 'earth and hands';
+    const cond = clamp(s.condition ?? 1, 0, 1);
+    const wear =
+      cond > 0.85 ? 'still sound' :
+      cond > 0.6 ? 'weathered' :
+      cond > 0.35 ? 'tired by wind and rain' :
+      'near ruin';
+    const kind = s.kind;
+    if (kind === 'field') {
+      const ripe = clamp(s.ripeness ?? 0, 0, 1);
+      const crop =
+        ripe > 0.85 ? 'standing grain ready to cut' :
+        ripe > 0.45 ? 'green rows half-grown' :
+        ripe > 0.15 ? 'turned earth with young shoots' :
+        'bare turned ground';
+      const care = (s.tended ?? 0) > 0.3 ? 'recently tended' : 'left alone of late';
+      return `Open field of ${mat}: ${crop}, ${care}.`;
+    }
+    if (kind === 'shelter') {
+      return `A low shelter of ${mat}, roof ${wear}.`;
+    }
+    if (kind === 'store') {
+      return `A store-house of ${mat}, walls ${wear}.`;
+    }
+    if (kind === 'hearth') {
+      return `A hearth ringed in ${mat}, fire-blackened stone.`;
+    }
+    if (kind === 'well') {
+      return `A well lined with ${mat}, mouth open to the sky.`;
+    }
+    if (kind === 'bridge') {
+      const n = s.spanLen ? `${s.spanLen} lengths of ` : '';
+      return `A bridge of ${n}${mat} spanning the water, ${wear}.`;
+    }
+    if (kind === 'path') {
+      return `Beaten path packed from ${mat}.`;
+    }
+    if (kind === 'shrine') {
+      return `A shrine mark of ${mat}, ${wear}.`;
+    }
+    if (kind === 'hall') {
+      return `A hall of ${mat}, broad roof ${wear}.`;
+    }
+    if (kind === 'workshop') {
+      return `A workshop of ${mat}, tools left in the dust.`;
+    }
+    if (kind === 'plaza' || kind === 'market') {
+      return `Open ${kind} ground edged with ${mat}.`;
+    }
+    return `A ${kind} of ${mat}, ${wear}.`;
+  }
+
   describeStructure(s) {
     if (!s) return 'Nothing stands here.';
     const day = Math.floor((s.builtTick ?? 0) / 24) + 1;
@@ -981,6 +1038,7 @@ export class Simulation {
       : null;
     const lines = [
       `${s.word || s.kind} (${s.kind})`,
+      this.structureAppearance(s),
       s.builtBy
         ? `Built by ${s.builtBy} on day ${day}`
         : `Standing since day ${day}`,
@@ -1021,7 +1079,7 @@ export class Simulation {
     return lines.join(' | ');
   }
 
-    emergencyFromStore(a) {
+  emergencyFromStore(a) {
     if (!a?.alive) return false;
     const needFood = a.body.hunger >= 0.42;
     const needDrink = a.body.thirst >= 0.4;
