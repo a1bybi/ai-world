@@ -1478,22 +1478,26 @@ export const ACTIONS = {
       const storeEmpty = ![...ctx.world.structuresOfKind('store')].some(
         (s) => s.stock && [...s.stock.values()].some((v) => v > 2),
       );
-      const scarcity = foodTight || storeEmpty ? 2.4 : 1;
-      const hungerFarm =
-        hungry && ripe > 0.65
-          ? 3.2 + a.body.hunger * 5
-          : ripe > 0.85
-            ? 2.0 + a.body.hunger * 2
-            : ripe > 0.4
-              ? 0.9 * purpose * scarcity
-              : 0.45 * purpose * scarcity;
+      // Even when packs are full, ripe fields must be cut or they rot unused
+      const scarcity = foodTight || storeEmpty ? 2.4 : 1.2;
+      let hungerFarm;
+      if (ripe >= 0.85) {
+        hungerFarm = 6.5 + a.body.hunger * 3 + (storeEmpty ? 3 : 1);
+      } else if (hungry && ripe > 0.55) {
+        hungerFarm = 3.5 + a.body.hunger * 5;
+      } else if (ripe > 0.4) {
+        hungerFarm = 1.1 * purpose * scarcity;
+      } else {
+        hungerFarm = 0.55 * purpose * scarcity;
+      }
+      // Untended fields still need hands even when food is abundant
+      if ((f.tended || 0) < 0.2 && ripe < 0.85) hungerFarm = Math.max(hungerFarm, 1.4 * purpose);
       const u =
         (hungerFarm *
           (ctx.bias?.work ?? 1) *
-          (0.5 + a.skills.farm) *
-          purpose *
-          scarcity) /
-        (1 + dist(a, f) * 0.035);
+          (0.55 + a.skills.farm) *
+          Math.max(purpose, 0.7)) /
+        (1 + dist(a, f) * 0.03);
       return [{ kind: 'farm', u, target: T(f.x, f.y), field: f, dur: 2 }];
     },
     run(a, ctx, act) {
@@ -1563,19 +1567,23 @@ export const ACTIONS = {
   store: {
     category: 'work',
     propose(a, ctx) {
-      if (a.body.hunger > 0.55) return [];
+      if (a.body.hunger > 0.62) return [];
       const stores = ctx.world.structuresOfKind('store');
       if (!stores.length) return [];
       let surplus = 0;
       for (const [k, v] of a.inventory) {
         const c = ctx.ont.get(k);
-        if (c?.functions.sustenance && v > 3) surplus += v - 3;
+        if ((c?.functions?.sustenance || c?.serves?.('sustenance') || 0) > 0.15 && v > 2) {
+          surplus += v - 2;
+        }
       }
-      if (surplus < 2) return [];
+      if (surplus < 1) return [];
       const s = topN(stores, 1, (x) => -dist(a, x))[0];
-      const purpose = knownStructureUse(a, 'store');
+      const purpose = Math.max(0.5, knownStructureUse(a, 'store'));
+      // Heavy packs should empty into the granary so the camp has a buffer
       const u =
-        surplus * 0.16 * purpose * (0.5 + a.genome.patience) * (ctx.bias?.hoard ?? 1);
+        surplus * 0.55 * purpose * (0.55 + a.genome.patience) * (ctx.bias?.hoard ?? 1) +
+        (surplus > 8 ? 3 : 0);
       return [{ kind: 'store', u, target: T(s.x, s.y), store: s, dur: 1 }];
     },
     run(a, ctx, act) {
@@ -1586,8 +1594,8 @@ export const ACTIONS = {
       let moved = 0;
       for (const [k, v] of [...a.inventory]) {
         const c = ctx.ont.get(k);
-        if (c?.functions.sustenance && v > 3) {
-          const give = v - 3;
+        if ((c?.functions?.sustenance || c?.serves?.('sustenance') || 0) > 0.15 && v > 2) {
+          const give = v - 2;
           a.take(k, give);
           act.store.stock.set(k, (act.store.stock.get(k) || 0) + give);
           moved += give;
