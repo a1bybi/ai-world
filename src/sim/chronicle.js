@@ -534,7 +534,7 @@ export class Chronicle {
       );
       if (p.topHeld.length) {
         lines.push(
-          `  Most held there: ${p.topHeld.map((g) => `${g.label} Ã${g.qty}`).join(', ')}.`,
+          `  Most held there: ${p.topHeld.map((g) => `${g.label} x${g.qty}`).join(', ')}.`,
         );
       }
     }
