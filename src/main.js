@@ -162,6 +162,8 @@ function frame(now) {
 function paint() {
   const sim = state.sim;
   if (!sim) return;
+  renderer.selected = state.selected;
+  renderer.selectedStructure = state.selectedStructure;
   renderer.draw(sim);
   const w = sim.world;
   $('#clock').textContent = w.timeString();
