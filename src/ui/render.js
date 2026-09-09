@@ -2,6 +2,9 @@
 // buffer; everything that changes — resources, weather, paths, people — is drawn
 // on top each frame. Overlays let the observer see what is normally invisible:
 // mood, hunger, knowledge, danger, footfall.
+//
+// Structures are drawn as small footprints whose color follows material and
+// condition, so a stone store does not look like a reed shelter.
 
 import { TERRAIN, TERRAIN_NAME } from '../world/world.js';
 import { clamp } from '../core/util.js';
@@ -18,9 +21,39 @@ const BASE = {
   [TERRAIN.SAND]:   [134, 118, 88],
 };
 
-const STRUCT_GLYPH = {
-  shelter: '\u2302', hearth: '\u25c8', store: '\u25a4', workshop: '\u2692',
-  field: '\u2261', well: '\u25cb', shrine: '\u2020', wall: '\u2593', hall: '\u25b2',
+/** Fallback when material is unknown — by structure kind. */
+const KIND_COLOR = {
+  shelter: '#cbb79a',
+  hearth: '#e08a3c',
+  store: '#d8c48a',
+  workshop: '#c99a63',
+  field: '#8bb35a',
+  well: '#7eb0c8',
+  shrine: '#a08fd0',
+  wall: '#9a9590',
+  hall: '#d4b896',
+  plaza: '#c4b8a0',
+  market: '#d8c48a',
+  bridge: '#a89070',
+  path: '#c4a878',
+};
+
+/** Material key (or ontology word fragment) → fill color. */
+const MATERIAL_COLOR = {
+  wood: '#a67c52',
+  timber: '#a67c52',
+  reed: '#9aaa5c',
+  fibre: '#b8a878',
+  fiber: '#b8a878',
+  stone: '#9a9690',
+  rock: '#9a9690',
+  clay: '#c4845a',
+  earth: '#8b7355',
+  ore: '#8a7a6a',
+  metal: '#8a8a96',
+  bone: '#d4cbb8',
+  hide: '#8b6914',
+  thatch: '#b8a060',
 };
 
 export const OVERLAYS = [
@@ -33,12 +66,22 @@ export const OVERLAYS = [
   { key: 'danger',    label: 'danger' },
 ];
 
+function materialColor(s) {
+  const raw = String(s.material || '').toLowerCase();
+  if (raw && MATERIAL_COLOR[raw]) return MATERIAL_COLOR[raw];
+  for (const [k, col] of Object.entries(MATERIAL_COLOR)) {
+    if (raw.includes(k)) return col;
+  }
+  return KIND_COLOR[s.kind] || '#cbb79a';
+}
+
 export class Renderer {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.overlay = 'resources';
     this.selected = null;
+    this.selectedStructure = null;
     this.hover = null;
     this.terrainCache = null;
     this.cacheKey = '';
@@ -84,7 +127,6 @@ export class Renderer {
     for (let i = 0; i < w * h; i++) {
       const t = world.terrain[i];
       const base = BASE[t] || [80, 80, 80];
-      // fertility and a touch of value-noise shading give the land texture
       const f = world.fertility[i];
       const shade = 0.82 + f * 0.34;
       const o = i * 4;
@@ -145,27 +187,30 @@ export class Renderer {
       ctx.globalAlpha = 1;
     }
 
-    // ── structures ─────────────────────────────────────────────────────
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const gsize = Math.max(8, T * 1.5);
-    ctx.font = `${gsize}px 'JetBrains Mono', monospace`;
+    // ── structures (footprints by kind + material color) ───────────────
     for (const s of world.structures) {
-      const p = this.toScreen(s.x, s.y);
-      ctx.fillStyle = 'rgba(10,8,6,0.55)';
-      ctx.fillRect(p.x - T * 0.9, p.y - T * 0.9, T * 1.8, T * 1.8);
-      ctx.fillStyle = s.kind === 'field' ? '#8bb35a'
-        : s.kind === 'hearth' ? '#e08a3c'
-        : s.kind === 'shrine' ? '#a08fd0'
-        : s.kind === 'store' ? '#d8c48a'
-        : '#cbb79a';
-      ctx.globalAlpha = 0.45 + s.condition * 0.55;
-      ctx.fillText(STRUCT_GLYPH[s.kind] || '\u25a1', p.x, p.y);
-      ctx.globalAlpha = 1;
+      this.drawStructure(s, T);
+    }
+
+    // selected structure ring
+    const selS = this.selectedStructure;
+    if (selS) {
+      const p = this.toScreen(selS.x, selS.y);
+      const pulse = 2 + Math.sin(performance.now() / 320) * 1.2;
+      ctx.strokeStyle = '#e0a33c';
+      ctx.lineWidth = 1.6;
+      ctx.strokeRect(
+        p.x - T * 0.95 - pulse * 0.3,
+        p.y - T * 0.95 - pulse * 0.3,
+        T * 1.9 + pulse * 0.6,
+        T * 1.9 + pulse * 0.6,
+      );
     }
 
     // ── named places ───────────────────────────────────────────────────
     ctx.font = `${Math.max(9, T * 1.0)}px 'JetBrains Mono', monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
     for (const site of world.sites) {
       const p = this.toScreen(site.x, site.y);
       ctx.fillStyle = site.kind === 'graves' ? 'rgba(190,170,150,0.75)' : 'rgba(224,163,60,0.9)';
@@ -199,7 +244,6 @@ export class Renderer {
       const child = a.isChild(world.tick);
       const r = Math.max(1.6, T * (child ? 0.36 : 0.5));
 
-      // partner tether — you can see who belongs with whom
       if (a.partner) {
         const other = sim.byId(a.partner);
         if (other && other.seq > a.seq) {
@@ -215,7 +259,6 @@ export class Renderer {
       ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
       ctx.fill();
 
-      // a thin ring for elders, a dot of light for someone speaking
       if (a.isElder(world.tick)) {
         ctx.strokeStyle = 'rgba(240,230,210,0.55)';
         ctx.lineWidth = 1;
@@ -236,7 +279,6 @@ export class Renderer {
       ctx.strokeStyle = '#e0a33c';
       ctx.lineWidth = 1.6;
       ctx.beginPath(); ctx.arc(p.x, p.y, T * 0.5 + pulse, 0, Math.PI * 2); ctx.stroke();
-      // where they are heading
       if (sel.action?.target && typeof sel.action.target.x === 'number') {
         const q = this.toScreen(sel.action.target.x, sel.action.target.y);
         ctx.setLineDash([3, 3]);
@@ -246,10 +288,104 @@ export class Renderer {
       }
       ctx.font = `${Math.max(10, T * 1.1)}px 'JetBrains Mono', monospace`;
       ctx.fillStyle = '#f2ece3';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
       ctx.fillText(sel.name, p.x, p.y - T * 1.9);
     }
 
     ctx.restore();
+  }
+
+  /**
+   * Draw one structure as a small footprint.
+   * Color from material; alpha from condition; shape from kind.
+   */
+  drawStructure(s, T) {
+    const ctx = this.ctx;
+    const p = this.toScreen(s.x, s.y);
+    const cond = clamp(s.condition ?? 1, 0.15, 1);
+    const col = materialColor(s);
+    const half = T * 0.85;
+
+    ctx.globalAlpha = 0.35 + cond * 0.55;
+    ctx.fillStyle = col;
+    ctx.strokeStyle = 'rgba(10,8,6,0.65)';
+    ctx.lineWidth = Math.max(1, T * 0.12);
+
+    const kind = s.kind;
+    if (kind === 'field') {
+      // Tilled strips; greener when ripe
+      const ripe = clamp(s.ripeness ?? 0, 0, 1);
+      ctx.fillStyle = ripe > 0.5
+        ? `rgba(120, 160, 60, ${0.35 + ripe * 0.4})`
+        : col;
+      ctx.fillRect(p.x - half, p.y - half, half * 2, half * 2);
+      ctx.strokeStyle = 'rgba(40,50,20,0.45)';
+      for (let i = -1; i <= 1; i++) {
+        const y = p.y + i * T * 0.35;
+        ctx.beginPath();
+        ctx.moveTo(p.x - half * 0.85, y);
+        ctx.lineTo(p.x + half * 0.85, y);
+        ctx.stroke();
+      }
+    } else if (kind === 'bridge' || kind === 'path') {
+      ctx.fillRect(p.x - half * 0.5, p.y - half, half, half * 2);
+      ctx.strokeRect(p.x - half * 0.5, p.y - half, half, half * 2);
+    } else if (kind === 'hearth') {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, half * 0.7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      // ember
+      ctx.globalAlpha = 0.7;
+      ctx.fillStyle = '#e08a3c';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, half * 0.28, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (kind === 'well') {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, half * 0.75, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = '#3a6a80';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, half * 0.35, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (kind === 'shrine') {
+      // upright mark
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y - half);
+      ctx.lineTo(p.x + half * 0.7, p.y + half * 0.6);
+      ctx.lineTo(p.x - half * 0.7, p.y + half * 0.6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    } else if (kind === 'hall' || kind === 'plaza' || kind === 'market') {
+      ctx.fillRect(p.x - half * 1.1, p.y - half * 0.75, half * 2.2, half * 1.5);
+      ctx.strokeRect(p.x - half * 1.1, p.y - half * 0.75, half * 2.2, half * 1.5);
+    } else if (kind === 'store' || kind === 'workshop') {
+      ctx.fillRect(p.x - half, p.y - half * 0.85, half * 2, half * 1.7);
+      ctx.strokeRect(p.x - half, p.y - half * 0.85, half * 2, half * 1.7);
+      // lid line
+      ctx.beginPath();
+      ctx.moveTo(p.x - half, p.y - half * 0.2);
+      ctx.lineTo(p.x + half, p.y - half * 0.2);
+      ctx.stroke();
+    } else {
+      // shelter and default: peaked roof silhouette
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y - half);
+      ctx.lineTo(p.x + half, p.y - half * 0.15);
+      ctx.lineTo(p.x + half * 0.85, p.y + half);
+      ctx.lineTo(p.x - half * 0.85, p.y + half);
+      ctx.lineTo(p.x - half, p.y - half * 0.15);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    ctx.globalAlpha = 1;
   }
 
   personColor(a, sim) {
@@ -275,6 +411,8 @@ export class Renderer {
           : role === 'hunter' ? '#d06a5a'
           : role === 'builder' ? '#c99a63'
           : role === 'farmer' ? '#6daa45'
+          : role === 'forager' ? '#7a9e5c'
+          : role === 'trader' ? '#c9a84c'
           : '#e6ddd0';
       }
     }
@@ -344,7 +482,7 @@ export class Renderer {
 
   legendHtml() {
     const rows = {
-      none: [['#e0a33c', 'maker'], ['#8f7bc4', 'teacher'], ['#6daa45', 'farmer'], ['#d06a5a', 'hunter'], ['#3f9c8e', 'healer'], ['#cfe0a8', 'child'], ['#e6ddd0', 'unassigned']],
+      none: [['#e0a33c', 'maker'], ['#8f7bc4', 'teacher'], ['#6daa45', 'farmer'], ['#7a9e5c', 'forager'], ['#d06a5a', 'hunter'], ['#3f9c8e', 'healer'], ['#cfe0a8', 'child'], ['#e6ddd0', 'unassigned']],
       resources: [['rgba(150,214,90,0.8)', 'food growing'], ['rgba(210,190,150,0.5)', 'stone, wood, clay']],
       mood: [['hsl(120 62% 56%)', 'content'], ['hsl(60 62% 50%)', 'unsettled'], ['hsl(0 62% 46%)', 'wretched']],
       hunger: [['hsl(90 70% 52%)', 'fed'], ['hsl(0 70% 44%)', 'starving']],
