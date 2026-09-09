@@ -1044,7 +1044,7 @@ export class Simulation {
       bits.push(`${Math.round(clamp(s.condition, 0, 1) * 100)}%`);
     }
     if (s.builtBy) bits.push(`by ${s.builtBy}`);
-    return bits.join(' Â· ');
+    return bits.join('  -  ');
   }
 
   describeStructure(s) {
