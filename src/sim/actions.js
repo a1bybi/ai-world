@@ -325,7 +325,7 @@ function structureUnlocked(kind, ctx, settlement, nearCount) {
       return day >= 3 || basics;
     case 'field': {
       const fields = n('field');
-      if (fields < 1) return day >= 5 || hasStore;
+      if (fields < 1) return day >= 8 || (day >= 4 && hasStore);
       // Further fields: need some footing + population or scarcity
       const peopleApprox = ctx.sim.living?.length || 10;
       const tight = ctx.sim.totalFood() < peopleApprox * 2.5;
@@ -358,10 +358,14 @@ function settlementBuildAllowed(ctx, settlement, kind) {
   if (kind === 'path') return true;
   const key = settlement?.id || `${settlement?.x},${settlement?.y}` || 'camp';
   const tick = ctx.world.tick || 0;
+  const day = ctx.world.dayNumber || Math.floor(tick / 24) + 1;
   const map = ctx.sim._lastMajorBuildTick || (ctx.sim._lastMajorBuildTick = new Map());
   const last = map.get(key) ?? -999;
   const basic = kind === 'shelter' || kind === 'hearth' || kind === 'well' || kind === 'field';
-  const gap = basic ? 10 : 18;
+  // Founding week: slow the skyline so day 1 is not a finished town
+  let gap = basic ? 10 : 18;
+  if (day < 15) gap = basic ? 20 : 36;
+  else if (day < 40) gap = basic ? 14 : 24;
   return tick - last >= gap;
 }
 
