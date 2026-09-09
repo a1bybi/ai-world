@@ -51,8 +51,8 @@ function newWorld(seed) {
   renderer.cacheKey = '';
   panels.clearFeed();
   renderer.resize(state.sim.world);
-  $('#worldName').textContent = `${state.sim.settlementName} · ${state.sim.lang.name}`;
-  document.title = `${state.sim.settlementName} — Aurorae`;
+  $('#worldName').textContent = `${state.sim.settlementName}  -  ${state.sim.lang.name}`;
+  document.title = `${state.sim.settlementName} - Aurorae`;
   panels.pushEvents(state.sim.drainLog(), state.sim);
   paint();
   refreshPanels(true);
@@ -168,9 +168,9 @@ function paint() {
   const w = sim.world;
   $('#clock').textContent = w.timeString();
   const era = sim.chronicle.eras[sim.chronicle.eras.length - 1];
-  $('#eraChip').textContent = era ? era.name : '—';
+  $('#eraChip').textContent = era ? era.name : '-';
   const sc = $('#seasonChip');
-  sc.textContent = `${w.season}${w.isNight ? ' · night' : ''}`;
+  sc.textContent = `${w.season}${w.isNight ? '  -  night' : ''}`;
   sc.className = `chip season-${w.season}`;
   $('#weatherChip').textContent = w.weather;
 
@@ -185,7 +185,7 @@ function paint() {
       `${adults} adults`,
       fd != null ? `food ~${fd.toFixed(1)}d` : null,
       sim.archive?.size ? `archive ${sim.archive.size}` : null,
-    ].filter(Boolean).join(' · ');
+    ].filter(Boolean).join('  -  ');
   }
 }
 
