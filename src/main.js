@@ -11,14 +11,14 @@ const $ = (s) => document.querySelector(s);
 
 // One tick = one world-hour.
 // Labels are exact multipliers of 1 hour/s (except max = machine budget).
-// 24× ≈ one day per second.
+// 24x ≈ one day per second.
 const SPEEDS = [
   { label: 'hold', tps: 0 },
-  { label: '1×',   tps: 1 },
-  { label: '3×',   tps: 3 },
-  { label: '8×',   tps: 8 },
-  { label: '24×',  tps: 24 },
-  { label: '60×',  tps: 60 },
+  { label: '1x',   tps: 1 },
+  { label: '3x',   tps: 3 },
+  { label: '8x',   tps: 8 },
+  { label: '24x',  tps: 24 },
+  { label: '60x',  tps: 60 },
   { label: 'max',  tps: Infinity },
 ];
 
