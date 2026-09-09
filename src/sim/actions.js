@@ -295,8 +295,9 @@ function structureCap(kind, people) {
     case 'market': return p >= 12 ? Math.min(2, 1 + Math.floor(p / 28)) : 0;
     case 'hall': return p >= 14 ? 1 : 0;
     case 'plaza': return p >= 12 ? 1 : 0;
-    case 'shrine': return p >= 16 ? 2 : p >= 8 ? 1 : 0;
-    case 'well': return Math.max(1, Math.min(3, Math.ceil(p / 12)));
+    case 'shrine': return p >= 30 ? 2 : p >= 10 ? 1 : 0;
+    // Wells: one is usually enough; second only at real scale
+    case 'well': return p >= 24 ? 2 : 1;
     case 'path': return Math.max(0, Math.ceil(p / 8));
     case 'wall': return p >= 40 ? 1 : 0;
     case 'bridge': return 2;
@@ -505,7 +506,7 @@ export const ACTIONS = {
   takeFromStore: {
     category: 'body',
     propose(a, ctx) {
-      if (a.body.hunger < 0.22 && a.body.thirst < 0.4) return [];
+      if (a.body.hunger < 0.18 && a.body.thirst < 0.32) return [];
       // Prefer a store that still has food or water when those needs are active
       const stores = ctx.world.structuresOfKind('store').filter((s) => s.stock);
       let store = null;
@@ -527,10 +528,11 @@ export const ACTIONS = {
       }
       if (!store || best <= 0) return [];
       const u =
-        a.body.hunger * 3.5 +
-        Math.max(0, a.body.hunger - 0.35) * 12 +
-        a.body.thirst * 2.5 +
-        Math.max(0, a.body.thirst - 0.45) * 8;
+        a.body.hunger * 5.5 +
+        Math.max(0, a.body.hunger - 0.28) * 16 +
+        a.body.thirst * 3.5 +
+        Math.max(0, a.body.thirst - 0.35) * 12 +
+        (best > 5 ? 2 : 0);
       return [{ kind: 'takeFromStore', u, target: store, dur: 1 }];
     },
     run(a, ctx, act) {
@@ -551,8 +553,8 @@ export const ACTIONS = {
           ctx.ont.get(k)?.functions?.sustenance ||
           0;
         // Eat immediately when drawing food — avoids "took food, starved later"
-        if (nut > 0.15 && a.body.hunger > 0.25 && a.take(k, 1)) {
-          a.body.hunger = clamp(a.body.hunger - 0.45 - nut * 0.7, 0, 1);
+        if (nut > 0.15 && a.body.hunger > 0.15 && a.take(k, 1)) {
+          a.body.hunger = clamp(a.body.hunger - 0.5 - nut * 0.75, 0, 1);
           a.stats.meals = (a.stats.meals || 0) + 1;
         }
         if (k === 'water' && a.body.thirst > 0.3) {
@@ -1216,8 +1218,15 @@ export const ACTIONS = {
             need = Math.max(need, 0.45 + Math.min(0.25, corpses * 0.06));
           }
         }
-        if (kind === 'well' && existing < cap && people >= 8) {
-          need = Math.max(need, existing < 1 ? 0.42 : 0.28);
+        if (kind === 'well' && existing < 1 && people >= 6) {
+          need = Math.max(need, 0.42);
+        }
+        // No strong push for a 2nd well unless large camp
+        if (kind === 'well' && existing >= 1) {
+          need *= people >= 28 ? 0.5 : 0.15;
+        }
+        if (kind === 'shrine' && existing >= 1) {
+          need *= 0.2;
         }
         if (kind === 'path' && existing < cap && people >= 8) {
           need = Math.max(need, 0.3);
