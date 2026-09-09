@@ -395,6 +395,8 @@ export function think(a, ctx) {
           if (p.kind === 'makeArt' || p.kind === 'ritual') p.u *= 1.35;
           if (p.kind === 'expand') p.u *= 1.2;
           if (p.kind === 'farm' && (a.skills.farm || 0) < 0.5) p.u *= 1.15;
+          if (p.kind === 'gather') p.u *= 1.2;
+          if (p.kind === 'farm') p.u *= 1.25;
         }
       }
       // Skyline done: pressure is zero - invent, improve tools, or leave
