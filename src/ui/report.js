@@ -252,13 +252,27 @@ const DULL = new Set(['gather', 'store', 'takeFromStore', 'sleep', 'drink', 'eat
 function meaningful(events) {
   const out = [];
   const seen = new Map();
+  const teachSeen = new Set();
+  let teachCount = 0;
   for (let i = events.length - 1; i >= 0 && out.length < 34; i--) {
     const e = events[i];
     if (e.landmark) { out.push(e); continue; }
     if (DULL.has(e.kind) || e.quiet) continue;
+    // Structure-lesson spam: keep at most one "what a X is for"
+    if (e.kind === 'teach' && /what a .+ is for/.test(e.text || '')) {
+      const m = /what a (\w+) is for/.exec(e.text || '');
+      const topic = m ? m[1] : 'structure';
+      if (teachSeen.has(topic)) continue;
+      teachSeen.add(topic);
+      teachCount++;
+      if (teachCount > 2) continue;
+    } else if (e.kind === 'teach') {
+      teachCount++;
+      if (teachCount > 4) continue;
+    }
     const n = (seen.get(e.kind) || 0) + 1;
     seen.set(e.kind, n);
-    if (n > 5) continue;                 // no more than five of any one kind
+    if (n > 5) continue;
     out.push(e);
   }
   return out;
