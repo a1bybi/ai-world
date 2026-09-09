@@ -971,10 +971,71 @@ export class Simulation {
     return true;
   }
 
+  /** Pull food/water from the nearest stocked store into the belly when critical. */
+  emergencyFromStore(a) {
+    if (!a?.alive) return false;
+    const needFood = a.body.hunger >= 0.55;
+    const needDrink = a.body.thirst >= 0.5;
+    if (!needFood && !needDrink) return false;
+    const stores = this.world.structuresOfKind('store').filter((s) => s.stock);
+    if (!stores.length) return false;
+    let store = null;
+    let bd = Infinity;
+    for (const s of stores) {
+      const d = Math.hypot(s.x - a.x, s.y - a.y);
+      if (d < bd) {
+        bd = d;
+        store = s;
+      }
+    }
+    if (!store || bd > 28) return false;
+    // Too far: bias them by setting a goal memory, still try if moderately close
+    const take = (k, eat = false) => {
+      const have = store.stock.get(k) || 0;
+      if (have <= 0) return false;
+      store.stock.set(k, have - 1);
+      if (eat) {
+        const nut = this.ont.get(k)?.serves('sustenance') || 0.3;
+        if (k === 'water') a.body.thirst = clamp(a.body.thirst - 0.65, 0, 1);
+        else a.body.hunger = clamp(a.body.hunger - 0.4 - nut * 0.5, 0, 1);
+      } else {
+        a.add(k, 1);
+      }
+      return true;
+    };
+    if (needDrink) {
+      if (take('water', true)) return true;
+      for (const [k, v] of store.stock) {
+        if (v > 0 && (this.ont.get(k)?.serves('sustenance') || 0) > 0.15) {
+          if (take(k, true)) return true;
+        }
+      }
+    }
+    if (needFood) {
+      let best = null;
+      let bs = 0;
+      for (const [k, v] of store.stock) {
+        if (v <= 0) continue;
+        const n = this.ont.get(k)?.serves('sustenance') || 0;
+        if (n > bs) {
+          bs = n;
+          best = k;
+        }
+      }
+      if (best && take(best, true)) return true;
+    }
+    return false;
+  }
+
   lifecycleTick() {
     for (const a of this.living) {
       if (!a.alive) continue;
       const age = a.ageAt(this.world.tick);
+
+      // Full granary must not coexist with routine starvation
+      if (a.body.hunger >= 0.55 || a.body.thirst >= 0.5) {
+        this.emergencyFromStore(a);
+      }
 
       if (!a.isChild(this.world.tick)) {
         for (const cid of a.children || []) {
