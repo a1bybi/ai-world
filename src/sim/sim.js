@@ -972,7 +972,56 @@ export class Simulation {
   }
 
   /** Pull food/water from the nearest stocked store into the belly when critical. */
-  emergencyFromStore(a) {
+  /** Observer-facing summary of a built place. */
+  describeStructure(s) {
+    if (!s) return 'Nothing stands here.';
+    const day = Math.floor((s.builtTick ?? 0) / 24) + 1;
+    const matWord = s.material
+      ? (this.ont.get(s.material)?.word || s.material)
+      : null;
+    const lines = [
+      `${s.word || s.kind} (${s.kind})`,
+      s.builtBy
+        ? `Built by ${s.builtBy} on day ${day}`
+        : `Standing since day ${day}`,
+    ];
+    if (matWord) lines.push(`Material: ${matWord}`);
+    if (s.condition != null) {
+      lines.push(`Condition: ${Math.round(clamp(s.condition, 0, 1) * 100)}%`);
+    }
+    if (s.kind === 'field') {
+      lines.push(
+        `Crop: ${Math.round(clamp(s.ripeness || 0, 0, 1) * 100)}% ripe` +
+          (s.tended != null ? `, tended ${Math.round(clamp(s.tended, 0, 1) * 100)}%` : ''),
+      );
+    }
+    if (s.stock && s.stock.size) {
+      const held = [...s.stock.entries()]
+        .filter(([, v]) => v > 0)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 6)
+        .map(([k, v]) => `${this.ont.get(k)?.word || k} x${Math.round(v)}`);
+      if (held.length) lines.push(`Holds: ${held.join(', ')}`);
+      else lines.push('Holds: empty');
+    } else if (s.kind === 'store') {
+      lines.push('Holds: empty');
+    }
+    if (s.occupants?.length) {
+      const names = s.occupants
+        .map((id) => this.byId(id))
+        .filter((a) => a?.alive)
+        .map((a) => a.name);
+      if (names.length) lines.push(`Home to: ${names.slice(0, 5).join(', ')}`);
+    }
+    if (s.spanLen) lines.push(`Span: ${s.spanLen} lengths`);
+    if (s.settlementId) {
+      const st = this.settlements.find((x) => x.id === s.settlementId);
+      if (st) lines.push(`Of ${st.name}`);
+    }
+    return lines.join(' | ');
+  }
+
+    emergencyFromStore(a) {
     if (!a?.alive) return false;
     const needFood = a.body.hunger >= 0.42;
     const needDrink = a.body.thirst >= 0.4;
@@ -2066,6 +2115,16 @@ export class Simulation {
         if (m) a.updateValue?.(k, m.price, 0.08);
       }
       if (this.rng.bool(0.12)) this.tryLearnFromArchive(a);
+    }
+    // Weather and use wear places down slowly (inspector can show condition)
+    for (const s of this.world.structures || []) {
+      if (s.condition == null) s.condition = 1;
+      const rate =
+        s.kind === 'path' ? 0.0015 :
+        s.kind === 'bridge' ? 0.0012 :
+        s.kind === 'field' ? 0.0008 :
+        0.001;
+      s.condition = clamp(s.condition - rate * (this.world.weather === 'storm' ? 1.8 : 1), 0.15, 1);
     }
   }
 
