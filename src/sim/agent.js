@@ -3,7 +3,7 @@ import { blankAffect } from './emotion.js';
 import { MemoryStore } from './memory.js';
 import { dominantTraits, inventDna, dnaLabel } from './genome.js';
 
-export const YEAR_TICKS = 24 * 30;   // a year is thirty days here, so lineages actually turn over
+export const YEAR_TICKS = 24 * 16;   // sixteen-day years: generations turn over on observer timescale
 
 export const SKILLS = ['forage', 'hunt', 'craft', 'build', 'farm', 'speak', 'teach', 'fight', 'heal', 'trade', 'art'];
 
@@ -112,9 +112,9 @@ export class Agent {
 
   get age() { return (this.worldTick - this.bornTick) / YEAR_TICKS; }
   ageAt(tick) { return (tick - this.bornTick) / YEAR_TICKS; }
-  // Childhood shortened so generations turn over within observer-scale runs
-  isChild(tick) { return this.ageAt(tick) < 8; }
-  isElder(tick) { return this.ageAt(tick) > 40 * (this.genome.longevity || 1); }
+  // Adulthood at 5 "years" (5 * 16 days of sim time)
+  isChild(tick) { return this.ageAt(tick) < 5; }
+  isElder(tick) { return this.ageAt(tick) > 28 * (this.genome.longevity || 1); }
 
   // ââ inventory ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ[...]
   count(key) { return this.inventory.get(key) || 0; }
