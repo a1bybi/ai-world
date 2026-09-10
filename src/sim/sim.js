@@ -165,7 +165,7 @@ export class Simulation {
       }
     }
     // Also try endLand of a known span blueprint
-    const span = this.world.findBridgeSpan?.(a.x, a.y, radius, 8);
+    const span = this.world.findBridgeSpan?.(a.x, a.y, radius, 14);
     if (span?.endLand) {
       if (this.riverBlocks(a, span.endLand, 50)) return span.endLand;
     }
@@ -1847,8 +1847,8 @@ export class Simulation {
     if (kind === 'bridge') {
       const span =
         spot.span ||
-        this.world.findBridgeSpan?.(spot.x, spot.y, 26, 8) ||
-        this.world.findBridgeSpan?.(settlement.x, settlement.y, 26, 8);
+        this.world.findBridgeSpan?.(spot.x, spot.y, 36, 14) ||
+        this.world.findBridgeSpan?.(settlement.x, settlement.y, 36, 14);
 
       if (!span?.tiles?.length) return null;
 
