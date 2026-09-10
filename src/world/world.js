@@ -217,10 +217,11 @@ export class World {
   }
 
   /**
-   * Full bank→bank water path for a real crossing.
+   * Full bankâbank water path for a real crossing.
+   * Prefers longer spans that actually change banks (not 1â2 tile marsh hops).
    * Returns { tiles, startLand, endLand, length } or null.
    */
-  findBridgeSpan(nearX, nearY, radius = 26, maxLen = 8) {
+  findBridgeSpan(nearX, nearY, radius = 32, maxLen = 14) {
     const starts = [];
     const r0 = Math.max(0, (nearX | 0) - radius);
     const r1 = Math.min(this.w - 1, (nearX | 0) + radius);
@@ -253,16 +254,17 @@ export class World {
     );
 
     const key = (x, y) => `${x},${y}`;
+    const candidates = [];
 
-    for (const start of starts.slice(0, 50)) {
+    for (const start of starts.slice(0, 80)) {
       const seen = new Map();
       const depthMap = new Map();
       const q = [[start.x, start.y]];
       seen.set(key(start.x, start.y), null);
       depthMap.set(key(start.x, start.y), 0);
 
-      let exitWater = null;
-      let exitLand = null;
+      // Collect all valid opposite-bank exits, pick best later
+      const exits = [];
 
       while (q.length) {
         const [x, y] = q.shift();
@@ -275,14 +277,18 @@ export class World {
           const nt = this.at(nx, ny);
 
           if (nt > TERRAIN.MARSH) {
+            const bankDist = Math.hypot(nx - start.land.x, ny - start.land.y);
+            // Must be a different bank (not the same shore two tiles away)
             if (
               (nx !== start.land.x || ny !== start.land.y) &&
-              Math.hypot(nx - start.land.x, ny - start.land.y) >= 2
+              bankDist >= 3
             ) {
-              exitWater = { x, y };
-              exitLand = { x: nx, y: ny };
-              q.length = 0;
-              break;
+              exits.push({
+                water: { x, y },
+                land: { x: nx, y: ny },
+                bankDist,
+                depth: depth + 1,
+              });
             }
             continue;
           }
@@ -296,26 +302,50 @@ export class World {
         }
       }
 
-      if (!exitWater) continue;
+      if (!exits.length) continue;
+
+      // Prefer exits that land farthest from the start bank (true crossing)
+      exits.sort((a, b) => b.bankDist - a.bankDist || a.depth - b.depth);
+      const bestExit = exits[0];
+      if (bestExit.bankDist < 3) continue;
 
       const tiles = [];
-      let cur = [exitWater.x, exitWater.y];
+      let cur = [bestExit.water.x, bestExit.water.y];
       while (cur) {
         tiles.push({ x: cur[0], y: cur[1] });
         const p = seen.get(key(cur[0], cur[1]));
         cur = p;
       }
       tiles.reverse();
-      if (tiles.length < 1 || tiles.length > maxLen) continue;
+      if (tiles.length < 2 || tiles.length > maxLen) continue;
 
-      return {
+      // Score: long bank-to-bank distance, moderate length, near the requester
+      const score =
+        bestExit.bankDist * 3 +
+        tiles.length * 0.5 -
+        Math.hypot(start.x - nearX, start.y - nearY) * 0.05;
+
+      candidates.push({
         tiles,
         startLand: start.land,
-        endLand: exitLand,
+        endLand: bestExit.land,
         length: tiles.length,
-      };
+        score,
+        bankDist: bestExit.bankDist,
+      });
     }
-    return null;
+
+    if (!candidates.length) return null;
+    candidates.sort((a, b) => b.score - a.score);
+    const best = candidates[0];
+    // Reject pure shoreline nubs
+    if (best.bankDist < 3.5 && best.length < 3) return null;
+    return {
+      tiles: best.tiles,
+      startLand: best.startLand,
+      endLand: best.endLand,
+      length: best.length,
+    };
   }
 
   generate() {
@@ -673,7 +703,7 @@ export class World {
 
   timeString() {
     const h = String(Math.floor(this.hour)).padStart(2, '0');
-    return `Day ${this.dayNumber} · ${h}:00`;
+    return `Day ${this.dayNumber} Â· ${h}:00`;
   }
 
   get year() {
