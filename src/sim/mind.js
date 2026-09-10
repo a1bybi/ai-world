@@ -499,6 +499,18 @@ export function think(a, ctx) {
     }
   }
 
+  // Few pairs / thin people: court before expand
+  {
+    const living = ctx.sim.living.length || 0;
+    const pairs = ctx.sim.living.filter((x) => x.partner).length / 2;
+    if (living < 24 && pairs < Math.max(2, living / 8) && a.body.hunger < 0.5) {
+      for (const p of candidates) {
+        if (p.kind === 'court') p.u = Math.max(p.u, 7);
+        if (p.kind === 'expand') p.u *= 0.35;
+      }
+    }
+  }
+
   if ((stagnant || campBound) && a.body.hunger < 0.65 && a.body.thirst < 0.65) {
     for (const p of candidates) {
       if (p.kind === 'explore') p.u = Math.max(p.u, 11);
