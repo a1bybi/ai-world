@@ -1537,7 +1537,7 @@ export class Simulation {
     const crowd = clamp(n.people / 40);
     const day = this.world.dayNumber || Math.floor(this.world.tick / 24) + 1;
     const sole =
-      this.settlements.length <= 1 && n.people >= 30 && day >= 80 ? 0.25 : 0;
+      this.settlements.length <= 1 && n.people >= 14 && day >= 35 ? 0.28 : 0;
     const farOpen =
       day >= 45 &&
       this.farBankTarget({ x: settlement.x, y: settlement.y }, 26)
@@ -1560,40 +1560,47 @@ export class Simulation {
     );
   }
 
-  /** Prefer founding only when the home camp is stable and fed. */
+  /** Prefer founding when the home camp is stable enough - not only at huge N. */
   fissionUrge(settlement = null) {
     const home = settlement || this.origin;
     if (!home) return 0;
-    if (this.settlements.length >= 4) return 0;
+    if (this.settlements.length >= 5) return 0;
     const day = this.world.dayNumber || Math.floor(this.world.tick / 24) + 1;
-    if (day < 40) return 0;
+    if (day < 28) return 0;
 
-    const people = this.living.filter(
-      (a) => Math.hypot(a.x - home.x, a.y - home.y) < 18,
-    ).length;
-    if (people < 28) return 0;
+    // Count by nearest settlement so scatter does not zero the urge
+    const people = this.living.filter((a) => {
+      const n = this.nearestSettlement?.(a.x, a.y);
+      return n && n.id === home.id;
+    }).length;
+    if (people < 12) return 0;
 
-    const adults = this.living.filter(
-      (a) =>
-        Math.hypot(a.x - home.x, a.y - home.y) < 18 &&
-        !a.isChild?.(this.world.tick) &&
-        a.ageAt(this.world.tick) >= 16,
-    ).length;
-    if (adults < 10) return 0;
+    const adults = this.living.filter((a) => {
+      const n = this.nearestSettlement?.(a.x, a.y);
+      if (!n || n.id !== home.id) return false;
+      return !a.isChild?.(this.world.tick) && a.ageAt(this.world.tick) >= 7;
+    }).length;
+    if (adults < 5) return 0;
 
     const foodDays = this.foodDaysAt?.(home) ?? 0;
     const total = this.totalFood();
-    if (foodDays < 10 && total < people * 2.5) return 0;
+    // Allow founding even when packs hold food but the store is thin
+    if (foodDays < 2 && total < people * 1.2) return 0;
 
     const spans =
       this.world.bridgeSpanCount?.(home.x, home.y, 22) ?? 0;
-    const far = this.farBankTarget({ x: home.x, y: home.y }, 28);
-    if (!far) return people >= 40 ? 0.15 : 0;
+    const far = this.farBankTarget({ x: home.x, y: home.y }, 32);
 
-    let urge = 0.1 + clamp((people - 28) / 50);
-    if (spans >= 1) urge += 0.3;
-    if (this.settlements.length === 1) urge += 0.2;
-    if (foodDays >= 14) urge += 0.15;
+    let urge = 0.12 + clamp((people - 12) / 40);
+    if (spans >= 1) urge += 0.35;
+    else if (far) urge += 0.2; // open bank - urge bridges then colony
+    if (this.settlements.length === 1) urge += 0.25;
+    if (foodDays >= 6 || total > people * 2) urge += 0.12;
+    // Scatter itself is a signal: many far from the hearth
+    const farFolk = this.living.filter(
+      (a) => Math.hypot(a.x - home.x, a.y - home.y) > 14,
+    ).length;
+    if (farFolk >= 4) urge += 0.18;
     return clamp(urge);
   }
 
