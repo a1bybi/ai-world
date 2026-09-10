@@ -955,8 +955,8 @@ export class Simulation {
       ra.affection > 0.35 &&
       ro.affection > 0.3 &&
       ra.familiarity > 0.25 &&
-      a.ageAt(this.world.tick) > 15 &&
-      o.ageAt(this.world.tick) > 15;
+      a.ageAt(this.world.tick) > 10 &&
+      o.ageAt(this.world.tick) > 10;
     if (!want) return false;
 
     a.partner = o.id;
@@ -1119,7 +1119,7 @@ export class Simulation {
     const take = (k, eat = false) => {
       const have = store.stock.get(k) || 0;
       if (have <= 0) return false;
-      store.stock.set(k, have - 1);
+      store.stock.set(k, Math.max(0, have - 1));
       if (eat) {
         const nut = this.ont.get(k)?.serves('sustenance') || 0.3;
         if (k === 'water') a.body.thirst = clamp(a.body.thirst - 0.65, 0, 1);
