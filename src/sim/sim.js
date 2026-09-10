@@ -10,7 +10,7 @@ import { Ontology } from './concepts.js';
 import { Chronicle } from './chronicle.js';
 import { Agent, YEAR_TICKS, SKILLS } from './agent.js';
 import { randomGenome, inherit, genomeDistance, inventDna, inheritDna, dnaShare, dnaLabel, lineCensus, kinByDna } from './genome.js';
-import { think } from './mind.js';
+import { think, tickAgent, updateBody } from './mind.js';
 import { appraise, dominantEmotion, moodWord } from './emotion.js';
 import { clamp, dist, mean, topN, hueFor } from '../core/util.js';
 import { STRUCTURE_KINDS } from './actions.js';
@@ -394,19 +394,39 @@ export class Simulation {
       nearby: (a, r) => this.nearby(a, r), bias: null,
     };
 
-    for (const a of this.living) {
+    // Staggered minds: every agent gets body + action continue;
+    // only a budget of full think() replans per tick (urgent always full).
+    const living = this.living;
+    const n = living.length;
+    const budget = Math.max(
+      10,
+      Math.min(28, Math.ceil(18 + 120 / Math.max(8, n))),
+    );
+    this._thinkCursor = (this._thinkCursor || 0) % Math.max(1, n);
+    for (let i = 0; i < n; i++) {
+      const a = living[i];
       a.utterance = null;
       if (!a.alive) continue;
-      try { think(a, ctx); }
-      catch (e) {
+      const urgent =
+        a.body.hunger > 0.5 ||
+        a.body.thirst > 0.5 ||
+        a.body.health < 0.4 ||
+        !a.action;
+      const full =
+        urgent ||
+        ((i - this._thinkCursor + n) % n) < budget;
+      try {
+        tickAgent(a, ctx, full);
+      } catch (e) {
         a.action = null;
-        this._errCount++;
+        this._errCount = (this._errCount || 0) + 1;
         if (this._errCount <= 5 || this._errCount % 50 === 0) {
           console.error(`[mind error #${this._errCount}]`, e);
         }
       }
       if (a.body.health <= 0.001) this.die(a, this.causeOfDeath(a));
     }
+    this._thinkCursor = (this._thinkCursor + budget) % Math.max(1, n);
 
     this.lifecycleTick();
     this.fieldsTick();
@@ -2226,6 +2246,51 @@ export class Simulation {
   }
 
   /** Living people grouped by DNA line (observer). */
+
+  /** Observer: one card per camp so large N stays readable. */
+  settlementReports() {
+    const out = [];
+    for (const st of this.settlements || []) {
+      const members = this.living.filter((a) => {
+        const home = this.nearestSettlement?.(a.x, a.y);
+        return home && home.id === st.id;
+      });
+      const n = members.length;
+      const kinds = {};
+      for (const s of this.world.structures || []) {
+        if (s.settlementId === st.id || (Math.hypot((s.x - st.x), (s.y - st.y)) < 14)) {
+          kinds[s.kind] = (kinds[s.kind] || 0) + 1;
+        }
+      }
+      let storeFill = 0;
+      let storeCap = 0;
+      for (const s of this.world.structuresOfKind('store')) {
+        if (Math.hypot(s.x - st.x, s.y - st.y) > 16) continue;
+        if (!s.stock) continue;
+        for (const v of s.stock.values()) {
+          storeFill += v;
+          storeCap += 50;
+        }
+      }
+      const mood = n
+        ? members.reduce((s, a) => s + (a.affect?.mood || 0), 0) / n
+        : 0;
+      const lines = lineCensus(members).slice(0, 5);
+      out.push({
+        id: st.id,
+        name: st.name || 'camp',
+        living: n,
+        structures: kinds,
+        structureCount: Object.values(kinds).reduce((a, b) => a + b, 0),
+        storePct: storeCap ? Math.round((100 * storeFill) / storeCap) : 0,
+        foodDays: this.foodDaysAt?.(st) ?? null,
+        mood: +mood.toFixed(2),
+        lines,
+      });
+    }
+    return out.sort((a, b) => b.living - a.living);
+  }
+
   linesOfLiving() {
     // Backfill DNA for any agent missing it (old saves / missed founders)
     for (const a of this.living) {
