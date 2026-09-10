@@ -206,7 +206,7 @@ function structureBoost(ctx, a, kinds, mult = 1.25) {
   return 1;
 }
 
-/** Best known/held score for a function — inventions that change outcomes. */
+/** Best known/held score for a function - inventions that change outcomes. */
 function techScore(a, ctx, fn) {
   const mine = a.bestToolFor?.(fn, ctx.ont);
   const world = ctx.ont.bestScoreFor?.(fn) || 0;
@@ -286,26 +286,26 @@ const STRUCTURE_KINDS = {
 function structureCap(kind, people) {
   const p = Math.max(1, people || 1);
   switch (kind) {
-    case 'shelter': return Math.max(2, Math.ceil(p / 1.8));
-    case 'hearth': return Math.max(1, Math.ceil(p / 8));
-    case 'store': return Math.max(1, Math.min(3, Math.ceil(p / 14)));
+    case 'shelter': return Math.max(2, Math.ceil(p / 1.6));
+    case 'hearth': return Math.max(1, Math.ceil(p / 7));
+    case 'store': return Math.max(1, Math.min(4, Math.ceil(p / 12)));
     case 'field':
-      return Math.max(1, Math.min(6, Math.ceil(p / 10)));
-    case 'workshop': return p >= 8 ? Math.min(2, 1 + Math.floor(p / 20)) : 0;
-    case 'market': return p >= 12 ? Math.min(2, 1 + Math.floor(p / 28)) : 0;
-    case 'hall': return p >= 14 ? 1 : 0;
-    case 'plaza': return p >= 12 ? 1 : 0;
-    case 'shrine': return p >= 30 ? 2 : p >= 10 ? 1 : 0;
-    // Wells: one is usually enough; second only at real scale
-    case 'well': return p >= 24 ? 2 : 1;
-    case 'path': return Math.max(0, Math.ceil(p / 8));
-    case 'wall': return p >= 40 ? 1 : 0;
-    case 'bridge': return 2;
-    default: return 2;
+      // Allow continued agricultural expansion past the first skyline
+      return Math.max(1, Math.min(12, Math.ceil(p / 6)));
+    case 'workshop': return p >= 6 ? Math.min(3, 1 + Math.floor(p / 14)) : 0;
+    case 'market': return p >= 10 ? Math.min(2, 1 + Math.floor(p / 22)) : 0;
+    case 'hall': return p >= 12 ? Math.min(2, 1 + Math.floor(p / 30)) : 0;
+    case 'plaza': return p >= 10 ? Math.min(2, 1 + Math.floor(p / 24)) : 0;
+    case 'shrine': return p >= 28 ? 2 : p >= 8 ? 1 : 0;
+    case 'well': return p >= 20 ? 2 : 1;
+    case 'path': return Math.max(0, Math.ceil(p / 6));
+    case 'wall': return p >= 28 ? Math.min(2, 1 + Math.floor(p / 40)) : 0;
+    case 'bridge': return Math.min(4, 1 + Math.floor(p / 16));
+    default: return 3;
   }
 }
 
-/** Institutions unlock from prerequisites + time — not all on day 0. */
+/** Institutions unlock from prerequisites + time - not all on day 0. */
 function structureUnlocked(kind, ctx, settlement, nearCount) {
   const day = ctx.world.dayNumber || Math.floor((ctx.world.tick || 0) / 24) + 1;
   const n = (k) => nearCount(k);
@@ -325,29 +325,30 @@ function structureUnlocked(kind, ctx, settlement, nearCount) {
       return day >= 3 || basics;
     case 'field': {
       const fields = n('field');
-      if (fields < 1) return day >= 8 || (day >= 4 && hasStore);
-      // Further fields: need some footing + population or scarcity
+      if (fields < 1) return day >= 6 || (day >= 3 && hasStore);
       const peopleApprox = ctx.sim.living?.length || 10;
-      const tight = ctx.sim.totalFood() < peopleApprox * 2.5;
-      if (fields < 2) return day >= 20 && (peopleApprox >= 14 || tight);
-      if (fields < 3) return day >= 40 && (peopleApprox >= 28 || tight);
-      if (fields < 4) return day >= 60 && peopleApprox >= 40;
-      return day >= 80 && peopleApprox >= 55;
+      const tight = ctx.sim.totalFood() < peopleApprox * 3;
+      // Keep unlocking more fields as the camp grows - not a hard stop at 4
+      if (fields < 2) return day >= 12 && (peopleApprox >= 10 || tight);
+      if (fields < 4) return day >= 25 && (peopleApprox >= 16 || tight);
+      if (fields < 6) return day >= 40 && peopleApprox >= 20;
+      if (fields < 8) return day >= 55 && peopleApprox >= 24;
+      return day >= 70 && peopleApprox >= 28;
     }
     case 'well':
-      return day >= 12 && basics;
+      return day >= 10 && basics;
     case 'workshop':
-      return day >= 25 && basics && hasField;
+      return day >= 18 && basics && hasField;
     case 'market':
-      return day >= 35 && basics && (ctx.sim.counters?.exchanges || 0) >= 15;
+      return day >= 28 && basics && (ctx.sim.counters?.exchanges || 0) >= 10;
     case 'plaza':
-      return day >= 30 && basics;
+      return day >= 22 && basics;
     case 'hall':
-      return day >= 40 && basics && n('workshop') + n('plaza') >= 1;
+      return day >= 32 && basics && n('workshop') + n('plaza') >= 1;
     case 'shrine':
-      return day >= 20 && (basics || (ctx.world.corpses?.length || 0) >= 2);
+      return day >= 15 && (basics || (ctx.world.corpses?.length || 0) >= 1);
     case 'wall':
-      return day >= 60 && (nearCount('shelter') >= 4);
+      return day >= 45 && (nearCount('shelter') >= 3);
     default:
       return day >= 10;
   }
@@ -362,10 +363,12 @@ function settlementBuildAllowed(ctx, settlement, kind) {
   const map = ctx.sim._lastMajorBuildTick || (ctx.sim._lastMajorBuildTick = new Map());
   const last = map.get(key) ?? -999;
   const basic = kind === 'shelter' || kind === 'hearth' || kind === 'well' || kind === 'field';
-  // Founding week: slow the skyline so day 1 is not a finished town
-  let gap = basic ? 10 : 18;
-  if (day < 15) gap = basic ? 20 : 36;
-  else if (day < 40) gap = basic ? 14 : 24;
+  // Founding week slow; mid/late game allows steadier growth past ~25 structures
+  let gap = basic ? 8 : 14;
+  if (day < 12) gap = basic ? 18 : 30;
+  else if (day < 35) gap = basic ? 12 : 20;
+  else if (day < 80) gap = basic ? 8 : 12;
+  else gap = basic ? 6 : 10; // mature camp: keep building when pressure exists
   return tick - last >= gap;
 }
 
@@ -556,7 +559,7 @@ export const ACTIONS = {
           ctx.ont.get(k)?.serves?.('sustenance') ||
           ctx.ont.get(k)?.functions?.sustenance ||
           0;
-        // Eat immediately when drawing food — avoids "took food, starved later"
+        // Eat immediately when drawing food - avoids "took food, starved later"
         if (nut > 0.15 && a.body.hunger > 0.15 && a.take(k, 1)) {
           a.body.hunger = clamp(a.body.hunger - 0.5 - nut * 0.75, 0, 1);
           a.stats.meals = (a.stats.meals || 0) + 1;
@@ -1388,7 +1391,7 @@ export const ACTIONS = {
   expand: {
     category: 'work',
     propose(a, ctx) {
-      if (a.isChild(ctx.world.tick) || a.ageAt(ctx.world.tick) < 18) return [];
+      if (a.isChild(ctx.world.tick) || a.ageAt(ctx.world.tick) < 12) return [];
       // Never found a colony while personally food-stressed
       if (a.body.hunger > 0.4 || a.body.thirst > 0.4) return [];
       if (a.body.energy < 0.35) return [];
@@ -1399,7 +1402,7 @@ export const ACTIONS = {
       const home = ctx.sim.nearestSettlement(a.x, a.y);
       const pressure = ctx.sim.settlementPressure(home);
       const fission = ctx.sim.fissionUrge?.(home) || 0;
-      // Require real fission urge — pressure alone is not enough early
+      // Require real fission urge - pressure alone is not enough early
       if (fission < 0.28) return [];
       if (pressure < 0.12 && fission < 0.4) return [];
 
@@ -1582,8 +1585,9 @@ export const ACTIONS = {
       const purpose = Math.max(0.5, knownStructureUse(a, 'store'));
       // Heavy packs should empty into the granary so the camp has a buffer
       const u =
-        surplus * 0.55 * purpose * (0.55 + a.genome.patience) * (ctx.bias?.hoard ?? 1) +
-        (surplus > 8 ? 3 : 0);
+        surplus * 0.85 * purpose * (0.55 + a.genome.patience) * (ctx.bias?.hoard ?? 1) +
+        (surplus > 5 ? 4 : 0) +
+        (surplus > 12 ? 4 : 0);
       return [{ kind: 'store', u, target: T(s.x, s.y), store: s, dur: 1 }];
     },
     run(a, ctx, act) {
@@ -1711,7 +1715,7 @@ export const ACTIONS = {
           const last = ctx.sim._teachCool?.get(coolKey) || -999;
           if (day - last < 20) continue;
           // Only children or very new adults get structure tours
-          if (!o.isChild(ctx.world.tick) && o.ageAt(ctx.world.tick) > 14) continue;
+          if (!o.isChild(ctx.world.tick) && o.ageAt(ctx.world.tick) > 10) continue;
           candidates.push({ key: k, rarity: 0.35, isStructure: true });
         }
         if (!candidates.length) continue;
@@ -2006,7 +2010,7 @@ export const ACTIONS = {
         (o) =>
           o.id !== a.id &&
           !o.partner &&
-          o.ageAt(ctx.world.tick) > 15 &&
+          o.ageAt(ctx.world.tick) > 10 &&
           o.ageAt(ctx.world.tick) < 55 &&
           a.rel(o).kin < 0.5,
       );
