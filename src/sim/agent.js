@@ -112,8 +112,9 @@ export class Agent {
 
   get age() { return (this.worldTick - this.bornTick) / YEAR_TICKS; }
   ageAt(tick) { return (tick - this.bornTick) / YEAR_TICKS; }
-  isChild(tick) { return this.ageAt(tick) < 13; }
-  isElder(tick) { return this.ageAt(tick) > 52 * this.genome.longevity; }
+  // Childhood shortened so generations turn over within observer-scale runs
+  isChild(tick) { return this.ageAt(tick) < 8; }
+  isElder(tick) { return this.ageAt(tick) > 40 * (this.genome.longevity || 1); }
 
   // ââ inventory ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ[...]
   count(key) { return this.inventory.get(key) || 0; }
