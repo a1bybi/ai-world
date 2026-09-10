@@ -199,6 +199,18 @@ export function renderReport(host, r, sim) {
       </div>
 
       <div class="sect">
+        <h3>Settlements</h3>
+        <div class="rows">${(r.settlements || []).map((s) =>
+          row(
+            esc(s.name) + ` (${s.living} living, ${s.structureCount || 0} built)`,
+            (s.foodDays != null ? s.foodDays + ' food-days' : '') +
+              (s.storePct != null ? ` | store ${s.storePct}%` : '') +
+              (s.mood != null ? ` | mood ${s.mood}` : '')
+          )
+        ).join('') || '<div class="row2"><span>No camps recorded.</span><span></span></div>'}</div>
+      </div>
+
+      <div class="sect">
         <h3>Blood lines</h3>
         <div class="rows">${(r.lines || []).map((x) => row(esc(x.line), x.n)).join('') || '<div class="row2"><span>No lines recorded yet.</span><span></span></div>'}</div>
       </div>
