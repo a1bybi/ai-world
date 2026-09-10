@@ -1398,13 +1398,14 @@ export const ACTIONS = {
       if (a.body.hunger > 0.48 || a.body.thirst > 0.48) return [];
       if (a.body.energy < 0.28) return [];
       if (ctx.sim.settlements.length >= 5) return [];
+      if (ctx.sim.canFoundSettlement && !ctx.sim.canFoundSettlement()) return [];
       const day = ctx.world.dayNumber || Math.floor(ctx.world.tick / 24) + 1;
-      if (day < 30) return [];
+      if (day < 45) return [];
 
       const home = ctx.sim.nearestSettlement(a.x, a.y);
       const pressure = ctx.sim.settlementPressure(home);
       const fission = ctx.sim.fissionUrge?.(home) || 0;
-      if (fission < 0.18 && pressure < 0.2) return [];
+      if (fission < 0.25 && pressure < 0.28) return [];
 
       let best = ctx.sim.farBankTarget?.(a, 32) || null;
       let bestScore = best ? 0.6 + fission : 0;
@@ -2025,28 +2026,31 @@ export const ACTIONS = {
     category: 'social',
     propose(a, ctx) {
       const age = a.ageAt(ctx.world.tick);
-      if (age < 15 || age > 55 || a.partner) return [];
-      const near = ctx.nearby(a, 12).filter(
+      if (age < 8 || age > 40 || a.partner) return [];
+      // Prefer pairing while the people are few
+      const sparse = (ctx.sim.living.length || 0) < 22;
+      const near = ctx.nearby(a, sparse ? 16 : 12).filter(
         (o) =>
           o.id !== a.id &&
           !o.partner &&
-          o.ageAt(ctx.world.tick) > 7 &&
-          o.ageAt(ctx.world.tick) < 55 &&
+          o.ageAt(ctx.world.tick) >= 8 &&
+          o.ageAt(ctx.world.tick) < 40 &&
           a.rel(o).kin < 0.5,
       );
       const out = [];
       for (const o of near) {
         const r = a.rel(o);
-        const u =
-          (0.4 +
+        let u =
+          (0.45 +
             r.affection * 1.6 +
             r.familiarity * 1.2 +
-            a.genome.fertility * 0.9 +
-            a.genome.sociability * 0.5 +
+            a.genome.fertility * 1.0 +
+            a.genome.sociability * 0.55 +
             a.affect.e.love * 0.5) *
           (ctx.bias?.social ?? 1);
-        if (u < 0.18) continue;
-        out.push({ kind: 'court', u, targetId: o.id, dur: 3 });
+        if (sparse) u *= 1.55;
+        if (u < 0.14) continue;
+        out.push({ kind: 'court', u, targetId: o.id, dur: 2 });
       }
       return topN(out, 1, (o) => o.u);
     },
