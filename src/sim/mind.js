@@ -707,4 +707,41 @@ function describeGoal(a, c, ctx) {
   }
 }
 
+/**
+ * Full think, or body + continue current action only (for staggered AI).
+ * Urgent needs always get a full replan.
+ */
+export function tickAgent(a, ctx, full = true) {
+  if (full) {
+    think(a, ctx);
+    return;
+  }
+  const world = ctx.world;
+  updateBody(a, world);
+  // Emergency: force full mind next path by calling think
+  if (
+    a.body.hunger > 0.55 ||
+    a.body.thirst > 0.55 ||
+    a.body.health < 0.35 ||
+    a.body.rest < 0.08 ||
+    !a.action
+  ) {
+    think(a, ctx);
+    return;
+  }
+  // Continue multi-tick action without re-scoring the whole world
+  if (a.action && ACTIONS[a.action.kind]?.run) {
+    try {
+      const res = ACTIONS[a.action.kind].run(a, ctx, a.action);
+      if (res === 'done' || res === 'abort') {
+        a.lastAction = a.action.kind;
+        a.action = null;
+      }
+    } catch (e) {
+      a.action = null;
+    }
+  }
+  decayAffect(a, 1);
+}
+
 export { dominantEmotion };
