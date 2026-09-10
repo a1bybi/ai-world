@@ -85,7 +85,7 @@ function frame(now) {
     if (tps === Infinity) {
       // Spend most of the frame on simulation; leave a little for paint/UI
       const t0 = performance.now();
-      const budgetMs = 14;
+      const budgetMs = 22;
       while (performance.now() - t0 < budgetMs && sim.living.length) {
         sim.step();
         ran++;
@@ -146,13 +146,13 @@ function frame(now) {
   }
 
   // Throttle canvas: full rate when watching closely, slower when accelerating
-  const paintEvery = tps === 0 ? 200 : tps === Infinity ? 100 : tps >= 24 ? 80 : tps >= 8 ? 50 : 33;
+  const paintEvery = tps === 0 ? 250 : tps === Infinity ? 140 : tps >= 24 ? 90 : tps >= 8 ? 55 : 33;
   if (now - state.lastPaint >= paintEvery) {
     state.lastPaint = now;
     paint();
   }
 
-  const panelEvery = fast ? 700 : 420;
+  const panelEvery = fast ? 1100 : 500;
   if (now - state.lastPanel > panelEvery) {
     state.lastPanel = now;
     refreshPanels();
