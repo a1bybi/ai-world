@@ -16,9 +16,9 @@ import { clamp, dist, mean, topN, hueFor } from '../core/util.js';
 import { STRUCTURE_KINDS } from './actions.js';
 
 const BALANCE = {
-  conceptionChance: 0.15,
-  pregnancyTerm: 0.45,
-  birthHealthCost: 0.08,
+  conceptionChance: 0.22,
+  pregnancyTerm: 0.4,
+  birthHealthCost: 0.06,
   grievanceInterval: 6,
   normsInterval: 24,
   spoilInterval: 24,
@@ -311,10 +311,10 @@ export class Simulation {
           });
         }
       }
-      a.add('water', 14);
-      a.add('berry', 20);
-      a.add('root', 14);
-      a.add('grain', 14);
+      a.add('water', 22);
+      a.add('berry', 28);
+      a.add('root', 20);
+      a.add('grain', 22);
       a.generation = 1;
       this.addAgent(a);
     }
@@ -1122,8 +1122,12 @@ export class Simulation {
 
   emergencyFromStore(a) {
     if (!a?.alive) return false;
-    const needFood = a.body.hunger >= 0.36;
-    const needDrink = a.body.thirst >= 0.34;
+    const day = this.world.dayNumber || Math.floor(this.world.tick / 24) + 1;
+    // First seasons: draw from stores earlier so founders do not starve mid-build
+    const foodGate = day < 90 ? 0.28 : 0.36;
+    const drinkGate = day < 90 ? 0.26 : 0.34;
+    const needFood = a.body.hunger >= foodGate;
+    const needDrink = a.body.thirst >= drinkGate;
     if (!needFood && !needDrink) return false;
     const stores = this.world.structuresOfKind('store').filter((s) => s.stock);
     if (!stores.length) return false;
@@ -1182,11 +1186,10 @@ export class Simulation {
       const age = a.ageAt(this.world.tick);
 
       // Full granary must not coexist with routine starvation
-      if (a.body.hunger >= 0.42 || a.body.thirst >= 0.4) {
+      if (a.body.hunger >= 0.32 || a.body.thirst >= 0.3) {
         this.emergencyFromStore(a);
       }
-      // Children: second chance from store even if slightly less critical
-      if (a.isChild(this.world.tick) && (a.body.hunger >= 0.35 || a.body.thirst >= 0.35)) {
+      if (a.isChild(this.world.tick) && (a.body.hunger >= 0.28 || a.body.thirst >= 0.28)) {
         this.emergencyFromStore(a);
       }
 
@@ -1248,47 +1251,47 @@ export class Simulation {
         a.partner &&
         !a.body.pregnant &&
         !a.isChild(this.world.tick) &&
-        age > 16 &&
-        age < 48 &&
-        a.body.hunger < 0.5 &&
-        a.body.health > 0.5
+        age >= 7 &&
+        age < 36 &&
+        a.body.hunger < 0.55 &&
+        a.body.health > 0.4
       ) {
         const p = this.byId(a.partner);
         if (
           p?.alive &&
           !p.body.pregnant &&
-          p.ageAt(this.world.tick) > 16 &&
-          p.ageAt(this.world.tick) < 48 &&
-          p.body.hunger < 0.5 &&
-          p.body.health > 0.45 &&
-          dist(a, p) < 4
+          p.ageAt(this.world.tick) >= 7 &&
+          p.ageAt(this.world.tick) < 36 &&
+          p.body.hunger < 0.55 &&
+          p.body.health > 0.35 &&
+          dist(a, p) < 5
         ) {
-          // Soft demography: fewer conceptions when dependents overwhelm adults
           const tick = this.world.tick;
           const adults = this.living.filter(
-            (x) => !x.isChild(tick) && x.ageAt(tick) >= 16,
+            (x) => !x.isChild(tick) && x.ageAt(tick) >= 7,
           ).length;
           const children = this.living.filter(
-            (x) => x.isChild(tick) || x.ageAt(tick) < 16,
+            (x) => x.isChild(tick),
           ).length;
           const dep = adults > 0 ? children / adults : children;
           let chance =
             BALANCE.conceptionChance *
             ((a.genome.fertility + p.genome.fertility) / 2);
+          // Recovery when the people are few
+          if (this.living.length < 18) chance *= 1.6;
+          if (this.living.length < 12) chance *= 1.35;
           if (dep > 4) chance *= 0.35;
           else if (dep > 2.5) chance *= 0.55;
           else if (dep > 1.5) chance *= 0.75;
-          // Own living minors also temper (care load)
           const ownKids = (a.children || [])
             .concat(p.children || [])
             .filter((id) => {
               const c = this.byId(id);
               return c?.alive && c.isChild(tick);
             }).length;
-          // Pair-level brake: do not keep expanding a huge nursery
           if (ownKids >= 5) chance = 0;
-          else if (ownKids >= 4) chance *= 0.08;
-          else if (ownKids >= 3) chance *= 0.25;
+          else if (ownKids >= 4) chance *= 0.1;
+          else if (ownKids >= 3) chance *= 0.3;
 
           if (this.rng.bool(chance)) {
             const carrier = a.id < p.id ? a : p;
@@ -1577,14 +1580,14 @@ export class Simulation {
       const n = this.nearestSettlement?.(a.x, a.y);
       return n && n.id === home.id;
     }).length;
-    if (people < 10) return 0;
+    if (people < 14) return 0;
 
     const adults = this.living.filter((a) => {
       const n = this.nearestSettlement?.(a.x, a.y);
       if (!n || n.id !== home.id) return false;
       return !a.isChild?.(this.world.tick) && a.ageAt(this.world.tick) >= 7;
     }).length;
-    if (adults < 4) return 0;
+    if (adults < 6) return 0;
 
     const foodDays = this.foodDaysAt?.(home) ?? 0;
     const total = this.totalFood();
@@ -1688,9 +1691,10 @@ export class Simulation {
    * formalize a second settlement without waiting for a perfect expand action.
    */
   colonyTick() {
+    if (!this.canFoundSettlement()) return;
     if (this.settlements.length >= 5) return;
     const day = this.world.dayNumber || Math.floor(this.world.tick / 24) + 1;
-    if (day < 28) return;
+    if (day < 40) return;
     const origin = this.origin;
     if (!origin) return;
 
@@ -1732,7 +1736,25 @@ export class Simulation {
     this.foundSettlement(farFolk[0], { x: cx, y: cy });
   }
 
+  /** Soft cap: do not found while the people are thin or camps are empty. */
+  canFoundSettlement() {
+    const n = this.living.length;
+    const camps = this.settlements.length;
+    if (n < 14) return false;
+    // Roughly one camp per ~10 living (min 1)
+    if (camps >= Math.max(1, Math.floor(n / 9) + 1)) return false;
+    // Any ghost camp (<2 people) blocks further fission
+    for (const st of this.settlements) {
+      const here = this.living.filter(
+        (a) => this.nearestSettlement(a.x, a.y) === st,
+      ).length;
+      if (here < 2 && camps >= 2) return false;
+    }
+    return true;
+  }
+
   foundSettlement(a, spot) {
+    if (!this.canFoundSettlement()) return this.nearestSettlement(spot.x, spot.y);
     // Avoid double-founding on top of an existing camp
     for (const s of this.settlements) {
       if (Math.hypot(s.x - spot.x, s.y - spot.y) < 11) return s;
