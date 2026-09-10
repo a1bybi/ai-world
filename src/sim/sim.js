@@ -387,31 +387,29 @@ export class Simulation {
     const w = this.world;
     w.step(1);
     this.livingCache = null;
-    this.rebuildGrid();
+    // Rebuild occupancy grid every other tick (nearby is approximate enough)
+    if ((w.tick % 2) === 0) this.rebuildGrid();
 
     const ctx = {
       sim: this, world: w, ont: this.ont, rng: this.rng, tick: w.tick,
       nearby: (a, r) => this.nearby(a, r), bias: null,
     };
 
-    // Staggered minds: every agent gets body + action continue;
-    // only a budget of full think() replans per tick (urgent always full).
+    // Staggered minds: few full propose() scans per tick; others continue/idle.
     const living = this.living;
     const n = living.length;
-    const budget = Math.max(
-      10,
-      Math.min(28, Math.ceil(18 + 120 / Math.max(8, n))),
-    );
+    // ~6-10 full brains regardless of N (urgent still jumps the queue)
+    const budget =
+      n <= 8 ? n : Math.max(5, Math.min(10, Math.ceil(90 / Math.max(1, Math.sqrt(n)))));
     this._thinkCursor = (this._thinkCursor || 0) % Math.max(1, n);
     for (let i = 0; i < n; i++) {
       const a = living[i];
       a.utterance = null;
       if (!a.alive) continue;
       const urgent =
-        a.body.hunger > 0.5 ||
-        a.body.thirst > 0.5 ||
-        a.body.health < 0.4 ||
-        !a.action;
+        a.body.hunger > 0.82 ||
+        a.body.thirst > 0.82 ||
+        a.body.health < 0.25;
       const full =
         urgent ||
         ((i - this._thinkCursor + n) % n) < budget;
@@ -428,10 +426,11 @@ export class Simulation {
     }
     this._thinkCursor = (this._thinkCursor + budget) % Math.max(1, n);
 
-    this.lifecycleTick();
+    // Spread society systems across ticks
+    if ((w.tick % 2) === 0) this.lifecycleTick();
     this.fieldsTick();
-    this.grievanceTick();
-    this.normsTick();
+    if ((w.tick % 3) === 0) this.grievanceTick();
+    if ((w.tick % 4) === 0) this.normsTick();
     this.corpseTick();
 
     if (w.tick % BALANCE.spoilInterval === 0) this.spoilTick();
@@ -2209,13 +2208,18 @@ export class Simulation {
 
   dailyReflection() {
     this.updateCampKnowledge();
-    for (const a of this.living) {
-      if (this.rng.bool(0.3)) a.memory.consolidate(a);
+    const living = this.living;
+    const sample =
+      living.length <= 14
+        ? living
+        : living.filter(() => this.rng.bool(14 / living.length));
+    for (const a of sample) {
+      if (this.rng.bool(0.22)) a.memory.consolidate(a);
       for (const [k] of a.inventory) {
         const m = this.marketPrices.get(k);
         if (m) a.updateValue?.(k, m.price, 0.08);
       }
-      if (this.rng.bool(0.12)) this.tryLearnFromArchive(a);
+      if (this.rng.bool(0.1)) this.tryLearnFromArchive(a);
     }
     // Weather and use wear places down slowly (inspector can show condition)
     for (const s of this.world.structures || []) {
