@@ -1111,8 +1111,8 @@ export const ACTIONS = {
             nearCount('bridge');
           if (spans >= 4) continue;
 
-          const span = ctx.world.findBridgeSpan?.(a.x, a.y, 30, 10)
-            || ctx.world.findBridgeSpan?.(settlement.x, settlement.y, 28, 8);
+          const span = ctx.world.findBridgeSpan?.(a.x, a.y, 36, 14)
+            || ctx.world.findBridgeSpan?.(settlement.x, settlement.y, 36, 14);
           if (!span?.tiles?.length) continue;
 
           let need = def.need(s);
@@ -1351,7 +1351,7 @@ export const ACTIONS = {
       if (structure === 'bridge') {
         const span =
           act.payload.span ||
-          ctx.world.findBridgeSpan?.(act.spot.x, act.spot.y, 26, 8) ||
+          ctx.world.findBridgeSpan?.(act.spot.x, act.spot.y, 36, 14) ||
           ctx.world.findBridgeSpan?.(
             act.payload.settlement.x,
             act.payload.settlement.y,
