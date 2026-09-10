@@ -199,13 +199,18 @@ export function renderReport(host, r, sim) {
       </div>
 
       <div class="sect">
+        <h3>Blood lines</h3>
+        <div class="rows">${(r.lines || []).map((x) => row(esc(x.line), x.n)).join('') || '<div class="row2"><span>No lines recorded yet.</span><span></span></div>'}</div>
+      </div>
+
+      <div class="sect">
         <h3>Lives worth following</h3>
         <div class="cols">
           ${r.notable.slice(0, 6).map((p) => `<div class="card">
             <h4>${esc(p.name)}${p.alive ? '' : ' +'}</h4>
             <div class="card-sub">${p.age.toFixed(0)} years | ${esc(p.role)}${p.titles.length ? ' | ' + p.titles.map(esc).join(', ') : ''}${p.alive ? '' : ` | died of ${esc(p.cause || 'unknown')}`}</div>
             <div style="font-size:var(--text-xs);color:var(--ink-muted)">
-              ${esc(p.traits.join(', '))} | knows ${p.knows} things | remembers ${fmtNum(p.remembers.episodes)} moments (${fmtNum(p.remembers.permanent)} forever)
+              ${p.dnaLabel ? esc(p.dnaLabel) + ' | ' : ''}${esc(p.traits.join(', '))} | knows ${p.knows} things | remembers ${fmtNum(p.remembers.episodes)} moments (${fmtNum(p.remembers.permanent)} forever)
               ${p.partner ? ` | with ${esc(p.partner)}` : ''}${p.children ? ` | ${p.children} children` : ''}
             </div>
             ${p.milestones?.length ? `<ul>${p.milestones.slice(-4).map((m) => `<li><b>d${m.day}</b> ${esc(m.text)}</li>`).join('')}</ul>` : ''}
