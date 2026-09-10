@@ -9,7 +9,7 @@ import { World, TERRAIN } from '../world/world.js';
 import { Ontology } from './concepts.js';
 import { Chronicle } from './chronicle.js';
 import { Agent, YEAR_TICKS, SKILLS } from './agent.js';
-import { randomGenome, inherit, genomeDistance } from './genome.js';
+import { randomGenome, inherit, genomeDistance, inventDna, inheritDna, dnaShare, dnaLabel, lineCensus, kinByDna } from './genome.js';
 import { think } from './mind.js';
 import { appraise, dominantEmotion, moodWord } from './emotion.js';
 import { clamp, dist, mean, topN, hueFor } from '../core/util.js';
@@ -1343,7 +1343,7 @@ export class Simulation {
     this.record(
       mother,
       'birth',
-      `${child.name} was born to ${mother.name}${father ? ` and ${father.name}` : ''}`,
+      `${child.name} was born to ${mother.name}${father ? ` and ${father.name}` : ''}` + (child.dna?.line ? ` - line ${child.dna.line}` : ''),
       {
         actors: [mother.id, child.id].concat(father ? [father.id] : []),
         valence: 0.85,
@@ -2219,7 +2219,16 @@ export class Simulation {
     }
   }
 
-  totalFood() {
+  /** Living people grouped by DNA line (observer). */
+  linesOfLiving() {
+    return lineCensus(this.living);
+  }
+
+  kinOf(a, limit = 6) {
+    return kinByDna(a, this.living, limit);
+  }
+
+    totalFood() {
     let t = 0;
     for (const a of this.living) {
       for (const [k, v] of a.inventory) {
