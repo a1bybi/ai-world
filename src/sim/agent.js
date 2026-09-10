@@ -1,7 +1,7 @@
 import { clamp } from '../core/util.js';
 import { blankAffect } from './emotion.js';
 import { MemoryStore } from './memory.js';
-import { dominantTraits } from './genome.js';
+import { dominantTraits, inventDna, dnaLabel } from './genome.js';
 
 export const YEAR_TICKS = 24 * 30;   // a year is thirty days here, so lineages actually turn over
 
@@ -40,6 +40,8 @@ export class Agent {
     this.id = opts.id || `a${this.seq}`;
     this.name = opts.name || opts.id || `person-${this.seq}`;
     this.genome = opts.genome || { learning: 0.5, fertility: 0.5, resilience: 0.5, stamina: 0.5, longevity: 1, expressive: 0.5, sex: 'f' };
+    // DNA: unique markers for lineage (set by sim at birth/founding if omitted)
+    this.dna = opts.dna || null;
     this.x = opts.x || 0; this.y = opts.y || 0;
     this.bornTick = bornTick;
     this.parents = opts.parents || [];
@@ -83,7 +85,19 @@ export class Agent {
     this.recentActions = opts.recentActions || [];
   }
 
+  /** Guarantee a DNA record (founders created without one). */
+  ensureDna(rng) {
+    if (this.dna?.id) return this.dna;
+    this.dna = inventDna(rng, this.name);
+    return this.dna;
+  }
+
+  dnaLabel() {
+    return dnaLabel(this.dna);
+  }
+
   /** Record what this person just did (for roles / report). */
+
   noteAction(kind) {
     if (!kind) return;
     this.recentActions.push(kind);
