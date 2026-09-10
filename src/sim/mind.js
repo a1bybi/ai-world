@@ -459,14 +459,25 @@ export function think(a, ctx) {
     home &&
     Math.hypot(a.x - home.x, a.y - home.y) < 4 &&
     (a.stats.steps || 0) < world.tick * 0.08;
-  // Crowding: prefer expand / far build when the home camp is full
+  // Crowding / open bank / already far: prefer expand and river spans
   {
     const n = ctx.sim.living.length || 1;
-    if (n >= 18 && a.body.hunger < 0.5 && a.body.thirst < 0.5) {
+    const home = ctx.sim.nearestSettlement?.(a.x, a.y);
+    const homeD = home ? Math.hypot(a.x - home.x, a.y - home.y) : 0;
+    const fission = ctx.sim.fissionUrge?.(home) || 0;
+    const farBank = !!ctx.sim.farBankTarget?.(a, 30);
+    if (
+      a.body.hunger < 0.5 &&
+      a.body.thirst < 0.5 &&
+      (n >= 14 || homeD > 12 || fission > 0.2 || farBank)
+    ) {
       for (const p of candidates) {
-        if (p.kind === 'expand') p.u = Math.max(p.u, 7);
-        if (p.kind === 'build' && p.payload?.farFocus) p.u *= 1.6;
-        if (p.kind === 'build' && !p.payload?.farFocus) p.u *= 1.15;
+        if (p.kind === 'expand') p.u = Math.max(p.u, 6 + fission * 4 + (homeD > 14 ? 3 : 0));
+        if (p.kind === 'build' && p.payload?.structure === 'bridge' && farBank) {
+          p.u = Math.max(p.u, 8);
+        }
+        if (p.kind === 'build' && p.payload?.farFocus) p.u *= 1.7;
+        if (p.kind === 'build' && !p.payload?.farFocus && homeD < 8) p.u *= 1.1;
       }
     }
   }
