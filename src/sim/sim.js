@@ -432,6 +432,7 @@ export class Simulation {
     if ((w.tick % 3) === 0) this.grievanceTick();
     if ((w.tick % 4) === 0) this.normsTick();
     this.corpseTick();
+    if ((w.tick % 12) === 0) this.colonyTick();
 
     if (w.tick % BALANCE.spoilInterval === 0) this.spoilTick();
     if (w.tick % BALANCE.rolesInterval === 0) {
@@ -1118,8 +1119,8 @@ export class Simulation {
 
   emergencyFromStore(a) {
     if (!a?.alive) return false;
-    const needFood = a.body.hunger >= 0.42;
-    const needDrink = a.body.thirst >= 0.4;
+    const needFood = a.body.hunger >= 0.36;
+    const needDrink = a.body.thirst >= 0.34;
     if (!needFood && !needDrink) return false;
     const stores = this.world.structuresOfKind('store').filter((s) => s.stock);
     if (!stores.length) return false;
@@ -1573,14 +1574,14 @@ export class Simulation {
       const n = this.nearestSettlement?.(a.x, a.y);
       return n && n.id === home.id;
     }).length;
-    if (people < 12) return 0;
+    if (people < 10) return 0;
 
     const adults = this.living.filter((a) => {
       const n = this.nearestSettlement?.(a.x, a.y);
       if (!n || n.id !== home.id) return false;
       return !a.isChild?.(this.world.tick) && a.ageAt(this.world.tick) >= 7;
     }).length;
-    if (adults < 5) return 0;
+    if (adults < 4) return 0;
 
     const foodDays = this.foodDaysAt?.(home) ?? 0;
     const total = this.totalFood();
@@ -1678,10 +1679,60 @@ export class Simulation {
     return { x: Math.round(center.x), y: Math.round(center.y) };
   }
 
+
+  /**
+   * If several people are already living on a far bank (or a marked colony spot),
+   * formalize a second settlement without waiting for a perfect expand action.
+   */
+  colonyTick() {
+    if (this.settlements.length >= 5) return;
+    const day = this.world.dayNumber || Math.floor(this.world.tick / 24) + 1;
+    if (day < 28) return;
+    const origin = this.origin;
+    if (!origin) return;
+
+    // Prefer explicit spots created by bridges
+    for (const spot of [...(this._colonySpots || [])].reverse()) {
+      if (this.world.tick - spot.tick > 800) continue;
+      let nearest = Infinity;
+      for (const s of this.settlements) {
+        nearest = Math.min(nearest, Math.hypot(s.x - spot.x, s.y - spot.y));
+      }
+      if (nearest < 11) continue;
+      const here = this.living.filter(
+        (a) => Math.hypot(a.x - spot.x, a.y - spot.y) < 10,
+      );
+      if (here.length >= 2) {
+        const founder = here[0];
+        this.foundSettlement(founder, { x: spot.x, y: spot.y });
+        return;
+      }
+    }
+
+    // Anyone river-blocked from origin counts as far-bank presence
+    const farFolk = [];
+    for (const a of this.living) {
+      if (a.isChild?.(this.world.tick)) continue;
+      if (Math.hypot(a.x - origin.x, a.y - origin.y) < 12) continue;
+      if (this.riverBlocks(origin, a, 55)) farFolk.push(a);
+    }
+    if (farFolk.length < 2) return;
+    // Cluster: use the median of far folk as a hearth
+    const cx = Math.round(farFolk.reduce((s, a) => s + a.x, 0) / farFolk.length);
+    const cy = Math.round(farFolk.reduce((s, a) => s + a.y, 0) / farFolk.length);
+    if (!this.world.walkable(cx, cy)) return;
+    let nearest = Infinity;
+    for (const s of this.settlements) {
+      nearest = Math.min(nearest, Math.hypot(s.x - cx, s.y - cy));
+    }
+    if (nearest < 11) return;
+    this.foundSettlement(farFolk[0], { x: cx, y: cy });
+  }
+
   foundSettlement(a, spot) {
     // Avoid double-founding on top of an existing camp
     for (const s of this.settlements) {
-      if (Math.hypot(s.x - spot.x, s.y - spot.y) < 14) return s;
+      if (Math.hypot(s.x - spot.x, s.y - spot.y) < 11) return s;
     }
     const name = this.lang.placeName(this.rng);
     this.registerLex(name, 'new settlement', 'place');
@@ -1787,6 +1838,26 @@ export class Simulation {
           : `${a.name} raised a ${word} across the water (${span.length} lengths)`,
         { valence: 0.75, intensity: firstEver ? 0.95 : 0.55, landmark: firstEver },
       );
+      // Mark the far bank as a place worth settling
+      const end = span.endLand || span.tiles?.[span.tiles.length - 1];
+      if (end && a) {
+        this._colonySpots = this._colonySpots || [];
+        this._colonySpots.push({
+          x: end.x, y: end.y, tick: this.world.tick, by: a.id,
+        });
+        if (this._colonySpots.length > 12) this._colonySpots.shift();
+        a.memory.learn('where:far-bank', {
+          kind: 'place',
+          confidence: 0.7,
+          valence: 0.55,
+          payload: { x: end.x, y: end.y },
+          source: 'bridge',
+        });
+        a.memory.learn('lesson:cross', {
+          kind: 'lesson', confidence: 0.45, valence: 0.5, source: 'experience',
+          payload: { do: 'expand' },
+        });
+      }
       return first;
     }
 
@@ -1818,7 +1889,7 @@ export class Simulation {
       for (const st of this.settlements) {
         nearest = Math.min(nearest, Math.hypot(st.x - spot.x, st.y - spot.y));
       }
-      if (nearest > 12 && day >= 45 && alive >= 16) {
+      if (nearest > 11 && day >= 30 && alive >= 12) {
         this.foundSettlement(a, { x: spot.x, y: spot.y });
       }
     }
