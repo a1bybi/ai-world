@@ -374,8 +374,8 @@ export class Chronicle {
     let children = 0;
     for (const a of living) {
       const age = a.ageAt(tick);
-      buckets[age < 8 ? 0 : age < 18 ? 1 : age < 32 ? 2 : age < 45 ? 3 : 4]++;
-      if ((a.isChild && a.isChild(tick)) || age < 8) children++;
+      buckets[age < 5 ? 0 : age < 12 ? 1 : age < 22 ? 2 : age < 32 ? 3 : 4]++;
+      if ((a.isChild && a.isChild(tick)) || age < 5) children++;
       else adults++;
     }
     return {
