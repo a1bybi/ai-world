@@ -245,7 +245,9 @@ export class Simulation {
     const firstName = this.lang.placeName(rng);
     this.registerLex(firstName, 'founding shore-camp', 'place');
     const founding = {
-      kind: 'settlement', name: firstName, x: cx, y: cy,
+      kind: 'settlement',
+      id: 'set-0',
+      name: firstName, x: cx, y: cy,
       foundedTick: 0, color: hueFor(0), tier: 'camp',
       archive: new Set(),
     };
@@ -328,6 +330,7 @@ export class Simulation {
       builtTick: 0,
       material: 'wood',
       condition: 1,
+      settlementId: founding.id,
       stock: new Map([
         ['grain', 120],
         ['berry', 80],
@@ -1738,6 +1741,7 @@ export class Simulation {
     this.registerLex(name, 'new settlement', 'place');
     const settlement = {
       kind: 'settlement',
+      id: `set-${this.settlements.length}-${this.world.tick}`,
       name,
       x: spot.x,
       y: spot.y,
@@ -1750,27 +1754,41 @@ export class Simulation {
     this.settlements.push(settlement);
     this.world.sites.push(settlement);
 
-    // Seed a small store so the new place is a real economic node
-    const storeWord = this.lang.word('struct:store');
-    this.registerLex(storeWord, 'store', 'structure');
-    if (!this.world.structureAt(spot.x, spot.y) && this.world.walkable(spot.x, spot.y)) {
-      this.world.addStructure({
-        kind: 'store',
-        x: spot.x,
-        y: spot.y,
-        word: storeWord,
+    const tag = (s) => {
+      s.settlementId = settlement.id;
+      return s;
+    };
+
+    // Bootstrap: store + shelter + hearth + field so a daughter camp is livable
+    const place = (kind, x, y, extra = {}) => {
+      if (!this.world.inBounds(x, y) || !this.world.walkable(x, y)) return;
+      if (this.world.structureAt(x, y)) return;
+      const word = this.lang.word(`struct:${kind}`);
+      this.registerLex(word, kind, 'structure');
+      this.world.addStructure(tag({
+        kind,
+        x, y,
+        word,
         builtBy: a?.name || 'founders',
         builtTick: this.world.tick,
         material: 'wood',
         condition: 1,
-        stock: new Map([
-          ['grain', 24],
-          ['berry', 12],
-          ['water', 16],
-          ['wood', 8],
-        ]),
-      });
-    }
+        stock: kind === 'store'
+          ? new Map([['grain', 28], ['berry', 14], ['water', 18], ['wood', 10], ['fibre', 6]])
+          : new Map(),
+        ripeness: kind === 'field' ? 0.2 : undefined,
+        tended: kind === 'field' ? 0.4 : undefined,
+        occupants: [],
+        ...extra,
+      }));
+    };
+
+    place('store', spot.x, spot.y);
+    place('shelter', spot.x + 1, spot.y);
+    place('shelter', spot.x - 1, spot.y);
+    place('hearth', spot.x, spot.y + 1);
+    place('field', spot.x + 2, spot.y);
+    place('field', spot.x, spot.y - 2);
 
     this.record(a, 'first', `${a.name} founded ${name} across the land`, {
       valence: 0.7, intensity: 0.95, landmark: true,
@@ -1785,7 +1803,15 @@ export class Simulation {
         payload: { x: spot.x, y: spot.y },
         source: 'founding',
       });
-      a.home = a.home || { x: spot.x, y: spot.y };
+      a.home = { x: spot.x, y: spot.y };
+      a.settlementId = settlement.id;
+    }
+    // Attract nearby wanderers to the new hearth
+    for (const o of this.living) {
+      if (Math.hypot(o.x - spot.x, o.y - spot.y) < 12) {
+        o.settlementId = settlement.id;
+        if (!o.home) o.home = { x: spot.x, y: spot.y };
+      }
     }
     return settlement;
   }
@@ -1821,6 +1847,7 @@ export class Simulation {
           occupants: [],
           spanId,
           spanLen: span.length,
+          settlementId: settlement?.id || null,
         };
         this.world.addStructure(s);
         if (!first) first = s;
@@ -1875,6 +1902,7 @@ export class Simulation {
       ripeness: kind === 'field' ? 0.15 : undefined,
       tended: kind === 'field' ? 0.3 : undefined,
       occupants: [],
+      settlementId: settlement?.id || null,
     };
     this.world.addStructure(s);
 
@@ -2333,39 +2361,46 @@ export class Simulation {
   settlementReports() {
     const out = [];
     for (const st of this.settlements || []) {
+      // Membership by nearest camp (object identity) - not missing ids
       const members = this.living.filter((a) => {
+        if (a.settlementId && st.id && a.settlementId === st.id) return true;
         const home = this.nearestSettlement?.(a.x, a.y);
-        return home && home.id === st.id;
+        return home === st;
       });
       const n = members.length;
       const kinds = {};
       for (const s of this.world.structures || []) {
-        if (s.settlementId === st.id || (Math.hypot((s.x - st.x), (s.y - st.y)) < 14)) {
-          kinds[s.kind] = (kinds[s.kind] || 0) + 1;
-        }
+        const owner = s.settlementId
+          ? this.settlements.find((x) => x.id === s.settlementId)
+          : this.nearestSettlement(s.x, s.y);
+        if (owner !== st) continue;
+        kinds[s.kind] = (kinds[s.kind] || 0) + 1;
       }
       let storeFill = 0;
       let storeCap = 0;
       for (const s of this.world.structuresOfKind('store')) {
-        if (Math.hypot(s.x - st.x, s.y - st.y) > 16) continue;
-        if (!s.stock) continue;
+        const owner = s.settlementId
+          ? this.settlements.find((x) => x.id === s.settlementId)
+          : this.nearestSettlement(s.x, s.y);
+        if (owner !== st || !s.stock) continue;
         for (const v of s.stock.values()) {
-          storeFill += v;
-          storeCap += 50;
+          storeFill += Math.max(0, v);
+          storeCap += 40;
         }
       }
       const mood = n
         ? members.reduce((s, a) => s + (a.affect?.mood || 0), 0) / n
         : 0;
       const lines = lineCensus(members).slice(0, 5);
+      const fd = this.foodDaysAt?.(st);
       out.push({
         id: st.id,
         name: st.name || 'camp',
         living: n,
         structures: kinds,
         structureCount: Object.values(kinds).reduce((a, b) => a + b, 0),
-        storePct: storeCap ? Math.round((100 * storeFill) / storeCap) : 0,
-        foodDays: this.foodDaysAt?.(st) ?? null,
+        storePct: storeCap ? Math.min(100, Math.round((100 * storeFill) / storeCap)) : 0,
+        foodDays: fd != null ? Math.round(fd * 10) / 10 : null,
         mood: +mood.toFixed(2),
         lines,
       });
@@ -2387,7 +2422,7 @@ export class Simulation {
     return kinByDna(a, this.living, limit);
   }
 
-    totalFood() {
+  totalFood() {
     let t = 0;
     for (const a of this.living) {
       for (const [k, v] of a.inventory) {
