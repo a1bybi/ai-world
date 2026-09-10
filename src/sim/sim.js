@@ -17,7 +17,7 @@ import { STRUCTURE_KINDS } from './actions.js';
 
 const BALANCE = {
   conceptionChance: 0.15,
-  pregnancyTerm: 0.7,
+  pregnancyTerm: 0.45,
   birthHealthCost: 0.08,
   grievanceInterval: 6,
   normsInterval: 24,
@@ -1520,7 +1520,7 @@ export class Simulation {
     const sole =
       this.settlements.length <= 1 && n.people >= 30 && day >= 80 ? 0.25 : 0;
     const farOpen =
-      day >= 80 &&
+      day >= 45 &&
       this.farBankTarget({ x: settlement.x, y: settlement.y }, 26)
         ? 0.15
         : 0;
@@ -1547,7 +1547,7 @@ export class Simulation {
     if (!home) return 0;
     if (this.settlements.length >= 4) return 0;
     const day = this.world.dayNumber || Math.floor(this.world.tick / 24) + 1;
-    if (day < 80) return 0;
+    if (day < 40) return 0;
 
     const people = this.living.filter(
       (a) => Math.hypot(a.x - home.x, a.y - home.y) < 18,
@@ -1792,7 +1792,7 @@ export class Simulation {
       for (const st of this.settlements) {
         nearest = Math.min(nearest, Math.hypot(st.x - spot.x, st.y - spot.y));
       }
-      if (nearest > 14 && day >= 70 && alive >= 22) {
+      if (nearest > 12 && day >= 45 && alive >= 16) {
         this.foundSettlement(a, { x: spot.x, y: spot.y });
       }
     }
