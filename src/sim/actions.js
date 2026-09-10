@@ -364,11 +364,11 @@ function settlementBuildAllowed(ctx, settlement, kind) {
   const last = map.get(key) ?? -999;
   const basic = kind === 'shelter' || kind === 'hearth' || kind === 'well' || kind === 'field';
   // Founding week slow; mid/late game allows steadier growth past ~25 structures
-  let gap = basic ? 8 : 14;
-  if (day < 12) gap = basic ? 18 : 30;
-  else if (day < 35) gap = basic ? 12 : 20;
-  else if (day < 80) gap = basic ? 8 : 12;
-  else gap = basic ? 6 : 10; // mature camp: keep building when pressure exists
+  let gap = basic ? 6 : 12;
+  if (day < 10) gap = basic ? 14 : 24;
+  else if (day < 30) gap = basic ? 10 : 16;
+  else if (day < 60) gap = basic ? 6 : 10;
+  else gap = basic ? 4 : 8; // mature: keep improving the place
   return tick - last >= gap;
 }
 
@@ -1391,7 +1391,7 @@ export const ACTIONS = {
   expand: {
     category: 'work',
     propose(a, ctx) {
-      if (a.isChild(ctx.world.tick) || a.ageAt(ctx.world.tick) < 12) return [];
+      if (a.isChild(ctx.world.tick) || a.ageAt(ctx.world.tick) < 7) return [];
       // Never found a colony while personally food-stressed
       if (a.body.hunger > 0.4 || a.body.thirst > 0.4) return [];
       if (a.body.energy < 0.35) return [];
@@ -2010,7 +2010,7 @@ export const ACTIONS = {
         (o) =>
           o.id !== a.id &&
           !o.partner &&
-          o.ageAt(ctx.world.tick) > 10 &&
+          o.ageAt(ctx.world.tick) > 7 &&
           o.ageAt(ctx.world.tick) < 55 &&
           a.rel(o).kin < 0.5,
       );
@@ -2356,6 +2356,49 @@ export const ACTIONS = {
       return 'continue';
     },
   },
+
+  /** Mend a worn place - keeps architecture changing after the skyline settles. */
+  repair: {
+    category: 'work',
+    propose(a, ctx) {
+      if (a.isChild?.(ctx.world.tick)) return [];
+      if (a.body.hunger > 0.55 || a.body.energy < 0.25) return [];
+      const worn = (ctx.world.structures || []).filter(
+        (s) => (s.condition ?? 1) < 0.72 && s.kind !== 'path',
+      );
+      if (!worn.length) return [];
+      const s = topN(worn, 1, (x) => (1 - (x.condition ?? 1)) * 2 - dist(a, x) * 0.05)[0];
+      if (!s) return [];
+      const u =
+        (0.9 + (1 - (s.condition ?? 1)) * 4) *
+        (0.5 + a.skills.build) *
+        (ctx.bias?.work ?? 1);
+      return [{ kind: 'repair', u, target: T(s.x, s.y), structure: s, dur: 2 }];
+    },
+    run(a, ctx, act) {
+      if (dist(a, act.target) > 1.2) {
+        stepToward(a, ctx.world, act.target);
+        return 'continue';
+      }
+      const s = act.structure;
+      if (!s) return 'abort';
+      const before = s.condition ?? 1;
+      s.condition = clamp(before + 0.18 + a.skills.build * 0.12, 0, 1);
+      a.gainSkill('build', 0.03);
+      a.stats.built = (a.stats.built || 0) + 0.25;
+      if (s.condition - before > 0.05) {
+        ctx.sim.record(
+          a,
+          'build',
+          `${a.name} mended the ${s.word || s.kind} (${Math.round(before * 100)}% -> ${Math.round(s.condition * 100)}%)`,
+          { valence: 0.35, intensity: 0.35, quiet: true },
+        );
+      }
+      if (--act.dur > 0) return 'continue';
+      return 'done';
+    },
+  },
+
 
   idle: {
     category: 'body',
