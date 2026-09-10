@@ -272,9 +272,10 @@ export class Simulation {
       const g = randomGenome(rng);
       const personName = this.lang.personName(rng);
       this.registerLex(personName, 'founder', 'person');
+      const dna = inventDna(rng, personName);
 
       const a = new Agent({
-        name: personName, genome: g, x, y, tick: 0, world, tongue: this.lang.name,
+        name: personName, genome: g, dna, x, y, tick: 0, world, tongue: this.lang.name,
       });
       a.bornTick = -rng.int(16, 34) * YEAR_TICKS;
       a.body.hunger = 0.1;
@@ -1293,14 +1294,19 @@ export class Simulation {
     const g = inherit(this.rng, mother.genome, father?.genome || mother.genome);
     const name = this.lang.personName(this.rng);
     this.registerLex(name, 'child', 'person');
+    if (!mother.dna?.id) mother.dna = inventDna(this.rng, mother.name);
+    if (father && !father.dna?.id) father.dna = inventDna(this.rng, father.name);
+    const dna = inheritDna(this.rng, mother.dna, father?.dna || null);
     const child = new Agent({
       name,
       genome: g,
+      dna,
       x: mother.x,
       y: mother.y,
       tick: this.world.tick,
       world: this.world,
       tongue: this.lang.name,
+      generation: Math.max(mother.generation || 1, father?.generation || 1) + 1,
     });
     child.bornTick = this.world.tick;
     child.motherId = mother.id;
@@ -2221,6 +2227,12 @@ export class Simulation {
 
   /** Living people grouped by DNA line (observer). */
   linesOfLiving() {
+    // Backfill DNA for any agent missing it (old saves / missed founders)
+    for (const a of this.living) {
+      if (!a.dna?.id) {
+        a.dna = inventDna(this.rng, a.name);
+      }
+    }
     return lineCensus(this.living);
   }
 
