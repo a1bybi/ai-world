@@ -1409,6 +1409,17 @@ export const ACTIONS = {
       let best = ctx.sim.farBankTarget?.(a, 32) || null;
       let bestScore = best ? 0.6 + fission : 0;
 
+      // Spots marked when a bridge reached the far bank
+      for (const spot of ctx.sim._colonySpots || []) {
+        const nearestD = Math.min(...ctx.sim.settlements.map((s) => dist(spot, s)));
+        if (nearestD < 11) continue;
+        const score = 0.85 + fission + (ctx.world.tick - spot.tick < 400 ? 0.3 : 0);
+        if (score > bestScore) {
+          bestScore = score;
+          best = { x: spot.x, y: spot.y };
+        }
+      }
+
       // If already standing far from every camp, that tile can become a hearth
       const homeD = home ? dist(a, home) : 99;
       if (homeD > 16 && ctx.world.walkable(a.x, a.y)) {
