@@ -718,18 +718,19 @@ export function tickAgent(a, ctx, full = true) {
   }
   const world = ctx.world;
   updateBody(a, world);
-  // Emergency: force full mind next path by calling think
-  if (
-    a.body.hunger > 0.55 ||
-    a.body.thirst > 0.55 ||
-    a.body.health < 0.35 ||
-    a.body.rest < 0.08 ||
-    !a.action
-  ) {
+
+  // Only true emergencies force a full replan on a light tick.
+  // (Mild hunger is common; treating it as urgent defeated staggering.)
+  const critical =
+    a.body.hunger > 0.78 ||
+    a.body.thirst > 0.78 ||
+    a.body.health < 0.28 ||
+    a.body.rest < 0.04;
+  if (critical) {
     think(a, ctx);
     return;
   }
-  // Continue multi-tick action without re-scoring the whole world
+
   if (a.action && ACTIONS[a.action.kind]?.run) {
     try {
       const res = ACTIONS[a.action.kind].run(a, ctx, a.action);
@@ -741,7 +742,14 @@ export function tickAgent(a, ctx, full = true) {
       a.action = null;
     }
   }
+
+  // No action and not critical: cheap placeholder until this agent is due for full think
+  if (!a.action) {
+    if (a.body.rest < 0.35) a.action = { kind: 'sleep', dur: 2 };
+    else a.action = { kind: 'idle', dur: 2 };
+  }
   decayAffect(a, 1);
 }
 
 export { dominantEmotion };
+
