@@ -333,6 +333,10 @@ export class Chronicle {
       decisions: (sim.decisionLog || []).slice(-16).reverse(),
       techEffects: (sim.techEffects || []).slice(-12).reverse(),
       notable: notable.map((a) => this.life(sim, a)),
+      lines: (typeof sim.linesOfLiving === 'function'
+        ? sim.linesOfLiving()
+        : [])
+        .slice(0, 12),
       deaths: dead.slice(-14).reverse().map((a) => {
         const t = a.deathTick ?? a.diedTick ?? sim.world.tick;
         const age = Math.max(0, a.ageAt(t));
@@ -486,6 +490,10 @@ export class Chronicle {
       knows: a.memory.semantic.size,
       remembers: a.memory.stats(),
       cause: a.deathCause,
+      dnaId: a.dna?.id || null,
+      dnaLine: a.dna?.line || null,
+      dnaLabel: a.dna ? `${a.dna.id}${a.dna.line ? ' - line ' + a.dna.line : ''}` : null,
+      generation: a.generation || 1,
       milestones: evs
         .filter(
           (e) =>
