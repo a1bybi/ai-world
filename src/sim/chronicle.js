@@ -337,6 +337,10 @@ export class Chronicle {
         ? sim.linesOfLiving()
         : [])
         .slice(0, 12),
+      settlements: (typeof sim.settlementReports === 'function'
+        ? sim.settlementReports()
+        : [])
+        .slice(0, 8),
       deaths: dead.slice(-14).reverse().map((a) => {
         const t = a.deathTick ?? a.diedTick ?? sim.world.tick;
         const age = Math.max(0, a.ageAt(t));
