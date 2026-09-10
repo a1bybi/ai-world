@@ -459,6 +459,18 @@ export function think(a, ctx) {
     home &&
     Math.hypot(a.x - home.x, a.y - home.y) < 4 &&
     (a.stats.steps || 0) < world.tick * 0.08;
+  // Crowding: prefer expand / far build when the home camp is full
+  {
+    const n = ctx.sim.living.length || 1;
+    if (n >= 18 && a.body.hunger < 0.5 && a.body.thirst < 0.5) {
+      for (const p of candidates) {
+        if (p.kind === 'expand') p.u = Math.max(p.u, 7);
+        if (p.kind === 'build' && p.payload?.farFocus) p.u *= 1.6;
+        if (p.kind === 'build' && !p.payload?.farFocus) p.u *= 1.15;
+      }
+    }
+  }
+
   if ((stagnant || campBound) && a.body.hunger < 0.65 && a.body.thirst < 0.65) {
     for (const p of candidates) {
       if (p.kind === 'explore') p.u = Math.max(p.u, 11);
