@@ -472,9 +472,15 @@ export function think(a, ctx) {
       (n >= 14 || homeD > 12 || fission > 0.2 || farBank)
     ) {
       for (const p of candidates) {
-        if (p.kind === 'expand') p.u = Math.max(p.u, 6 + fission * 4 + (homeD > 14 ? 3 : 0));
+        if (p.kind === 'expand') {
+          const spots = (ctx.sim._colonySpots || []).length;
+          p.u = Math.max(
+            p.u,
+            6 + fission * 4 + (homeD > 14 ? 3 : 0) + (spots ? 5 : 0),
+          );
+        }
         if (p.kind === 'build' && p.payload?.structure === 'bridge' && farBank) {
-          p.u = Math.max(p.u, 8);
+          p.u = Math.max(p.u, 9);
         }
         if (p.kind === 'build' && p.payload?.farFocus) p.u *= 1.7;
         if (p.kind === 'build' && !p.payload?.farFocus && homeD < 8) p.u *= 1.1;
