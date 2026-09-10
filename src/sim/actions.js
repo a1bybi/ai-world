@@ -1107,22 +1107,25 @@ export const ACTIONS = {
         // ── Bridge: full span cost + site ───────────────────────
         if (kind === 'bridge') {
           const spans =
-            ctx.world.bridgeSpanCount?.(settlement.x, settlement.y, 18) ??
+            ctx.world.bridgeSpanCount?.(settlement.x, settlement.y, 22) ??
             nearCount('bridge');
-          if (spans >= 2) continue;
+          if (spans >= 4) continue;
 
-          const span = ctx.world.findBridgeSpan?.(settlement.x, settlement.y, 26, 8);
+          const span = ctx.world.findBridgeSpan?.(a.x, a.y, 30, 10)
+            || ctx.world.findBridgeSpan?.(settlement.x, settlement.y, 28, 8);
           if (!span?.tiles?.length) continue;
 
           let need = def.need(s);
-          if (far) need = Math.max(need, 0.75);
-          else need = Math.max(need, 0.5);
+          // Open far bank is a strong reason to span the river
+          if (far) need = Math.max(need, 1.35);
+          else need = Math.max(need, 0.65);
+          if (spans === 0 && day > 20) need = Math.max(need, 0.9);
           if (need <= 0.08) continue;
 
           const purpose =
             spans === 0
-              ? 0.65 + a.genome.curiosity * 0.55
-              : knownStructureUse(a, 'bridge');
+              ? 0.85 + a.genome.curiosity * 0.6 + a.genome.industry * 0.3
+              : Math.max(0.55, knownStructureUse(a, 'bridge'));
 
           let matKey = 'wood';
           for (const k of ['wood', 'stone', 'fibre', 'reed', 'clay']) {
@@ -1392,23 +1395,29 @@ export const ACTIONS = {
     category: 'work',
     propose(a, ctx) {
       if (a.isChild(ctx.world.tick) || a.ageAt(ctx.world.tick) < 7) return [];
-      // Never found a colony while personally food-stressed
-      if (a.body.hunger > 0.4 || a.body.thirst > 0.4) return [];
-      if (a.body.energy < 0.35) return [];
-      if (ctx.sim.settlements.length >= 4) return [];
+      if (a.body.hunger > 0.48 || a.body.thirst > 0.48) return [];
+      if (a.body.energy < 0.28) return [];
+      if (ctx.sim.settlements.length >= 5) return [];
       const day = ctx.world.dayNumber || Math.floor(ctx.world.tick / 24) + 1;
-      if (day < 80) return [];
+      if (day < 30) return [];
 
       const home = ctx.sim.nearestSettlement(a.x, a.y);
       const pressure = ctx.sim.settlementPressure(home);
       const fission = ctx.sim.fissionUrge?.(home) || 0;
-      // Require real fission urge - pressure alone is not enough early
-      if (fission < 0.28) return [];
-      if (pressure < 0.12 && fission < 0.4) return [];
+      if (fission < 0.18 && pressure < 0.2) return [];
 
-      // Prefer a concrete far-bank tile once bridges exist
-      let best = ctx.sim.farBankTarget?.(a, 28) || null;
-      let bestScore = best ? 0.55 + fission : 0;
+      let best = ctx.sim.farBankTarget?.(a, 32) || null;
+      let bestScore = best ? 0.6 + fission : 0;
+
+      // If already standing far from every camp, that tile can become a hearth
+      const homeD = home ? dist(a, home) : 99;
+      if (homeD > 16 && ctx.world.walkable(a.x, a.y)) {
+        const nearestD = Math.min(...ctx.sim.settlements.map((s) => dist(a, s)));
+        if (nearestD > 14) {
+          best = { x: a.x, y: a.y };
+          bestScore = Math.max(bestScore, 0.7 + fission);
+        }
+      }
 
       const known = a.memory
         .knownKeys('place')
@@ -1418,12 +1427,12 @@ export const ACTIONS = {
         const p = belief.payload;
         if (p.x == null || p.y == null) continue;
         const nearestD = Math.min(...ctx.sim.settlements.map((s) => dist(p, s)));
-        if (nearestD < 18) continue;
+        if (nearestD < 14) continue;
         const score =
           clamp(belief.confidence) *
           (0.35 + clamp(belief.valence, 0, 1)) *
-          Math.min(1.2, nearestD * 0.03) +
-          fission * 0.3;
+          Math.min(1.3, nearestD * 0.04) +
+          fission * 0.35;
         if (score > bestScore) {
           bestScore = score;
           best = p;
@@ -1432,12 +1441,12 @@ export const ACTIONS = {
       if (!best) return [];
 
       const u =
-        Math.max(pressure, fission) *
-        (0.55 + a.genome.risk * 0.8 + a.genome.industry * 0.5 + a.genome.curiosity * 0.4) *
+        Math.max(pressure, fission, 0.25) *
+        (0.6 + a.genome.risk * 0.9 + a.genome.industry * 0.5 + a.genome.curiosity * 0.45) *
         (ctx.bias?.work ?? 1) *
-        (0.4 + bestScore) *
-        (ctx.sim.settlements.length === 1 ? 1.35 : 1);
-      if (u < 0.28) return [];
+        (0.45 + bestScore) *
+        (ctx.sim.settlements.length === 1 ? 1.5 : 1.15);
+      if (u < 0.22) return [];
       return [{ kind: 'expand', u, target: T(best.x, best.y), dur: 1 }];
     },
     run(a, ctx, act) {
