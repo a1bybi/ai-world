@@ -486,6 +486,17 @@ export function think(a, ctx) {
         if (p.kind === 'build' && !p.payload?.farFocus && homeD < 8) p.u *= 1.1;
       }
     }
+    // Young daughter camps: prioritize shelter/field/hearth over teach
+    if (home && (ctx.world.tick - (home.foundedTick || 0)) < 200 && homeD < 10) {
+      const age = ctx.world.tick - (home.foundedTick || 0);
+      if (age > 0 && a.body.hunger < 0.55) {
+        for (const p of candidates) {
+          if (p.kind === 'build') p.u *= 1.45;
+          if (p.kind === 'farm') p.u *= 1.25;
+          if (p.kind === 'teach') p.u *= 0.55;
+        }
+      }
+    }
   }
 
   if ((stagnant || campBound) && a.body.hunger < 0.65 && a.body.thirst < 0.65) {
