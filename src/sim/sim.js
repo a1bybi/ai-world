@@ -319,28 +319,41 @@ export class Simulation {
       this.addAgent(a);
     }
 
-    const storeWord = this.lang.word('struct:store');
-    this.registerLex(storeWord, 'store', 'structure');
-    this.world.addStructure({
-      kind: 'store',
-      x: cx,
-      y: cy,
-      word: storeWord,
-      builtBy: 'founders',
-      builtTick: 0,
-      material: 'wood',
-      condition: 1,
-      settlementId: founding.id,
-      stock: new Map([
-        ['grain', 120],
-        ['berry', 80],
-        ['root', 70],
-        ['water', 40],
-        ['wood', 12],
-        ['stone', 6],
-        ['fibre', 14],
-      ]),
-    });
+    const addStruct = (kind, x, y, extra = {}) => {
+      const word = this.lang.word(`struct:${kind}`);
+      this.registerLex(word, kind, 'structure');
+      this.world.addStructure({
+        kind,
+        x,
+        y,
+        word,
+        builtBy: 'founders',
+        builtTick: 0,
+        material: 'wood',
+        condition: 1,
+        settlementId: founding.id,
+        stock: kind === 'store' ? new Map([
+          ['grain', 120],
+          ['berry', 80],
+          ['root', 70],
+          ['water', 40],
+          ['wood', 20],
+          ['stone', 8],
+          ['fibre', 16],
+        ]) : new Map(),
+        ripeness: kind === 'field' ? 0.35 : undefined,
+        tended: kind === 'field' ? 0.4 : undefined,
+        occupants: [],
+        ...extra,
+      });
+    };
+    addStruct('store', cx, cy);
+    addStruct('hearth', cx + 1, cy);
+    addStruct('shelter', cx - 1, cy);
+    addStruct('shelter', cx, cy + 1);
+    addStruct('shelter', cx + 1, cy + 1);
+    addStruct('field', cx - 2, cy);
+    addStruct('field', cx - 2, cy + 1);
   }
 
   addAgent(a) {
@@ -401,18 +414,18 @@ export class Simulation {
     // Staggered minds: few full propose() scans per tick; others continue/idle.
     const living = this.living;
     const n = living.length;
-    // Hard cap full minds per tick â propose() is the cost center
+    // Balanced: enough full minds to build/pair, not so many that phones stall
     const budget =
-      n <= 6 ? n : Math.max(3, Math.min(5, Math.ceil(40 / Math.max(1, Math.sqrt(n)))));
+      n <= 10 ? n : Math.max(6, Math.min(9, Math.ceil(70 / Math.max(1, Math.sqrt(n)))));
     this._thinkCursor = (this._thinkCursor || 0) % Math.max(1, n);
     for (let i = 0; i < n; i++) {
       const a = living[i];
       a.utterance = null;
       if (!a.alive) continue;
       const urgent =
-        a.body.hunger > 0.9 ||
-        a.body.thirst > 0.9 ||
-        a.body.health < 0.2;
+        a.body.hunger > 0.85 ||
+        a.body.thirst > 0.85 ||
+        a.body.health < 0.22;
       const full =
         urgent ||
         ((i - this._thinkCursor + n) % n) < budget;
