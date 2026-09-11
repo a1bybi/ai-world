@@ -166,7 +166,7 @@ function paint() {
   renderer.selectedStructure = state.selectedStructure;
   renderer.draw(sim);
   const w = sim.world;
-  $('#clock').textContent = w.timeString();
+  $('#clock').textContent = String(w.timeString()).replace(/\u00b7|\u00c2\u00b7/g, '-');
   const era = sim.chronicle.eras[sim.chronicle.eras.length - 1];
   $('#eraChip').textContent = era ? era.name : '-';
   const sc = $('#seasonChip');
