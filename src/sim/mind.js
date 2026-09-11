@@ -203,16 +203,8 @@ export function think(a, ctx) {
   const stressed = a.body.hunger > 0.42 || a.body.thirst > 0.45 || a.body.energy < 0.22;
   const fedSafe = a.body.hunger < 0.38 && a.body.thirst < 0.4;
   for (const [name, def] of ACTION_LIST) {
-    // Performance: skip culture/thought proposes when the body is under strain
-    if (
-      stressed &&
-      (name === 'experiment' ||
-        name === 'makeArt' ||
-        name === 'ritual' ||
-        name === 'court' ||
-        name === 'converse' ||
-        name === 'teach')
-    ) {
+    // Performance: skip only pure leisure when strained — keep experiment/teach alive
+    if (stressed && (name === 'makeArt' || name === 'ritual' || name === 'court')) {
       continue;
     }
     // Skip expand spam when not fed
@@ -284,9 +276,11 @@ export function think(a, ctx) {
         if (p.kind === 'gather' || p.kind === 'takeFromStore' || p.kind === 'farm' || p.kind === 'hunt') {
           p.u *= 3.0;
         }
-        if (p.kind === 'experiment' || p.kind === 'craft' || p.kind === 'makeArt' || p.kind === 'build') {
-          p.u *= 0.02;
+        if (p.kind === 'craft' || p.kind === 'makeArt') {
+          p.u *= 0.05;
         }
+        if (p.kind === 'experiment') p.u *= 0.25;
+        if (p.kind === 'build') p.u *= 0.05;
       }
 
       // Teaching/culture yields to survival - especially for the last adults
@@ -703,6 +697,28 @@ export function think(a, ctx) {
         (c) => c.kind === 'build' && c.payload?.structure === 'mill',
       );
       if (millCand) millCand.u = Math.max(millCand.u, 13);
+    }
+  }
+
+  // Knowledge drought: if the world is not inventing, push experiment/teach
+  {
+    const inv = ctx.sim.counters?.inventions || 0;
+    const attempts = ctx.sim.counters?.experiments || ctx.sim.counters?.attempts || 0;
+    const arch = ctx.sim.archive?.size || 0;
+    const day = ctx.world.dayNumber || Math.floor(ctx.world.tick / 24) + 1;
+    const drought = day > 20 && (inv < 3 || arch < 2);
+    if (a.body.hunger < 0.55 && a.body.thirst < 0.55) {
+      for (const p of candidates) {
+        if (p.kind === 'experiment') {
+          p.u *= drought ? 2.4 : 1.35;
+          if (drought) p.u = Math.max(p.u, 8);
+        }
+        if (p.kind === 'teach') {
+          p.u *= drought ? 1.8 : 1.2;
+          if (drought && arch < 3) p.u = Math.max(p.u, 6);
+        }
+        if (p.kind === 'craft' && drought) p.u *= 1.25;
+      }
     }
   }
 
