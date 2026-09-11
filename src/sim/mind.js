@@ -657,8 +657,8 @@ export function think(a, ctx) {
     }
   }
 
-  // Force deposit when packs hold food and body is not in crisis
-  if (a.body.hunger < 0.5 && a.body.thirst < 0.5) {
+  // Soft civic boosts (never lock out build/court/farm)
+  if (a.body.hunger < 0.55 && a.body.thirst < 0.55) {
     let packFood = 0;
     for (const [k, v] of a.inventory) {
       const c = ctx.ont.get(k);
@@ -666,30 +666,30 @@ export function think(a, ctx) {
         (typeof c?.serves === 'function' ? c.serves('sustenance') : 0) ||
         c?.functions?.sustenance ||
         0;
-      if (sust > 0.1 || /sos|sheik|teiv|berry|root|grain|meat|fish/i.test(String(k))) {
+      if (sust > 0.1 || /sos|sheik|teiv|berry|root|grain|meat|fish|ni\b/i.test(String(k))) {
         packFood += v;
       }
     }
     const storeCand2 = candidates.find((c) => c.kind === 'store');
-    if (storeCand2 && packFood >= 3) {
-      a.action = storeCand2;
-      a.noteAction?.('store');
-      a.goal = 'storing food';
-      a.reasoning = [{ kind: 'store', u: storeCand2.u, why: 'packs full - fill the granary' }];
-      return;
-    }
+    if (storeCand2 && packFood >= 4) storeCand2.u = Math.max(storeCand2.u, 10);
     const bridgeCand = candidates.find(
       (c) => c.kind === 'build' && c.payload?.structure === 'bridge',
     );
     if (bridgeCand) {
       const home = ctx.sim.nearestSettlement?.(a.x, a.y);
       const spans = home ? (ctx.world.bridgeSpanCount?.(home.x, home.y, 28) || 0) : 0;
-      if (spans === 0) {
-        a.action = bridgeCand;
-        a.noteAction?.('build');
-        a.goal = 'spanning the water';
-        a.reasoning = [{ kind: 'build', u: bridgeCand.u, why: 'no crossing yet - span the water' }];
-        return;
+      if (spans === 0) bridgeCand.u = Math.max(bridgeCand.u, 9);
+    }
+    // Early skyline: prefer shelter/field/hearth while the camp is thin
+    const structs = ctx.world.structures?.length || 0;
+    if (structs < 8) {
+      for (const p of candidates) {
+        if (
+          p.kind === 'build' &&
+          ['shelter', 'field', 'hearth', 'store'].includes(p.payload?.structure)
+        ) {
+          p.u = Math.max(p.u, 12);
+        }
       }
     }
   }
@@ -857,10 +857,10 @@ export function tickAgent(a, ctx, full = true) {
   // Only true emergencies force a full replan on a light tick.
   // (Mild hunger is common; treating it as urgent defeated staggering.)
   const critical =
-    a.body.hunger > 0.88 ||
-    a.body.thirst > 0.88 ||
-    a.body.health < 0.22 ||
-    a.body.rest < 0.03;
+    a.body.hunger > 0.8 ||
+    a.body.thirst > 0.8 ||
+    a.body.health < 0.25 ||
+    a.body.rest < 0.04;
   if (critical) {
     think(a, ctx);
     return;
