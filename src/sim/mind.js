@@ -34,8 +34,8 @@ export function updateBody(a, world, dt = 1) {
 
   b.hunger = clamp(b.hunger + 0.0032 * g.metabolism * young * dt, 0, 1);
   b.thirst = clamp(b.thirst + 0.0055 * young * dt, 0, 1);
-  b.rest = clamp(b.rest - 0.0075 * dt, 0, 1);
-  b.energy = clamp(b.energy - 0.006 * dt + (b.rest > 0.6 ? 0.007 : 0), 0, 1);
+  b.rest = clamp(b.rest - 0.0055 * dt, 0, 1);
+  b.energy = clamp(b.energy - 0.0045 * dt + (b.rest > 0.5 ? 0.01 : 0), 0, 1);
   b.warmth = clamp(
     b.warmth - cold * 0.028 * dt * (1 - clothing * 0.7) + 0.022 * dt,
     0,
@@ -46,7 +46,7 @@ export function updateBody(a, world, dt = 1) {
   if (b.hunger > 0.92) damage += (b.hunger - 0.92) * 0.0045;
   if (b.thirst > 0.92) damage += (b.thirst - 0.92) * 0.014;
   if (b.warmth < 0.15) damage += (0.15 - b.warmth) * 0.05;
-  if (b.rest < 0.05) damage += 0.004;
+  if (b.rest < 0.03) damage += 0.002;
   damage += b.illness * 0.02 + b.injury * 0.015;
   damage /= Math.max(0.05, g.resilience);
 
@@ -651,6 +651,18 @@ export function think(a, ctx) {
     }
   }
 
+  // Exhaustion guard: rest before work kills them
+  if (a.body.rest < 0.28) {
+    const sleepCand = candidates.find((c) => c.kind === 'sleep');
+    if (sleepCand) {
+      a.action = sleepCand;
+      a.noteAction?.('sleep');
+      a.goal = 'resting';
+      a.reasoning = [{ kind: 'sleep', u: sleepCand.u, why: 'must rest - body failing' }];
+      return;
+    }
+  }
+
   // Soft civic boosts (never lock out build/court/farm)
   if (a.body.hunger < 0.55 && a.body.thirst < 0.55) {
     let packFood = 0;
@@ -718,6 +730,16 @@ export function think(a, ctx) {
           if (drought && arch < 3) p.u = Math.max(p.u, 6);
         }
         if (p.kind === 'craft' && drought) p.u *= 1.25;
+      }
+    }
+  }
+
+  // Pairing drought
+  {
+    const pairs = ctx.sim.living.filter((x) => x.partner).length;
+    if (pairs < 2 && a.body.hunger < 0.5 && a.body.rest > 0.3) {
+      for (const p of candidates) {
+        if (p.kind === 'court') p.u = Math.max(p.u, 11);
       }
     }
   }
