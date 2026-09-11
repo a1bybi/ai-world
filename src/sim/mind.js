@@ -259,6 +259,8 @@ export function think(a, ctx) {
       if (a.body.hunger > 0.3 && hasFood) {
         if (p.kind === 'eat') p.u *= 12;
         else if (p.kind === 'drink' || p.kind === 'takeFromStore') p.u *= 1.5;
+        else if (p.kind === 'store') p.u *= 2.5;
+        else if (p.kind === 'build' && p.payload?.structure === 'bridge' && a.body.hunger < 0.55) p.u *= 2.0;
         else p.u *= 0.03;
       }
 
@@ -594,8 +596,8 @@ export function think(a, ctx) {
     }
   }
 
-  // Nuclear eat - never invent/build while food is in the pack
-  if (a.body.hunger > 0.24 && hasFood) {
+  // Nuclear eat - only when genuinely hungry
+  if (a.body.hunger > 0.48 && hasFood) {
     const eatCand = candidates.find((c) => c.kind === 'eat');
     if (eatCand) {
       a.action = eatCand;
@@ -609,8 +611,8 @@ export function think(a, ctx) {
     }
   }
 
-  // Nuclear drink - thirst always wins over work
-  if (a.body.thirst > 0.28) {
+  // Nuclear drink - thirst wins when sharp
+  if (a.body.thirst > 0.42) {
     const drinkCand = candidates.find((c) => c.kind === 'drink');
     if (drinkCand) {
       a.action = drinkCand;
@@ -625,9 +627,9 @@ export function think(a, ctx) {
   }
 
   // Nuclear store: granary before craft/build when hungry or thirsty
-  if (a.body.hunger > 0.26 || a.body.thirst > 0.32) {
+  if (a.body.hunger > 0.4 || a.body.thirst > 0.4) {
     const storeCand = candidates.find((c) => c.kind === 'takeFromStore');
-    if (storeCand && (!hasFood || a.body.hunger > 0.28 || a.body.thirst > 0.32)) {
+    if (storeCand && (!hasFood || a.body.hunger > 0.42 || a.body.thirst > 0.42)) {
       a.action = storeCand;
       a.noteAction?.('takeFromStore');
       a.goal = 'taking from store';
@@ -636,6 +638,22 @@ export function think(a, ctx) {
         ctx.sim.logDecision(a, a.reasoning, 'taking from store');
       }
       return;
+    }
+  }
+
+  // Civic priorities when survival is not urgent
+  if (a.body.hunger < 0.5 && a.body.thirst < 0.5) {
+    let packFood = 0;
+    for (const [k, v] of a.inventory) {
+      if ((ctx.ont.get(k)?.serves?.('sustenance') || 0) > 0.15) packFood += v;
+    }
+    const storeCand2 = candidates.find((c) => c.kind === 'store');
+    if (storeCand2 && packFood >= 4) storeCand2.u = Math.max(storeCand2.u, 14);
+    const bridgeCand = candidates.find((c) => c.kind === 'build' && c.payload?.structure === 'bridge');
+    if (bridgeCand) {
+      const home = ctx.sim.nearestSettlement?.(a.x, a.y);
+      const spans = home ? (ctx.world.bridgeSpanCount?.(home.x, home.y, 28) || 0) : 0;
+      if (spans === 0) bridgeCand.u = Math.max(bridgeCand.u, 16);
     }
   }
 
