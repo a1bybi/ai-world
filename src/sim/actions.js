@@ -290,6 +290,7 @@ const STRUCTURE_KINDS = {
   store:    { fn: 'storage',    cost: 7,  need: (s) => s.storeDeficit,    desc: 'somewhere to keep food for winter' },
   workshop: { fn: 'cutting',    cost: 9,  need: (s) => s.workshopDeficit, desc: 'a place to make things properly' },
   field:    { fn: 'sustenance', cost: 5,  need: (s) => s.fieldDeficit,    desc: 'ground turned for planted grain' },
+  mill:     { fn: 'sustenance', cost: 11, need: (s) => s.millDeficit,     desc: 'turns grain with fewer hands' },
   well:     { fn: 'vessel',     cost: 8,  need: (s) => s.wellDeficit,     desc: 'water that does not need a walk' },
   shrine:   { fn: 'art',        cost: 6,  need: (s) => s.shrineDeficit,   desc: 'a place for the dead and the questions' },
   market:   { fn: 'storage',    cost: 8,  need: (s) => s.marketDeficit,   desc: 'ground where goods change hands' },
@@ -311,6 +312,7 @@ function structureCap(kind, people) {
       // Allow continued agricultural expansion past the first skyline
       return Math.max(1, Math.min(12, Math.ceil(p / 6)));
     case 'workshop': return p >= 6 ? Math.min(3, 1 + Math.floor(p / 14)) : 0;
+    case 'mill': return p >= 10 ? Math.min(2, 1 + Math.floor(p / 22)) : 0;
     case 'market': return p >= 10 ? Math.min(2, 1 + Math.floor(p / 22)) : 0;
     case 'hall': return p >= 12 ? Math.min(2, 1 + Math.floor(p / 30)) : 0;
     case 'plaza': return p >= 10 ? Math.min(2, 1 + Math.floor(p / 24)) : 0;
@@ -357,6 +359,8 @@ function structureUnlocked(kind, ctx, settlement, nearCount) {
       return day >= 10 && basics;
     case 'workshop':
       return day >= 18 && basics && hasField;
+    case 'mill':
+      return day >= 20 && basics && hasField;
     case 'market':
       return day >= 28 && basics && (ctx.sim.counters?.exchanges || 0) >= 10;
     case 'plaza':
@@ -1560,13 +1564,21 @@ export const ACTIONS = {
         const cut = techScore(a, ctx, 'cutting');
         const blade = techScore(a, ctx, 'blade');
         const tech = 1 + sust * 0.9 + cut * 0.35 + blade * 0.2;
-        const got =
-          2 +
+        const millNear = ctx.world.hasStructureNear?.(f.x, f.y, 'mill', 12);
+        const millMul = millNear
+          ? 1.55 + sust * 0.35 + (a.skills.farm || 0) * 0.2
+          : 1;
+        const got = Math.max(
+          1,
           Math.round(
-            (a.skills.farm * 5 + (ctx.world.fertility?.[ctx.world.idx(f.x, f.y)] || 0.5) * 4) *
-              tech,
-          );
+            (2 +
+              (a.skills.farm * 5 + (ctx.world.fertility?.[ctx.world.idx(f.x, f.y)] || 0.5) * 4) *
+                tech) *
+              millMul,
+          ),
+        );
         a.add('grain', got);
+        if (millNear) learnStructureUse(a, 'mill', 'sustenance', 0.2, 0.5);
         f.ripeness = 0;
         f.harvests = (f.harvests || 0) + 1;
         a.stats.harvested += got;
