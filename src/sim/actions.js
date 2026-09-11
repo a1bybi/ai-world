@@ -959,16 +959,20 @@ export const ACTIONS = {
   experiment: {
     category: 'thought',
     propose(a, ctx) {
-      if (a.body.hunger > 0.45 || a.body.thirst > 0.5 || a.body.energy < 0.25) return [];
+      if (a.body.hunger > 0.58 || a.body.thirst > 0.55 || a.body.energy < 0.18) return [];
       const owned = [...a.inventory.keys()].filter((k) => ctx.ont.get(k));
       if (owned.length < 1) return [];
+      const drought =
+        (ctx.world.dayNumber || 0) > 15 &&
+        (ctx.sim.archive?.size || 0) < 3;
       const u =
-        (0.55 + a.genome.curiosity * 1.9) *
+        (0.7 + a.genome.curiosity * 2.1) *
         (ctx.bias?.explore ?? 1) *
-        (0.7 + a.skills.craft) *
-        (1 - a.body.hunger * 0.5) *
+        (0.75 + a.skills.craft) *
+        (1 - a.body.hunger * 0.35) *
         (a.affect.e.awe * 0.5 + 0.95) *
-        (1 + ctx.sim.capabilityGaps(a).length * 0.12);
+        (1 + ctx.sim.capabilityGaps(a).length * 0.18) *
+        (drought ? 1.8 : 1);
       return [{
         kind: 'experiment',
         u,
@@ -979,6 +983,7 @@ export const ACTIONS = {
       if (--act.dur > 0) return 'continue';
       const owned = [...a.inventory.keys()].filter((k) => ctx.ont.get(k));
       if (!owned.length) return 'abort';
+      ctx.sim.counters.experiments = (ctx.sim.counters.experiments || 0) + 1;
       const procs = ctx.ont.availableProcesses();
       const gaps = ctx.sim.capabilityGaps(a);
       const short = a.body.hunger > 0.4;
