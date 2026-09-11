@@ -511,6 +511,34 @@ export function think(a, ctx) {
     }
   }
 
+  // Pack surplus into store when granaries are empty
+  {
+    let food = 0;
+    for (const [k, v] of a.inventory) {
+      if ((ctx.ont.get(k)?.serves?.('sustenance') || 0) > 0.15) food += v;
+    }
+    if (food > 6 && a.body.hunger < 0.55) {
+      for (const p of candidates) {
+        if (p.kind === 'store') p.u = Math.max(p.u, 9);
+      }
+    }
+  }
+
+  // First real river span is a civil priority once the camp can eat
+  {
+    const home = ctx.sim.nearestSettlement?.(a.x, a.y);
+    const spans = home
+      ? (ctx.world.bridgeSpanCount?.(home.x, home.y, 28) || 0)
+      : 0;
+    if (spans === 0 && a.body.hunger < 0.5 && a.body.thirst < 0.5) {
+      for (const p of candidates) {
+        if (p.kind === 'build' && p.payload?.structure === 'bridge') {
+          p.u = Math.max(p.u, 11);
+        }
+      }
+    }
+  }
+
   if ((stagnant || campBound) && a.body.hunger < 0.65 && a.body.thirst < 0.65) {
     for (const p of candidates) {
       if (p.kind === 'explore') p.u = Math.max(p.u, 11);
