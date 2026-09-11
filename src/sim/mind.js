@@ -641,19 +641,40 @@ export function think(a, ctx) {
     }
   }
 
-  // Civic priorities when survival is not urgent
+  // Force deposit when packs hold food and body is not in crisis
   if (a.body.hunger < 0.5 && a.body.thirst < 0.5) {
     let packFood = 0;
     for (const [k, v] of a.inventory) {
-      if ((ctx.ont.get(k)?.serves?.('sustenance') || 0) > 0.15) packFood += v;
+      const c = ctx.ont.get(k);
+      const sust =
+        (typeof c?.serves === 'function' ? c.serves('sustenance') : 0) ||
+        c?.functions?.sustenance ||
+        0;
+      if (sust > 0.1 || /sos|sheik|teiv|berry|root|grain|meat|fish/i.test(String(k))) {
+        packFood += v;
+      }
     }
     const storeCand2 = candidates.find((c) => c.kind === 'store');
-    if (storeCand2 && packFood >= 4) storeCand2.u = Math.max(storeCand2.u, 14);
-    const bridgeCand = candidates.find((c) => c.kind === 'build' && c.payload?.structure === 'bridge');
+    if (storeCand2 && packFood >= 3) {
+      a.action = storeCand2;
+      a.noteAction?.('store');
+      a.goal = 'storing food';
+      a.reasoning = [{ kind: 'store', u: storeCand2.u, why: 'packs full - fill the granary' }];
+      return;
+    }
+    const bridgeCand = candidates.find(
+      (c) => c.kind === 'build' && c.payload?.structure === 'bridge',
+    );
     if (bridgeCand) {
       const home = ctx.sim.nearestSettlement?.(a.x, a.y);
       const spans = home ? (ctx.world.bridgeSpanCount?.(home.x, home.y, 28) || 0) : 0;
-      if (spans === 0) bridgeCand.u = Math.max(bridgeCand.u, 16);
+      if (spans === 0) {
+        a.action = bridgeCand;
+        a.noteAction?.('build');
+        a.goal = 'spanning the water';
+        a.reasoning = [{ kind: 'build', u: bridgeCand.u, why: 'no crossing yet - span the water' }];
+        return;
+      }
     }
   }
 
