@@ -857,10 +857,10 @@ export function tickAgent(a, ctx, full = true) {
   // Only true emergencies force a full replan on a light tick.
   // (Mild hunger is common; treating it as urgent defeated staggering.)
   const critical =
-    a.body.hunger > 0.78 ||
-    a.body.thirst > 0.78 ||
-    a.body.health < 0.28 ||
-    a.body.rest < 0.04;
+    a.body.hunger > 0.88 ||
+    a.body.thirst > 0.88 ||
+    a.body.health < 0.22 ||
+    a.body.rest < 0.03;
   if (critical) {
     think(a, ctx);
     return;
