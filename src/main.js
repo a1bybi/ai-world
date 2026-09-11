@@ -10,16 +10,13 @@ import { LLMBridge } from './llm/bridge.js';
 const $ = (s) => document.querySelector(s);
 
 // One tick = one world-hour.
-// Labels are exact multipliers of 1 hour/s (except max = machine budget).
-// 24x ≈ one day per second.
+// Speeds stay in a range a phone can actually sustain with full minds.
+// 8x ≈ a day in ~3 seconds — fast enough to watch, slow enough to think.
 const SPEEDS = [
   { label: 'hold', tps: 0 },
   { label: '1x',   tps: 1 },
   { label: '3x',   tps: 3 },
   { label: '8x',   tps: 8 },
-  { label: '24x',  tps: 24 },
-  { label: '60x',  tps: 60 },
-  { label: 'max',  tps: Infinity },
 ];
 
 const state = {
@@ -78,26 +75,18 @@ function frame(now) {
 
   const speed = SPEEDS[state.speedIdx];
   const tps = speed.tps;
-  const fast = tps === Infinity || tps >= 24;
+  // "Fast" only means slightly less UI chatter — never drop sim fidelity
+  const fast = tps >= 8;
 
   if (state.running && !state.reportOpen) {
     let ran = 0;
-    if (tps === Infinity) {
-      // Spend most of the frame on simulation; leave a little for paint/UI
-      const t0 = performance.now();
-      const budgetMs = tps === Infinity ? 36 : 22;
-      while (performance.now() - t0 < budgetMs && sim.living.length) {
-        sim.step();
-        ran++;
-        if (ran >= 6000) break;
-      }
-    } else if (tps > 0) {
+    if (tps > 0) {
       state.carry += tps * dt;
-      // At high multipliers, allow larger bursts so 60x can keep up
-      const burstCap = tps >= 60 ? 1200 : tps >= 24 ? 400 : tps >= 8 ? 120 : 40;
-      const want = Math.min(Math.floor(state.carry), burstCap);
-      state.carry -= want;
-      for (let i = 0; i < want; i++) {
+      // Small bursts so each hour gets a full think cycle feel
+      const burstCap = tps >= 8 ? 24 : tps >= 3 ? 12 : 4;
+      const n = Math.min(burstCap, Math.floor(state.carry));
+      state.carry -= n;
+      for (let i = 0; i < n; i++) {
         sim.step();
         ran++;
         if (!sim.living.length) break;
@@ -137,16 +126,14 @@ function frame(now) {
     if (el) {
       if (!state.running) {
         el.textContent = 'paused';
-      } else if (tps === Infinity) {
-        el.textContent = `${Math.round(state.tickRate)} hours/s - max`;
       } else {
-        el.textContent = `${Math.round(state.tickRate)} hours/s - target ${tps}`;
+        el.textContent = `${Math.round(state.tickRate)} hours/s · aim ${tps}`;
       }
     }
   }
 
   // Throttle canvas: full rate when watching closely, slower when accelerating
-  const paintEvery = tps === 0 ? 250 : tps === Infinity ? 200 : tps >= 24 ? 110 : tps >= 8 ? 60 : 33;
+  const paintEvery = tps === 0 ? 250 : tps >= 8 ? 50 : 33;
   if (now - state.lastPaint >= paintEvery) {
     state.lastPaint = now;
     paint();
