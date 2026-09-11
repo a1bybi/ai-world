@@ -223,6 +223,24 @@ function techScore(a, ctx, fn) {
 }
 
 
+function isFoodItem(key, ont) {
+  if (!key) return false;
+  const raw = new Set(['berry', 'root', 'grain', 'meat', 'fish', 'water', 'game']);
+  if (raw.has(key)) return true;
+  const c = ont?.get?.(key);
+  if (c) {
+    const s =
+      (typeof c.serves === 'function' ? c.serves('sustenance') : 0) ||
+      c.functions?.sustenance ||
+      0;
+    if (s > 0.1) return true;
+  }
+  // Invented names often carry food role without a clean serves() hit
+  return /sos|sheik|teiv|sae|food|bread|meal|fruit|meat|fish|grain|root|berry/i.test(
+    String(key),
+  );
+}
+
 function availableMaterial(a, ctx, key, range = 12) {
   let n = a.count(key);
   for (const s of ctx.world.structuresOfKind('store')) {
@@ -1598,31 +1616,25 @@ export const ACTIONS = {
   store: {
     category: 'work',
     propose(a, ctx) {
-      if (a.body.hunger > 0.72) return [];
-      const stores = ctx.world.structuresOfKind('store');
+      if (a.body.hunger > 0.75) return [];
+      const stores = ctx.world.structuresOfKind('store').filter((s) => s);
       if (!stores.length) return [];
       let surplus = 0;
-      let foodKinds = 0;
       for (const [k, v] of a.inventory) {
-        const c = ctx.ont.get(k);
-        if ((c?.functions?.sustenance || c?.serves?.('sustenance') || 0) > 0.15 && v > 1) {
-          surplus += Math.max(0, v - 1);
-          foodKinds++;
-        }
+        if (isFoodItem(k, ctx.ont) && v > 1) surplus += v - 1;
       }
       if (surplus < 1) return [];
       const s = topN(stores, 1, (x) => -dist(a, x))[0];
-      // How empty is the nearest store?
+      if (!s.stock) s.stock = new Map();
       let stock = 0;
-      for (const v of (s.stock || []).values?.() || s.stock?.values() || []) stock += v;
-      const emptyBoost = stock < 8 ? 6 : stock < 25 ? 3 : 0;
-      const purpose = Math.max(0.55, knownStructureUse(a, 'store'));
+      for (const v of s.stock.values()) stock += Number(v) || 0;
+      const emptyBoost = stock < 5 ? 12 : stock < 20 ? 6 : 2;
+      const purpose = Math.max(0.6, knownStructureUse(a, 'store'));
       const u =
-        surplus * 1.1 * purpose * (0.55 + a.genome.patience) * (ctx.bias?.hoard ?? 1) +
+        surplus * 1.4 * purpose * (0.5 + a.genome.patience) * (ctx.bias?.hoard ?? 1) +
         emptyBoost +
-        (surplus > 4 ? 5 : 0) +
-        (surplus > 10 ? 5 : 0) +
-        (foodKinds > 2 ? 2 : 0);
+        (surplus > 3 ? 8 : 0) +
+        (surplus > 8 ? 8 : 0);
       return [{ kind: 'store', u, target: T(s.x, s.y), store: s, dur: 1 }];
     },
     run(a, ctx, act) {
@@ -1630,23 +1642,25 @@ export const ACTIONS = {
         stepToward(a, ctx.world, act.target);
         return 'continue';
       }
+      const store = act.store || act.target;
+      if (!store) return 'abort';
+      if (!store.stock) store.stock = new Map();
       let moved = 0;
       for (const [k, v] of [...a.inventory]) {
-        const c = ctx.ont.get(k);
-        if ((c?.functions?.sustenance || c?.serves?.('sustenance') || 0) > 0.15 && v > 1) {
-          const give = v - 1;
-          a.take(k, give);
-          act.store.stock.set(k, (act.store.stock.get(k) || 0) + give);
-          moved += give;
-        }
+        if (!isFoodItem(k, ctx.ont) || v <= 1) continue;
+        const give = Math.floor(v - 1);
+        if (give <= 0) continue;
+        if (!a.take(k, give)) continue;
+        store.stock.set(k, (store.stock.get(k) || 0) + give);
+        moved += give;
       }
-      if (moved) {
-        learnStructureUse(a, 'store', 'storage', 0.2, 0.45);
+      if (moved > 0) {
+        learnStructureUse(a, 'store', 'storage', 0.25, 0.5);
         ctx.sim.record(
           a,
           'store',
-          `${a.name} laid ${Math.round(moved)} measures of food into the ${act.store.word}`,
-          { valence: 0.35, intensity: 0.3, quiet: true },
+          `${a.name} laid ${Math.round(moved)} measures of food into the ${store.word || 'store'}`,
+          { valence: 0.35, intensity: 0.35, quiet: true },
         );
       }
       return 'done';
