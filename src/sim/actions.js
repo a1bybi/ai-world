@@ -1141,7 +1141,7 @@ export const ACTIONS = {
             }
           }
           // Cost scales with length but stays payable with local wood
-          const cost = Math.max(4, Math.ceil(span.length * 1.4));
+          const cost = Math.max(2, Math.ceil(span.length * 1.0));
           if (availableMaterial(a, ctx, matKey) < cost) {
             const spot = ctx.world.findResource(matKey, a, 22);
             if (spot && a.carried() <= a.carryLimit) {
@@ -1633,8 +1633,8 @@ export const ACTIONS = {
       let moved = 0;
       for (const [k, v] of [...a.inventory]) {
         const c = ctx.ont.get(k);
-        if ((c?.functions?.sustenance || c?.serves?.('sustenance') || 0) > 0.15 && v > 2) {
-          const give = v - 2;
+        if ((c?.functions?.sustenance || c?.serves?.('sustenance') || 0) > 0.15 && v > 1) {
+          const give = v - 1;
           a.take(k, give);
           act.store.stock.set(k, (act.store.stock.get(k) || 0) + give);
           moved += give;
