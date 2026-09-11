@@ -641,14 +641,15 @@ export const ACTIONS = {
       if (a.body.rest > 0.85 && a.body.energy > 0.7) return [];
       const night = ctx.world.isNight ? 0.35 : 0;
       const need =
-        (1 - a.body.rest) * 1.2 + night + (1 - a.body.energy) * 0.4;
-      if (need < 0.45) return [];
+        (1 - a.body.rest) * 1.6 + night + (1 - a.body.energy) * 0.55;
+      if (need < 0.28) return [];
       const target = a.home ? T(a.home.x, a.home.y) : T(a.x, a.y);
+      const u = need * (U.sleepNeed || 1) * (a.body.rest < 0.35 ? 2.2 : 1);
       return [{
         kind: 'sleep',
-        u: need * U.sleepNeed,
+        u,
         target,
-        dur: 4 + Math.round(ctx.rng.float(0, 2)),
+        dur: 3 + Math.round(ctx.rng.float(0, 2)),
       }];
     },
     run(a, ctx, act) {
@@ -656,8 +657,8 @@ export const ACTIONS = {
         stepToward(a, ctx.world, act.target);
         return 'continue';
       }
-      a.body.rest = clamp(a.body.rest + 0.2, 0, 1);
-      a.body.energy = clamp(a.body.energy + 0.14, 0, 1);
+      a.body.rest = clamp(a.body.rest + 0.28, 0, 1);
+      a.body.energy = clamp(a.body.energy + 0.2, 0, 1);
       if (a.home && dist(a, a.home) < 1.5) {
         a.body.warmth = clamp(a.body.warmth + 0.1, 0, 1);
         learnStructureUse(a, 'shelter', 'shelter', 0.12, 0.35);
