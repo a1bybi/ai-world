@@ -1107,24 +1107,30 @@ export const ACTIONS = {
         // ── Bridge: full span cost + site ───────────────────────
         if (kind === 'bridge') {
           const spans =
-            ctx.world.bridgeSpanCount?.(settlement.x, settlement.y, 22) ??
+            ctx.world.bridgeSpanCount?.(settlement.x, settlement.y, 28) ??
             nearCount('bridge');
-          if (spans >= 4) continue;
+          // One or two real crossings beat a forest of short piers
+          if (spans >= 2) continue;
 
-          const span = ctx.world.findBridgeSpan?.(a.x, a.y, 36, 14)
-            || ctx.world.findBridgeSpan?.(settlement.x, settlement.y, 36, 14);
-          if (!span?.tiles?.length) continue;
+          const span = ctx.world.findBridgeSpan?.(a.x, a.y, 40, 16)
+            || ctx.world.findBridgeSpan?.(settlement.x, settlement.y, 40, 16);
+          if (!span?.tiles?.length || span.length < 2) continue;
+          // Reject near-shore nubs
+          const bankDist = Math.hypot(
+            (span.endLand?.x ?? 0) - (span.startLand?.x ?? 0),
+            (span.endLand?.y ?? 0) - (span.startLand?.y ?? 0),
+          );
+          if (bankDist < 3.5) continue;
 
           let need = def.need(s);
-          // Open far bank is a strong reason to span the river
-          if (far) need = Math.max(need, 1.35);
-          else need = Math.max(need, 0.65);
-          if (spans === 0 && day > 20) need = Math.max(need, 0.9);
+          if (far || spans === 0) need = Math.max(need, 1.8);
+          else need = Math.max(need, 0.7);
+          if (day > 25 && spans === 0) need = Math.max(need, 2.0);
           if (need <= 0.08) continue;
 
           const purpose =
             spans === 0
-              ? 0.85 + a.genome.curiosity * 0.6 + a.genome.industry * 0.3
+              ? 1.1 + a.genome.curiosity * 0.7 + a.genome.industry * 0.4
               : Math.max(0.55, knownStructureUse(a, 'bridge'));
 
           let matKey = 'wood';
@@ -1134,13 +1140,14 @@ export const ACTIONS = {
               break;
             }
           }
-          const cost = Math.max(3, span.length * 2);
+          // Cost scales with length but stays payable with local wood
+          const cost = Math.max(4, Math.ceil(span.length * 1.4));
           if (availableMaterial(a, ctx, matKey) < cost) {
-            const spot = ctx.world.findResource(matKey, a, 18);
+            const spot = ctx.world.findResource(matKey, a, 22);
             if (spot && a.carried() <= a.carryLimit) {
               out.push({
                 kind: 'gather',
-                u: need * purpose * 1.3 * (0.5 + a.genome.industry) * (ctx.bias?.work ?? 1),
+                u: need * purpose * 1.6 * (0.5 + a.genome.industry) * (ctx.bias?.work ?? 1),
                 payload: matKey,
                 target: beside(ctx.world, spot),
                 site: spot,
@@ -1155,10 +1162,10 @@ export const ACTIONS = {
             u:
               need *
               purpose *
-              1.6 *
+              2.2 *
               (ctx.bias?.work ?? 1) *
-              (0.5 + a.genome.industry) *
-              (far ? 1.4 : 1),
+              (0.55 + a.genome.industry) *
+              (far ? 1.5 : 1.2),
             payload: {
               structure: 'bridge',
               material: matKey,
@@ -1591,24 +1598,31 @@ export const ACTIONS = {
   store: {
     category: 'work',
     propose(a, ctx) {
-      if (a.body.hunger > 0.62) return [];
+      if (a.body.hunger > 0.72) return [];
       const stores = ctx.world.structuresOfKind('store');
       if (!stores.length) return [];
       let surplus = 0;
+      let foodKinds = 0;
       for (const [k, v] of a.inventory) {
         const c = ctx.ont.get(k);
-        if ((c?.functions?.sustenance || c?.serves?.('sustenance') || 0) > 0.15 && v > 2) {
-          surplus += v - 2;
+        if ((c?.functions?.sustenance || c?.serves?.('sustenance') || 0) > 0.15 && v > 1) {
+          surplus += Math.max(0, v - 1);
+          foodKinds++;
         }
       }
       if (surplus < 1) return [];
       const s = topN(stores, 1, (x) => -dist(a, x))[0];
-      const purpose = Math.max(0.5, knownStructureUse(a, 'store'));
-      // Heavy packs should empty into the granary so the camp has a buffer
+      // How empty is the nearest store?
+      let stock = 0;
+      for (const v of (s.stock || []).values?.() || s.stock?.values() || []) stock += v;
+      const emptyBoost = stock < 8 ? 6 : stock < 25 ? 3 : 0;
+      const purpose = Math.max(0.55, knownStructureUse(a, 'store'));
       const u =
-        surplus * 0.85 * purpose * (0.55 + a.genome.patience) * (ctx.bias?.hoard ?? 1) +
-        (surplus > 5 ? 4 : 0) +
-        (surplus > 12 ? 4 : 0);
+        surplus * 1.1 * purpose * (0.55 + a.genome.patience) * (ctx.bias?.hoard ?? 1) +
+        emptyBoost +
+        (surplus > 4 ? 5 : 0) +
+        (surplus > 10 ? 5 : 0) +
+        (foodKinds > 2 ? 2 : 0);
       return [{ kind: 'store', u, target: T(s.x, s.y), store: s, dur: 1 }];
     },
     run(a, ctx, act) {
