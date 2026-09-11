@@ -203,7 +203,7 @@ export class Simulation {
       case 'violence': return `Fight: ${names}`;
       case 'invention': return `Invention: ${ev.concept || names}`;
       case 'teach': return `Teaching: ${names}${ev.concept ? ` (${ev.concept})` : ''}`;
-      case 'gather': return `Gather: ${names}${ev.concept ? ` â ${ev.concept}` : ''}`;
+      case 'gather': return `Gather: ${names}${ev.concept ? ` Ã¢ÂÂ ${ev.concept}` : ''}`;
       case 'build':
       case 'first': return `Build/first: ${(ev.text || '').slice(0, 90)}`;
       case 'speech': return `Said: ${ev.voice || names}: ${(ev.text || '').slice(0, 80)}`;
@@ -848,7 +848,7 @@ export class Simulation {
     });
   }
 
-  // ââ Households ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // Ã¢ÂÂÃ¢ÂÂ Households Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
 
   /**
    * Household = couple + their dependent children.
@@ -1646,7 +1646,7 @@ export class Simulation {
       : base;
 
     if (kind === 'bridge') {
-      const span = this.world.findBridgeSpan?.(base.x, base.y, 26, 8);
+      const span = this.world.findBridgeSpan?.(base.x, base.y, 40, 16);
       if (span?.tiles?.length) {
         return { x: span.tiles[0].x, y: span.tiles[0].y, span };
       }
@@ -1843,7 +1843,7 @@ export class Simulation {
     const word = this.lang.word(`struct:${kind}`);
     this.registerLex(word, kind, 'structure');
 
-    // ââ Multi-tile bridge span âââââââââââââââââââââââââââââââââ
+    // Ã¢ÂÂÃ¢ÂÂ Multi-tile bridge span Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
     if (kind === 'bridge') {
       const span =
         spot.span ||
@@ -1910,7 +1910,7 @@ export class Simulation {
       return first;
     }
 
-    // ââ Ordinary structures ââââââââââââââââââââââââââââââââââââ
+    // Ã¢ÂÂÃ¢ÂÂ Ordinary structures Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
     const s = {
       kind,
       x: spot.x,
