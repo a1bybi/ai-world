@@ -2405,9 +2405,9 @@ export class Simulation {
           ? this.settlements.find((x) => x.id === s.settlementId)
           : this.nearestSettlement(s.x, s.y);
         if (owner !== st || !s.stock) continue;
+        storeCap += 80; // nominal capacity per store building
         for (const v of s.stock.values()) {
-          storeFill += Math.max(0, v);
-          storeCap += 40;
+          storeFill += Math.max(0, Number(v) || 0);
         }
       }
       const mood = n
