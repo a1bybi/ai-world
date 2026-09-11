@@ -1134,8 +1134,15 @@ export const ACTIONS = {
           // One or two real crossings beat a forest of short piers
           if (spans >= 2) continue;
 
-          const span = ctx.world.findBridgeSpan?.(a.x, a.y, 40, 16)
-            || ctx.world.findBridgeSpan?.(settlement.x, settlement.y, 40, 16);
+          // At most one expensive span search per agent per ~half day
+          const spanKey = '_spanAt';
+          let span = a[spanKey]?.v;
+          if (!span || (ctx.world.tick - (a[spanKey]?.t || 0)) > 12) {
+            span =
+              ctx.world.findBridgeSpan?.(a.x, a.y, 36, 14) ||
+              ctx.world.findBridgeSpan?.(settlement.x, settlement.y, 36, 14);
+            a[spanKey] = { t: ctx.world.tick, v: span };
+          }
           if (!span?.tiles?.length || span.length < 2) continue;
           // Reject near-shore nubs
           const bankDist = Math.hypot(
