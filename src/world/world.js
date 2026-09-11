@@ -222,6 +222,21 @@ export class World {
    * Returns { tiles, startLand, endLand, length } or null.
    */
   findBridgeSpan(nearX, nearY, radius = 32, maxLen = 14) {
+    // Cache: full water BFS is the heaviest path in the sim
+    const ck = `${nearX >> 2},${nearY >> 2},${radius},${maxLen}`;
+    if (!this._spanCache) this._spanCache = new Map();
+    const hit = this._spanCache.get(ck);
+    if (hit && this.tick - hit.t < 48) return hit.v;
+    const result = this._findBridgeSpanUncached(nearX, nearY, radius, maxLen);
+    this._spanCache.set(ck, { t: this.tick, v: result });
+    if (this._spanCache.size > 40) {
+      const first = this._spanCache.keys().next().value;
+      this._spanCache.delete(first);
+    }
+    return result;
+  }
+
+  _findBridgeSpanUncached(nearX, nearY, radius = 32, maxLen = 14) {
     const starts = [];
     const r0 = Math.max(0, (nearX | 0) - radius);
     const r1 = Math.min(this.w - 1, (nearX | 0) + radius);
