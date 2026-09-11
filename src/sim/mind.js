@@ -200,7 +200,23 @@ export function think(a, ctx) {
   const worldFoodTight = ctx.sim.totalFood() < ctx.sim.living.length * 2;
   const candidates = [];
 
+  const stressed = a.body.hunger > 0.42 || a.body.thirst > 0.45 || a.body.energy < 0.22;
+  const fedSafe = a.body.hunger < 0.38 && a.body.thirst < 0.4;
   for (const [name, def] of ACTION_LIST) {
+    // Performance: skip culture/thought proposes when the body is under strain
+    if (
+      stressed &&
+      (name === 'experiment' ||
+        name === 'makeArt' ||
+        name === 'ritual' ||
+        name === 'court' ||
+        name === 'converse' ||
+        name === 'teach')
+    ) {
+      continue;
+    }
+    // Skip expand spam when not fed
+    if (!fedSafe && name === 'expand') continue;
     let props;
     try {
       props = def.propose(a, ctx) || [];
@@ -675,6 +691,18 @@ export function think(a, ctx) {
         a.reasoning = [{ kind: 'build', u: bridgeCand.u, why: 'no crossing yet - span the water' }];
         return;
       }
+    }
+  }
+
+  // Mill: once fields exist, a works multiplies food
+  if (a.body.hunger < 0.5 && a.body.thirst < 0.5) {
+    const fields = ctx.world.structuresOfKind('field').length;
+    const mills = ctx.world.structuresOfKind('mill').length;
+    if (fields >= 2 && mills < 1) {
+      const millCand = candidates.find(
+        (c) => c.kind === 'build' && c.payload?.structure === 'mill',
+      );
+      if (millCand) millCand.u = Math.max(millCand.u, 13);
     }
   }
 
