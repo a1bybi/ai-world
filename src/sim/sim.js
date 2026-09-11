@@ -495,7 +495,7 @@ export class Simulation {
     if (b.warmth < 0.2) return 'cold';
     if (b.injury > 0.5) return 'injury';
     if (b.illness > 0.5) return 'sickness';
-    if (b.rest < 0.08) return 'exhaustion';
+    if (b.rest < 0.04 && b.energy < 0.12) return 'exhaustion';
     if (age > 45) return 'old age';
     return 'failing health';
   }
