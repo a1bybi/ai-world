@@ -703,10 +703,10 @@ export class World {
 
   timeString() {
     const h = String(Math.floor(this.hour)).padStart(2, '0');
-    return `Day ${this.dayNumber} Â· ${h}:00`;
+    return `Day ${this.dayNumber} - ${h}:00`;
   }
 
   get year() {
-    return Math.floor(this.tick / (24 * 30)) + 1;
+    return Math.floor(this.tick / (24 * 16)) + 1;
   }
 }
