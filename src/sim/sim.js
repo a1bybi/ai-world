@@ -414,9 +414,9 @@ export class Simulation {
     // Staggered minds: few full propose() scans per tick; others continue/idle.
     const living = this.living;
     const n = living.length;
-    // Balanced: enough full minds to build/pair, not so many that phones stall
+    // At human speeds, prefer quality: most agents fully think each tick when small
     const budget =
-      n <= 10 ? n : Math.max(6, Math.min(9, Math.ceil(70 / Math.max(1, Math.sqrt(n)))));
+      n <= 14 ? n : Math.max(8, Math.min(14, Math.ceil(100 / Math.max(1, Math.sqrt(n)))));
     this._thinkCursor = (this._thinkCursor || 0) % Math.max(1, n);
     for (let i = 0; i < n; i++) {
       const a = living[i];
