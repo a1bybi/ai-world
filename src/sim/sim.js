@@ -78,7 +78,7 @@ export class Simulation {
     this.generation = 1;
     this.ritualPull = 0;
     this.counters = {
-      births: 0, deaths: 0, trades: 0, conflicts: 0,
+      births: 0, deaths: 0, trades: 0, conflicts: 0, experiments: 0,
       thefts: 0, gifts: 0, rituals: 0, artworks: 0, lessons: 0,
     };
     this.paused = true;
