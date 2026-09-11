@@ -1525,6 +1525,7 @@ export class Simulation {
       hearthDeficit: need(count('hearth'), Math.max(1, Math.ceil(people / 10))),
       storeDeficit: need(count('store'), Math.max(1, Math.ceil(people / 16))),
       workshopDeficit: need(count('workshop'), wantWorkshop),
+      millDeficit: need(count('mill'), people >= 10 ? Math.min(2, 1 + Math.floor(people / 22)) : 0),
       fieldDeficit: need(count('field'), wantField),
       wellDeficit: need(count('well'), wantWell),
       shrineDeficit: need(count('shrine'), wantShrine),
@@ -1557,6 +1558,7 @@ export class Simulation {
         n.fieldDeficit +
         n.bridgeDeficit +
         (n.workshopDeficit || 0) +
+        (n.millDeficit || 0) * 1.1 +
         (n.marketDeficit || 0) +
         (n.hallDeficit || 0) +
         n.people / 55 +
@@ -1980,8 +1982,10 @@ export class Simulation {
       0.95;
     for (const f of this.world.structuresOfKind('field')) {
       const care = clamp(f.tended || 0);
+      const millNear = this.world.hasStructureNear?.(f.x, f.y, 'mill', 12);
+      const millBoost = millNear ? 1.5 : 1;
       f.ripeness = clamp(
-        (f.ripeness || 0) + 0.008 * growth * (0.5 + care),
+        (f.ripeness || 0) + 0.008 * growth * (0.5 + care) * millBoost,
         0, 1,
       );
       f.tended = Math.max(0, (f.tended || 0) - 0.02);
