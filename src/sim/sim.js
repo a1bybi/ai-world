@@ -401,18 +401,18 @@ export class Simulation {
     // Staggered minds: few full propose() scans per tick; others continue/idle.
     const living = this.living;
     const n = living.length;
-    // ~6-10 full brains regardless of N (urgent still jumps the queue)
+    // Hard cap full minds per tick â propose() is the cost center
     const budget =
-      n <= 8 ? n : Math.max(5, Math.min(10, Math.ceil(90 / Math.max(1, Math.sqrt(n)))));
+      n <= 6 ? n : Math.max(3, Math.min(5, Math.ceil(40 / Math.max(1, Math.sqrt(n)))));
     this._thinkCursor = (this._thinkCursor || 0) % Math.max(1, n);
     for (let i = 0; i < n; i++) {
       const a = living[i];
       a.utterance = null;
       if (!a.alive) continue;
       const urgent =
-        a.body.hunger > 0.82 ||
-        a.body.thirst > 0.82 ||
-        a.body.health < 0.25;
+        a.body.hunger > 0.9 ||
+        a.body.thirst > 0.9 ||
+        a.body.health < 0.2;
       const full =
         urgent ||
         ((i - this._thinkCursor + n) % n) < budget;
@@ -430,12 +430,12 @@ export class Simulation {
     this._thinkCursor = (this._thinkCursor + budget) % Math.max(1, n);
 
     // Spread society systems across ticks
-    if ((w.tick % 2) === 0) this.lifecycleTick();
-    this.fieldsTick();
-    if ((w.tick % 3) === 0) this.grievanceTick();
-    if ((w.tick % 4) === 0) this.normsTick();
-    this.corpseTick();
-    if ((w.tick % 12) === 0) this.colonyTick();
+    if ((w.tick % 4) === 0) this.lifecycleTick();
+    if ((w.tick % 3) === 0) this.fieldsTick();
+    if ((w.tick % 6) === 0) this.grievanceTick();
+    if ((w.tick % 8) === 0) this.normsTick();
+    if ((w.tick % 12) === 0) this.corpseTick();
+    if ((w.tick % 24) === 0) this.colonyTick();
 
     if (w.tick % BALANCE.spoilInterval === 0) this.spoilTick();
     if (w.tick % BALANCE.rolesInterval === 0) {
