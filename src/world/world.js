@@ -391,13 +391,18 @@ export class World {
         const ix = Math.round(x);
         const iy = Math.round(y);
         if (!this.inBounds(ix, iy)) break;
-        for (let oy = 0; oy <= 1; oy++) {
-          for (let ox = -1; ox <= 1; ox++) {
+        // Most of the river is 2â3 tiles; occasional 1-tile fords for real crossings
+        const ford = (step % 17 === 7);
+        const half = ford ? 0 : 1;
+        for (let oy = 0; oy <= half; oy++) {
+          for (let ox = -half; ox <= half; ox++) {
             if (!this.inBounds(ix + ox, iy + oy)) continue;
             const i = this.idx(ix + ox, iy + oy);
             if (this.terrain[i] !== TERRAIN.DEEP) {
               this.terrain[i] =
-                Math.abs(ox) === 1 && rng.bool(0.4) ? TERRAIN.MARSH : TERRAIN.WATER;
+                !ford && Math.abs(ox) === 1 && rng.bool(0.4)
+                  ? TERRAIN.MARSH
+                  : TERRAIN.WATER;
             }
             this.fertility[i] = clamp(this.fertility[i] + 0.25);
           }
