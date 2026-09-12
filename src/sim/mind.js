@@ -577,15 +577,21 @@ export function think(a, ctx) {
     const ripeField = (ctx.world.structuresOfKind('field') || []).some(
       (f) => (f.ripeness || 0) >= 0.85,
     );
-    if (ripeField && a.body.hunger < 0.85 && a.body.thirst < 0.85) {
+    const people = ctx.sim.living.length || 1;
+    const foodDays = ctx.sim.foodDaysAt?.() ?? 99;
+    // Only rush harvest when food is actually short — not every ripe tick forever
+    if (ripeField && foodDays < 4 && a.body.hunger < 0.7) {
       const farmCand = candidates.find((c) => c.kind === 'farm');
-      if (farmCand) {
-        farmCand.u = Math.max(farmCand.u, 12);
-        // Prefer farm over teach/give when the fields are ready
-        for (const p of candidates) {
-          if (p.kind === 'teach' || p.kind === 'converse') p.u *= 0.35;
-          if (p.kind === 'give' && a.body.hunger < 0.5) p.u *= 0.55;
-        }
+      if (farmCand) farmCand.u = Math.max(farmCand.u, 9);
+    }
+    // When granary is healthy, do not let farm monopolize every mind
+    if (foodDays >= 4) {
+      for (const p of candidates) {
+        if (p.kind === 'farm') p.u *= 0.35;
+        if (p.kind === 'explore') p.u = Math.max(p.u, 6);
+        if (p.kind === 'gather') p.u *= 1.25;
+        if (p.kind === 'build') p.u *= 1.2;
+        if (p.kind === 'court') p.u *= 1.15;
       }
     }
   }
