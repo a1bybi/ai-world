@@ -345,15 +345,14 @@ function structureUnlocked(kind, ctx, settlement, nearCount) {
       return day >= 3 || basics;
     case 'field': {
       const fields = n('field');
-      if (fields < 1) return day >= 6 || (day >= 3 && hasStore);
+      // Founder fields only early; no day-1 expansion across the map
+      if (fields < 2) return day >= 8;
       const peopleApprox = ctx.sim.living?.length || 10;
       const tight = ctx.sim.totalFood() < peopleApprox * 3;
-      // Keep unlocking more fields as the camp grows - not a hard stop at 4
-      if (fields < 2) return day >= 12 && (peopleApprox >= 10 || tight);
-      if (fields < 4) return day >= 25 && (peopleApprox >= 16 || tight);
-      if (fields < 6) return day >= 40 && peopleApprox >= 20;
-      if (fields < 8) return day >= 55 && peopleApprox >= 24;
-      return day >= 70 && peopleApprox >= 28;
+      if (fields < 3) return day >= 20 && (peopleApprox >= 12 || tight);
+      if (fields < 5) return day >= 40 && peopleApprox >= 16;
+      if (fields < 7) return day >= 60 && peopleApprox >= 22;
+      return day >= 80 && peopleApprox >= 28;
     }
     case 'well':
       return day >= 10 && basics;
