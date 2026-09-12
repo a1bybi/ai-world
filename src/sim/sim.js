@@ -1679,9 +1679,10 @@ export class Simulation {
 
   pickBuildSite(a, kind, settlement) {
     const base = settlement || this.nearestSettlement(a.x, a.y);
-    const center = settlement?.farFocus
-      ? settlement.farFocus
-      : base;
+    // Far-bank builds only after a real crossing exists
+    const spans = this.world.bridgeSpanCount?.(base.x, base.y, 24) || 0;
+    const center =
+      settlement?.farFocus && spans > 0 ? settlement.farFocus : base;
 
     if (kind === 'bridge') {
       const span = this.world.findBridgeSpan?.(base.x, base.y, 40, 16);
@@ -1691,6 +1692,9 @@ export class Simulation {
       return null;
     }
 
+    // Stay on the same bank as the camp (no magic across the river)
+    const reach = this.landReachable(center.x, center.y, 55);
+
     const ring =
       kind === 'field' ? 5 :
       kind === 'shelter' || kind === 'hearth' ? 3 :
@@ -1698,29 +1702,43 @@ export class Simulation {
       kind === 'plaza' || kind === 'shrine' ? 6 :
       kind === 'workshop' ? 5 : 4;
 
-    for (let attempt = 0; attempt < 80; attempt++) {
-      const angle = this.rng.float(0, Math.PI * 2);
-      const rad = ring + this.rng.float(-1.5, 2.5);
-      const x = clamp(Math.round(center.x + Math.cos(angle) * rad), 1, this.world.w - 2);
-      const y = clamp(Math.round(center.y + Math.sin(angle) * rad), 1, this.world.h - 2);
-
-      if (!this.world.walkable(x, y)) continue;
-      if (this.world.structureAt(x, y)) continue;
+    const ok = (x, y) => {
+      if (!this.world.walkable(x, y)) return false;
+      if (this.world.structureAt(x, y)) return false;
+      if (reach && !reach.has(`${x},${y}`)) return false;
       if (kind === 'field') {
         const t = this.world.at(x, y);
-        if (t !== TERRAIN.MEADOW && t !== TERRAIN.GRASS) continue;
+        if (t !== TERRAIN.MEADOW && t !== TERRAIN.GRASS && t !== TERRAIN.FOREST) {
+          return false;
+        }
       }
-      return { x, y };
+      return true;
+    };
+
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const angle = this.rng.float(0, Math.PI * 2);
+      const rad = ring + this.rng.float(-1.5, 3);
+      const x = clamp(Math.round(center.x + Math.cos(angle) * rad), 1, this.world.w - 2);
+      const y = clamp(Math.round(center.y + Math.sin(angle) * rad), 1, this.world.h - 2);
+      if (ok(x, y)) return { x, y };
     }
 
-    for (let i = 0; i < 50; i++) {
-      const x = clamp(center.x + this.rng.int(-10, 10), 1, this.world.w - 2);
-      const y = clamp(center.y + this.rng.int(-10, 10), 1, this.world.h - 2);
-      if (!this.world.walkable(x, y)) continue;
-      if (this.world.structureAt(x, y)) continue;
-      return { x, y };
+    for (let i = 0; i < 80; i++) {
+      const x = clamp(center.x + this.rng.int(-12, 12), 1, this.world.w - 2);
+      const y = clamp(center.y + this.rng.int(-12, 12), 1, this.world.h - 2);
+      if (ok(x, y)) return { x, y };
     }
-    return { x: Math.round(center.x), y: Math.round(center.y) };
+    // Last resort: adjacent dry tile at camp, never a random far bank
+    for (let r = 1; r <= 5; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          const x = base.x + dx;
+          const y = base.y + dy;
+          if (ok(x, y)) return { x, y };
+        }
+      }
+    }
+    return { x: Math.round(base.x), y: Math.round(base.y) };
   }
 
 
