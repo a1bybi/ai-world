@@ -345,8 +345,9 @@ function structureUnlocked(kind, ctx, settlement, nearCount) {
       return day >= 3 || basics;
     case 'field': {
       const fields = n('field');
-      // Founder fields only early; no day-1 expansion across the map
-      if (fields < 2) return day >= 8;
+      // First fields appear after a short settle — not day 0 magic
+      if (fields < 1) return day >= 2;
+      if (fields < 2) return day >= 6;
       const peopleApprox = ctx.sim.living?.length || 10;
       const tight = ctx.sim.totalFood() < peopleApprox * 3;
       if (fields < 3) return day >= 20 && (peopleApprox >= 12 || tight);
@@ -1056,6 +1057,10 @@ export const ACTIONS = {
     propose(a, ctx) {
       if (a.isChild(ctx.world.tick)) return [];
       if (a.body.hunger > 0.72) return [];
+      const buildingNow = ctx.sim.living.filter(
+        (x) => x.alive && x.action?.kind === 'build' && x.id !== a.id,
+      ).length;
+      if (buildingNow >= 3) return [];
       const foodEasy =
         a.body.hunger < 0.4 && ctx.sim.totalFood() > ctx.sim.living.length * 1.5;
       const hungry = a.body.hunger > 0.4;
