@@ -1,4 +1,4 @@
-/ The society layer: who knows whom, who owes whom, what is held to be wrong,
+// The society layer: who knows whom, who owes whom, what is held to be wrong,
 // who is buried where, and what the whole thing adds up to.
 // Bridges are multi-tile spans (world.findBridgeSpan + raiseStructure).
 // Knowledge: personal teach/handoff + institutional archive (no birth lock).
@@ -319,13 +319,36 @@ export class Simulation {
       this.addAgent(a);
     }
 
-    const addStruct = (kind, x, y, extra = {}) => {
+    const landSpot = (ox, oy) => {
+      // Prefer the requested tile; otherwise search nearby walkable dry land
+      const tryOne = (x, y) => {
+        if (!this.world.inBounds(x, y)) return null;
+        if (!this.world.walkable(x, y)) return null;
+        if (this.world.structureAt(x, y)) return null;
+        const t = this.world.at(x, y);
+        if (t === TERRAIN.WATER || t === TERRAIN.MARSH || t === TERRAIN.DEEP) return null;
+        return { x, y };
+      };
+      const hit = tryOne(ox, oy);
+      if (hit) return hit;
+      for (let r = 1; r <= 6; r++) {
+        for (let dy = -r; dy <= r; dy++) {
+          for (let dx = -r; dx <= r; dx++) {
+            const hit2 = tryOne(ox + dx, oy + dy);
+            if (hit2) return hit2;
+          }
+        }
+      }
+      return { x: cx, y: cy };
+    };
+    const addStruct = (kind, ox, oy, extra = {}) => {
+      const spot = landSpot(ox, oy);
       const word = this.lang.word(`struct:${kind}`);
       this.registerLex(word, kind, 'structure');
       this.world.addStructure({
         kind,
-        x,
-        y,
+        x: spot.x,
+        y: spot.y,
         word,
         builtBy: 'founders',
         builtTick: 0,
@@ -352,8 +375,8 @@ export class Simulation {
     addStruct('shelter', cx - 1, cy);
     addStruct('shelter', cx, cy + 1);
     addStruct('shelter', cx + 1, cy + 1);
-    addStruct('field', cx - 3, cy - 1);
-    addStruct('field', cx + 3, cy + 2);
+    addStruct('field', cx - 4, cy);
+    addStruct('field', cx + 4, cy);
   }
 
   addAgent(a) {
