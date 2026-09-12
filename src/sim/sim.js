@@ -1,4 +1,4 @@
-// The society layer: who knows whom, who owes whom, what is held to be wrong,
+/ The society layer: who knows whom, who owes whom, what is held to be wrong,
 // who is buried where, and what the whole thing adds up to.
 // Bridges are multi-tile spans (world.findBridgeSpan + raiseStructure).
 // Knowledge: personal teach/handoff + institutional archive (no birth lock).
@@ -259,12 +259,12 @@ export class Simulation {
     for (let i = 0; i < n; i++) {
       let x = cx, y = cy, tries = 0;
       do {
-        x = clamp(cx + rng.int(-4, 4), 1, world.w - 2);
-        y = clamp(cy + rng.int(-4, 4), 1, world.h - 2);
+        x = clamp(cx + rng.int(-9, 9), 1, world.w - 2);
+        y = clamp(cy + rng.int(-9, 9), 1, world.h - 2);
         tries++;
       } while (
         (!world.walkable(x, y) || !reachable.has(`${x},${y}`)) &&
-        tries < 60
+        tries < 80
       );
       if (!world.walkable(x, y) || !reachable.has(`${x},${y}`)) {
         x = cx;
@@ -352,8 +352,8 @@ export class Simulation {
     addStruct('shelter', cx - 1, cy);
     addStruct('shelter', cx, cy + 1);
     addStruct('shelter', cx + 1, cy + 1);
-    addStruct('field', cx - 2, cy);
-    addStruct('field', cx - 2, cy + 1);
+    addStruct('field', cx - 3, cy - 1);
+    addStruct('field', cx + 3, cy + 2);
   }
 
   addAgent(a) {
