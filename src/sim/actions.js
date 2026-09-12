@@ -1175,8 +1175,8 @@ export const ACTIONS = {
               break;
             }
           }
-          // Cost scales with length but stays payable with local wood
-          const cost = Math.max(2, Math.ceil(span.length * 1.0));
+          // Cheap enough that a full store + a few gathers finishes a span
+          const cost = Math.max(2, Math.min(8, Math.ceil(span.length * 0.75)));
           if (availableMaterial(a, ctx, matKey) < cost) {
             const spot = ctx.world.findResource(matKey, a, 22);
             if (spot && a.carried() <= a.carryLimit) {
@@ -1393,20 +1393,27 @@ export const ACTIONS = {
       if (structure === 'bridge') {
         const span =
           act.payload.span ||
+          act.spot?.span ||
           ctx.world.findBridgeSpan?.(act.spot.x, act.spot.y, 36, 14) ||
           ctx.world.findBridgeSpan?.(
-            act.payload.settlement.x,
-            act.payload.settlement.y,
-            26,
-            8,
+            act.payload.settlement?.x ?? a.x,
+            act.payload.settlement?.y ?? a.y,
+            36,
+            14,
           );
         if (!span?.tiles?.length) return 'abort';
-        needMat = Math.max(3, span.length * 2);
+        // Same cost language as propose (not 2x — that aborted every finish)
+        needMat = act.payload.cost || Math.max(2, Math.ceil(span.length * 1.0));
         act.payload.span = span;
         act.spot = { x: span.tiles[0].x, y: span.tiles[0].y, span };
       }
 
-      if (takeMaterial(a, ctx, material, needMat) < needMat) return 'abort';
+      const got = takeMaterial(a, ctx, material, needMat);
+      if (got < needMat) {
+        // Not enough timber in hand/store — keep the intention, gather next
+        act.dur = Math.max(act.dur, 2);
+        return 'abort';
+      }
       const st = ctx.sim.raiseStructure(a, structure, act.spot, material);
       if (!st) return 'abort';
 
@@ -1544,20 +1551,22 @@ export const ACTIONS = {
       const storeEmpty = ![...ctx.world.structuresOfKind('store')].some(
         (s) => s.stock && [...s.stock.values()].some((v) => v > 2),
       );
-      // Even when packs are full, ripe fields must be cut or they rot unused
-      const scarcity = foodTight || storeEmpty ? 2.4 : 1.2;
+      // When stores are healthy, farming is maintenance — not the only job
+      const scarcity = foodTight || storeEmpty ? 2.2 : 0.55;
       let hungerFarm;
       if (ripe >= 0.85) {
-        hungerFarm = 6.5 + a.body.hunger * 3 + (storeEmpty ? 3 : 1);
-      } else if (hungry && ripe > 0.55) {
-        hungerFarm = 3.5 + a.body.hunger * 5;
+        hungerFarm = (storeEmpty || foodTight ? 5.5 : 2.2) + a.body.hunger * 2;
+      } else if (hungry && ripe > 0.55 && (storeEmpty || foodTight)) {
+        hungerFarm = 2.8 + a.body.hunger * 3;
       } else if (ripe > 0.4) {
-        hungerFarm = 1.1 * purpose * scarcity;
+        hungerFarm = 0.7 * purpose * scarcity;
       } else {
-        hungerFarm = 0.55 * purpose * scarcity;
+        hungerFarm = 0.35 * purpose * scarcity;
       }
-      // Untended fields still need hands even when food is abundant
-      if ((f.tended || 0) < 0.2 && ripe < 0.85) hungerFarm = Math.max(hungerFarm, 1.4 * purpose);
+      // Light tend when neglected, but not enough to trap the whole camp
+      if ((f.tended || 0) < 0.15 && ripe < 0.85) {
+        hungerFarm = Math.max(hungerFarm, 0.8 * purpose);
+      }
       const u =
         (hungerFarm *
           (ctx.bias?.work ?? 1) *
