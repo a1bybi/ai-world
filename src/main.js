@@ -42,7 +42,13 @@ const llm = new LLMBridge();
 const panels = new Panels(document, { onSelect: select });
 
 function newWorld(seed) {
-  state.sim = new Simulation(seed, { population: 14 });
+  try {
+    state.sim = new Simulation(seed, { population: 14 });
+  } catch (err) {
+    console.error('[aurorae] newWorld failed', err);
+    alert('World failed to start: ' + (err && err.message ? err.message : err));
+    return;
+  }
   state.selected = null;
   renderer.selected = null;
   renderer.cacheKey = '';
