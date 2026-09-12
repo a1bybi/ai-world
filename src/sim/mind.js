@@ -669,6 +669,35 @@ export function think(a, ctx) {
     }
   }
 
+  // Scatter: if food is fine, actively pull people off the field tiles
+  {
+    const foodDays = ctx.sim.foodDaysAt?.() ?? 99;
+    if (foodDays >= 3.5 && a.body.hunger < 0.55) {
+      for (const p of candidates) {
+        if (p.kind === 'farm') p.u *= 0.15;
+      }
+      let explore = candidates.find((c) => c.kind === 'explore');
+      if (!explore) {
+        const r = 10 + (a.id % 20);
+        const ang = ((a.id * 47) % 360) * (Math.PI / 180);
+        explore = {
+          kind: 'explore',
+          u: 7.5,
+          target: {
+            x: clamp(Math.round(a.x + Math.cos(ang) * r), 1, ctx.world.w - 2),
+            y: clamp(Math.round(a.y + Math.sin(ang) * r), 1, ctx.world.h - 2),
+          },
+          dur: 12,
+        };
+        candidates.push(explore);
+      } else {
+        explore.u = Math.max(explore.u, 7);
+      }
+      const gather = candidates.find((c) => c.kind === 'gather');
+      if (gather) gather.u = Math.max(gather.u, 5);
+    }
+  }
+
   // Soft civic boosts (never lock out build/court/farm)
   if (a.body.hunger < 0.55 && a.body.thirst < 0.55) {
     let packFood = 0;
