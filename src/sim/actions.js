@@ -1534,45 +1534,50 @@ export const ACTIONS = {
       if (a.isChild?.(ctx.world.tick)) return [];
       const fields = ctx.world.structuresOfKind('field');
       if (!fields.length) return [];
-      const f = topN(fields, 1, (s) => {
-        const place = a.memory.belief('where:field-works')?.payload;
-        const placeBoost = place && place.x === s.x && place.y === s.y ? 0.5 : 0;
-        // Prefer less tended / lower ripeness for tending; high ripeness for harvest
-        const ripe = s.ripeness || 0;
-        const tendNeed = ripe < 0.85 ? (1 - ripe) * 2 : ripe * 3;
-        return tendNeed + placeBoost - dist(a, s) * 0.04;
-      })[0];
-      if (!f) return [];
-      const ripe = f.ripeness || 0;
-      const purpose = Math.max(0.4, knownStructureUse(a, 'field'));
-      const hungry = a.body.hunger > 0.35;
-      const people = ctx.sim.living.length;
+
+      const people = ctx.sim.living.length || 1;
       const foodTight = ctx.sim.totalFood() < people * 2.8;
       const storeEmpty = ![...ctx.world.structuresOfKind('store')].some(
         (s) => s.stock && [...s.stock.values()].some((v) => v > 2),
       );
-      // When stores are healthy, farming is maintenance — not the only job
-      const scarcity = foodTight || storeEmpty ? 2.2 : 0.55;
+      const foodDays = ctx.sim.foodDaysAt?.() ?? 99;
+      const secure = !foodTight && !storeEmpty && foodDays >= 4;
+
+      // Cap concurrent farmers so the whole camp does not orbit two tiles
+      const farmingNow = ctx.sim.living.filter(
+        (x) => x.alive && x.action?.kind === 'farm' && x.id !== a.id,
+      ).length;
+      if (secure && farmingNow >= 2) return [];
+      if (!secure && farmingNow >= 4) return [];
+
+      const f = topN(fields, 1, (s) => {
+        const ripe = s.ripeness || 0;
+        const tendNeed = ripe >= 0.85 ? ripe * 4 : (1 - ripe) * 0.5;
+        return tendNeed - dist(a, s) * 0.05;
+      })[0];
+      if (!f) return [];
+      const ripe = f.ripeness || 0;
+
+      // When food is fine, only harvest ripe grain — no endless tending circuit
+      if (secure && ripe < 0.85) return [];
+      // Even when short, only a light chance to tend green fields
+      if (!secure && ripe < 0.7 && farmingNow >= 1 && ctx.rng.bool(0.7)) return [];
+
+      const purpose = Math.max(0.35, knownStructureUse(a, 'field'));
       let hungerFarm;
       if (ripe >= 0.85) {
-        hungerFarm = (storeEmpty || foodTight ? 5.5 : 2.2) + a.body.hunger * 2;
-      } else if (hungry && ripe > 0.55 && (storeEmpty || foodTight)) {
-        hungerFarm = 2.8 + a.body.hunger * 3;
-      } else if (ripe > 0.4) {
-        hungerFarm = 0.7 * purpose * scarcity;
+        hungerFarm = (secure ? 2.0 : 5.0) + a.body.hunger * 1.5;
+      } else if (a.body.hunger > 0.4 && ripe > 0.55) {
+        hungerFarm = 2.0 + a.body.hunger * 2;
       } else {
-        hungerFarm = 0.35 * purpose * scarcity;
-      }
-      // Light tend when neglected, but not enough to trap the whole camp
-      if ((f.tended || 0) < 0.15 && ripe < 0.85) {
-        hungerFarm = Math.max(hungerFarm, 0.8 * purpose);
+        hungerFarm = 0.4 * purpose;
       }
       const u =
         (hungerFarm *
           (ctx.bias?.work ?? 1) *
-          (0.55 + a.skills.farm) *
-          Math.max(purpose, 0.7)) /
-        (1 + dist(a, f) * 0.03);
+          (0.5 + a.skills.farm) *
+          Math.max(purpose, 0.55)) /
+        (1 + dist(a, f) * 0.04);
       return [{ kind: 'farm', u, target: T(f.x, f.y), field: f, dur: 2 }];
     },
     run(a, ctx, act) {
