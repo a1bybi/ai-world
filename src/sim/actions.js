@@ -1554,7 +1554,7 @@ export const ACTIONS = {
         );
         const free = ripe.filter((f) => !busy.has(f.x + ',' + f.y));
         if (!free.length) return [];
-        const f = free[a.id % free.length];
+        const f = free[Math.abs(Number(a.id) || 0) % free.length];
         const u = 2.5 + a.body.hunger * 1.2;
         return [{ kind: 'farm', u, target: T(f.x, f.y), field: f, dur: 2 }];
       }
@@ -1564,7 +1564,7 @@ export const ACTIONS = {
         (x) => x.alive && x.action?.kind === 'farm' && x.id !== a.id,
       ).length;
       if (farmingNow >= 3) return [];
-      const f = fields[a.id % fields.length];
+      const f = fields[Math.abs(Number(a.id) || 0) % fields.length];
       const ripe = f.ripeness || 0;
       if (ripe < 0.5 && farmingNow >= 1) return [];
       const u = (ripe >= 0.85 ? 4 : 1.2) * (0.5 + a.skills.farm);
