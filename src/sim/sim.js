@@ -320,18 +320,19 @@ export class Simulation {
     }
 
     const landSpot = (ox, oy) => {
-      // Prefer the requested tile; otherwise search nearby walkable dry land
+      // Prefer the requested tile; must be dry, walkable, and on the home bank
       const tryOne = (x, y) => {
         if (!this.world.inBounds(x, y)) return null;
         if (!this.world.walkable(x, y)) return null;
         if (this.world.structureAt(x, y)) return null;
+        if (reachable && !reachable.has(`${x},${y}`)) return null;
         const t = this.world.at(x, y);
         if (t === TERRAIN.WATER || t === TERRAIN.MARSH || t === TERRAIN.DEEP) return null;
         return { x, y };
       };
       const hit = tryOne(ox, oy);
       if (hit) return hit;
-      for (let r = 1; r <= 6; r++) {
+      for (let r = 1; r <= 8; r++) {
         for (let dy = -r; dy <= r; dy++) {
           for (let dx = -r; dx <= r; dx++) {
             const hit2 = tryOne(ox + dx, oy + dy);
@@ -339,7 +340,7 @@ export class Simulation {
           }
         }
       }
-      return { x: cx, y: cy };
+      return tryOne(cx, cy) || { x: cx, y: cy };
     };
     const addStruct = (kind, ox, oy, extra = {}) => {
       const spot = landSpot(ox, oy);
@@ -370,13 +371,8 @@ export class Simulation {
         ...extra,
       });
     };
+    // Minimal start: one store with seed stock. Everything else is built in play.
     addStruct('store', cx, cy);
-    addStruct('hearth', cx + 1, cy);
-    addStruct('shelter', cx - 1, cy);
-    addStruct('shelter', cx, cy + 1);
-    addStruct('shelter', cx + 1, cy + 1);
-    addStruct('field', cx - 4, cy);
-    addStruct('field', cx + 4, cy);
   }
 
   addAgent(a) {
