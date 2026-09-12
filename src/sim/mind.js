@@ -669,32 +669,32 @@ export function think(a, ctx) {
     }
   }
 
-  // Scatter: if food is fine, actively pull people off the field tiles
+  // Scatter: break tile-sharing and field orbits
   {
+    const piled = ctx.sim.living.some(
+      (o) => o.id !== a.id && o.alive && o.x === a.x && o.y === a.y,
+    );
     const foodDays = ctx.sim.foodDaysAt?.() ?? 99;
-    if (foodDays >= 3.5 && a.body.hunger < 0.55) {
+    if (piled || (foodDays >= 3 && a.body.hunger < 0.55)) {
       for (const p of candidates) {
-        if (p.kind === 'farm') p.u *= 0.15;
+        if (p.kind === 'farm') p.u *= 0.1;
+        if (p.kind === 'build' && piled) p.u *= 0.5;
       }
+      const r = piled ? 6 + (Math.abs(Number(a.id) || 0) % 12) : 10 + (Math.abs(Number(a.id) || 0) % 20);
+      const ang = ((Math.abs(Number(a.id) || 1) * 47) % 360) * (Math.PI / 180);
+      const target = {
+        x: clamp(Math.round(a.x + Math.cos(ang) * r), 1, ctx.world.w - 2),
+        y: clamp(Math.round(a.y + Math.sin(ang) * r), 1, ctx.world.h - 2),
+      };
       let explore = candidates.find((c) => c.kind === 'explore');
       if (!explore) {
-        const r = 10 + (a.id % 20);
-        const ang = ((a.id * 47) % 360) * (Math.PI / 180);
-        explore = {
-          kind: 'explore',
-          u: 7.5,
-          target: {
-            x: clamp(Math.round(a.x + Math.cos(ang) * r), 1, ctx.world.w - 2),
-            y: clamp(Math.round(a.y + Math.sin(ang) * r), 1, ctx.world.h - 2),
-          },
-          dur: 12,
-        };
-        candidates.push(explore);
+        candidates.push({ kind: 'explore', u: piled ? 14 : 7.5, target, dur: 14 });
       } else {
-        explore.u = Math.max(explore.u, 7);
+        explore.u = Math.max(explore.u, piled ? 14 : 7);
+        if (piled) explore.target = target;
       }
       const gather = candidates.find((c) => c.kind === 'gather');
-      if (gather) gather.u = Math.max(gather.u, 5);
+      if (gather) gather.u = Math.max(gather.u, 5.5);
     }
   }
 
