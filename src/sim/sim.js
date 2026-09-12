@@ -1890,6 +1890,7 @@ export class Simulation {
         if (!first) first = s;
       }
 
+      if (this.world._spanCache) this.world._spanCache.clear();
       const spans = this.world.bridgeSpanCount?.(settlement.x, settlement.y, 22) ?? 1;
       const firstEver = spans <= 1;
       this.record(
