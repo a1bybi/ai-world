@@ -961,18 +961,27 @@ export const ACTIONS = {
     category: 'thought',
     propose(a, ctx) {
       if (a.body.hunger > 0.58 || a.body.thirst > 0.55 || a.body.energy < 0.18) return [];
+      // When the granary is thin, apply known survival work — not more recipes
+      const foodDays = ctx.sim.foodDaysAt?.() ?? 99;
+      if (foodDays < 3.5) return [];
       const owned = [...a.inventory.keys()].filter((k) => ctx.ont.get(k));
       if (owned.length < 1) return [];
       const drought =
         (ctx.world.dayNumber || 0) > 15 &&
         (ctx.sim.archive?.size || 0) < 3;
+      const gaps = ctx.sim.capabilityGaps(a);
+      // Prefer gaps in sustenance/storage/heat when any remain
+      const survivalGap = gaps.some((g) =>
+        ['sustenance', 'storage', 'heat', 'cutting', 'vessel'].includes(g),
+      );
       const u =
-        (0.7 + a.genome.curiosity * 2.1) *
+        (0.55 + a.genome.curiosity * 1.8) *
         (ctx.bias?.explore ?? 1) *
         (0.75 + a.skills.craft) *
-        (1 - a.body.hunger * 0.35) *
-        (a.affect.e.awe * 0.5 + 0.95) *
-        (1 + ctx.sim.capabilityGaps(a).length * 0.18) *
+        (1 - a.body.hunger * 0.45) *
+        (a.affect.e.awe * 0.4 + 0.9) *
+        (1 + gaps.length * 0.12) *
+        (survivalGap ? 1.35 : 0.75) *
         (drought ? 1.8 : 1);
       return [{
         kind: 'experiment',
@@ -1141,8 +1150,8 @@ export const ACTIONS = {
           const spans =
             ctx.world.bridgeSpanCount?.(settlement.x, settlement.y, 28) ??
             nearCount('bridge');
-          // One or two real crossings beat a forest of short piers
-          if (spans >= 2) continue;
+          // One real crossing per camp is enough; stop pier forests
+          if (spans >= 1) continue;
 
           // At most one expensive span search per agent per ~half day
           const spanKey = '_spanAt';
