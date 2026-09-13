@@ -536,28 +536,31 @@ export function think(a, ctx) {
     }
   }
 
-  // First real river span is a civil priority once the camp can eat
+  // River span only after the first weeks — not a day-one script
   {
+    const day = ctx.world.dayNumber || Math.floor(ctx.world.tick / 24) + 1;
     const home = ctx.sim.nearestSettlement?.(a.x, a.y);
     const spans = home
       ? (ctx.world.bridgeSpanCount?.(home.x, home.y, 28) || 0)
       : 0;
-    if (spans === 0 && a.body.hunger < 0.5 && a.body.thirst < 0.5) {
+    if (day >= 22 && spans === 0 && a.body.hunger < 0.45 && a.body.thirst < 0.45) {
       for (const p of candidates) {
         if (p.kind === 'build' && p.payload?.structure === 'bridge') {
-          p.u = Math.max(p.u, 11);
+          p.u = Math.max(p.u, 8);
         }
       }
     }
   }
 
-  if ((stagnant || campBound) && a.body.hunger < 0.65 && a.body.thirst < 0.65) {
+  // Mild unstick after the camp has had a few days — not mass map-crossing on day 1
+  const dayN = ctx.world.dayNumber || Math.floor(ctx.world.tick / 24) + 1;
+  if (dayN >= 6 && (stagnant || campBound) && a.body.hunger < 0.65 && a.body.thirst < 0.65) {
     for (const p of candidates) {
-      if (p.kind === 'explore') p.u = Math.max(p.u, 11);
-      if (p.kind === 'gather') p.u = Math.max(p.u, 6);
-      if (p.kind === 'idle') p.u = Math.max(p.u, 3);
-      if (p.kind === 'sleep') p.u *= 0.05;
-      if (p.kind === 'follow') p.u *= 0.2;
+      if (p.kind === 'explore') p.u = Math.max(p.u, dayN < 15 ? 5 : 8);
+      if (p.kind === 'gather') p.u = Math.max(p.u, 5);
+      if (p.kind === 'idle') p.u = Math.max(p.u, 2.5);
+      if (p.kind === 'sleep') p.u *= 0.15;
+      if (p.kind === 'follow') p.u *= 0.35;
       if (p.kind === 'teach' && a.body.hunger < 0.4) p.u *= 0.45;
     }
     if (!candidates.some((c) => c.kind === 'explore')) {
@@ -685,18 +688,18 @@ export function think(a, ctx) {
     }
   }
 
-  // Scatter: break tile-sharing and field orbits
+  // Scatter only when sharing a tile — not a forced map tour
   {
+    const day = ctx.world.dayNumber || Math.floor(ctx.world.tick / 24) + 1;
     const piled = ctx.sim.living.some(
       (o) => o.id !== a.id && o.alive && o.x === a.x && o.y === a.y,
     );
-    const foodDays = ctx.sim.foodDaysAt?.() ?? 99;
-    if (piled || (foodDays >= 3 && a.body.hunger < 0.55)) {
+    if (piled) {
       for (const p of candidates) {
-        if (p.kind === 'farm') p.u *= 0.1;
-        if (p.kind === 'build' && piled) p.u *= 0.5;
+        if (p.kind === 'farm') p.u *= 0.2;
+        if (p.kind === 'build') p.u *= 0.6;
       }
-      const r = piled ? 6 + (Math.abs(Number(a.id) || 0) % 12) : 10 + (Math.abs(Number(a.id) || 0) % 20);
+      const r = 4 + (Math.abs(Number(a.id) || 0) % 8);
       const ang = ((Math.abs(Number(a.id) || 1) * 47) % 360) * (Math.PI / 180);
       const target = {
         x: clamp(Math.round(a.x + Math.cos(ang) * r), 1, ctx.world.w - 2),
@@ -704,13 +707,17 @@ export function think(a, ctx) {
       };
       let explore = candidates.find((c) => c.kind === 'explore');
       if (!explore) {
-        candidates.push({ kind: 'explore', u: piled ? 14 : 7.5, target, dur: 14 });
+        candidates.push({ kind: 'explore', u: 9, target, dur: 8 });
       } else {
-        explore.u = Math.max(explore.u, piled ? 14 : 7);
-        if (piled) explore.target = target;
+        explore.u = Math.max(explore.u, 9);
+        explore.target = target;
       }
-      const gather = candidates.find((c) => c.kind === 'gather');
-      if (gather) gather.u = Math.max(gather.u, 5.5);
+    } else if (day >= 8) {
+      const foodDays = ctx.sim.foodDaysAt?.() ?? 99;
+      if (foodDays >= 4 && a.body.hunger < 0.5) {
+        const gather = candidates.find((c) => c.kind === 'gather');
+        if (gather) gather.u = Math.max(gather.u, 4.5);
+      }
     }
   }
 
@@ -744,8 +751,9 @@ export function think(a, ctx) {
     const bridgeCand = candidates.find(
       (c) => c.kind === 'build' && c.payload?.structure === 'bridge',
     );
-    if (bridgeCand && spans === 0) {
-      bridgeCand.u = Math.max(bridgeCand.u, foodDays >= 2 ? 13 : 8);
+    const dayCiv = ctx.world.dayNumber || Math.floor(ctx.world.tick / 24) + 1;
+    if (bridgeCand && spans === 0 && dayCiv >= 22 && foodDays >= 3) {
+      bridgeCand.u = Math.max(bridgeCand.u, 8);
     }
     // Per-camp densify: many people, few roofs/fields
     if (home) {
