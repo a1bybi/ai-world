@@ -572,43 +572,59 @@ export function think(a, ctx) {
     }
   }
 
-  // Nuclear harvest: do not ignore standing grain
+  // Food logistics: apply survival knowledge when the buffer is thin
   {
+    const foodDays = ctx.sim.foodDaysAt?.() ?? 99;
     const ripeField = (ctx.world.structuresOfKind('field') || []).some(
       (f) => (f.ripeness || 0) >= 0.85,
     );
-    const people = ctx.sim.living.length || 1;
-    const foodDays = ctx.sim.foodDaysAt?.() ?? 99;
-    // Only rush harvest when food is actually short — not every ripe tick forever
-    if (ripeField && foodDays < 4 && a.body.hunger < 0.7) {
-      const farmCand = candidates.find((c) => c.kind === 'farm');
-      if (farmCand) farmCand.u = Math.max(farmCand.u, 9);
+    let foodCarried = 0;
+    for (const [k, v] of a.inventory) {
+      const c = ctx.ont.get(k);
+      const sust =
+        (typeof c?.serves === 'function' ? c.serves('sustenance') : 0) ||
+        c?.functions?.sustenance ||
+        0;
+      if (sust > 0.15) foodCarried += v;
     }
-    // When granary is healthy, do not let farm monopolize every mind
-    if (foodDays >= 4) {
+
+    if (foodDays < 3.5) {
+      // Suppress craft noise — they already know enough tools; fill the granary
+      for (const p of candidates) {
+        if (p.kind === 'experiment') p.u *= 0.08;
+        if (p.kind === 'craft') p.u *= 0.15;
+        if (p.kind === 'makeArt') p.u *= 0.1;
+        if (p.kind === 'explore') p.u *= 0.35;
+        if (p.kind === 'teach' && a.body.hunger > 0.35) p.u *= 0.25;
+        if (p.kind === 'build' && p.payload?.structure === 'bridge') p.u *= 0.2;
+      }
+      if (ripeField) {
+        const farmCand = candidates.find((c) => c.kind === 'farm');
+        if (farmCand) farmCand.u = Math.max(farmCand.u, 14);
+      }
+      for (const p of candidates) {
+        if (p.kind === 'gather') p.u = Math.max(p.u, 11);
+        if (p.kind === 'farm') p.u = Math.max(p.u, 10);
+        if (p.kind === 'takeFromStore') p.u = Math.max(p.u, 10);
+      }
+      if (foodCarried >= 2) {
+        const storeCand = candidates.find((c) => c.kind === 'store');
+        if (storeCand) storeCand.u = Math.max(storeCand.u, 15);
+      }
+    } else if (foodDays >= 5) {
       for (const p of candidates) {
         if (p.kind === 'farm') p.u *= 0.35;
         if (p.kind === 'explore') p.u = Math.max(p.u, 6);
-        if (p.kind === 'gather') p.u *= 1.25;
-        if (p.kind === 'build') p.u *= 1.2;
+        if (p.kind === 'gather') p.u *= 1.15;
+        if (p.kind === 'build') p.u *= 1.15;
         if (p.kind === 'court') p.u *= 1.15;
       }
     }
-  }
 
-  // Nuclear store: heavy food pack -> granary
-  {
-    let foodCarried = 0;
-    for (const [k, v] of a.inventory) {
-      if ((ctx.ont.get(k)?.serves?.('sustenance') || ctx.ont.get(k)?.functions?.sustenance || 0) > 0.15) {
-        foodCarried += v;
-      }
-    }
-    if (foodCarried > 6 && a.body.hunger < 0.5) {
+    // Always park surplus food when not starving for a bite
+    if (foodCarried > 5 && a.body.hunger < 0.55) {
       const storeCand = candidates.find((c) => c.kind === 'store');
-      if (storeCand) {
-        storeCand.u = Math.max(storeCand.u, 9);
-      }
+      if (storeCand) storeCand.u = Math.max(storeCand.u, 11);
     }
   }
 
