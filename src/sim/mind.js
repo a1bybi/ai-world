@@ -698,8 +698,8 @@ export function think(a, ctx) {
     }
   }
 
-  // Soft civic boosts (never lock out build/court/farm)
-  if (a.body.hunger < 0.55 && a.body.thirst < 0.55) {
+  // Soft civic boosts — densify underbuilt camps, cross water, restock food
+  if (a.body.hunger < 0.6 && a.body.thirst < 0.6) {
     let packFood = 0;
     for (const [k, v] of a.inventory) {
       const c = ctx.ont.get(k);
@@ -711,25 +711,46 @@ export function think(a, ctx) {
         packFood += v;
       }
     }
+    const foodDays = ctx.sim.foodDaysAt?.() ?? 99;
     const storeCand2 = candidates.find((c) => c.kind === 'store');
-    if (storeCand2 && packFood >= 4) storeCand2.u = Math.max(storeCand2.u, 10);
+    if (storeCand2 && (packFood >= 4 || foodDays < 4)) {
+      storeCand2.u = Math.max(storeCand2.u, foodDays < 3 ? 12 : 10);
+    }
+    if (foodDays < 3.5) {
+      for (const p of candidates) {
+        if (p.kind === 'farm') p.u = Math.max(p.u, 8);
+        if (p.kind === 'gather') p.u = Math.max(p.u, 7);
+        if (p.kind === 'takeFromStore') p.u = Math.max(p.u, 9);
+      }
+    }
+    const home = ctx.sim.nearestSettlement?.(a.x, a.y);
+    const spans = home ? (ctx.world.bridgeSpanCount?.(home.x, home.y, 28) || 0) : 0;
     const bridgeCand = candidates.find(
       (c) => c.kind === 'build' && c.payload?.structure === 'bridge',
     );
-    if (bridgeCand) {
-      const home = ctx.sim.nearestSettlement?.(a.x, a.y);
-      const spans = home ? (ctx.world.bridgeSpanCount?.(home.x, home.y, 28) || 0) : 0;
-      if (spans === 0) bridgeCand.u = Math.max(bridgeCand.u, 9);
+    if (bridgeCand && spans === 0) {
+      bridgeCand.u = Math.max(bridgeCand.u, foodDays >= 2 ? 13 : 8);
     }
-    // Early skyline: prefer shelter/field/hearth while the camp is thin
-    const structs = ctx.world.structures?.length || 0;
-    if (structs < 8) {
-      for (const p of candidates) {
-        if (
-          p.kind === 'build' &&
-          ['shelter', 'field', 'hearth', 'store'].includes(p.payload?.structure)
-        ) {
-          p.u = Math.max(p.u, 12);
+    // Per-camp densify: many people, few roofs/fields
+    if (home) {
+      const nearP = ctx.sim.living.filter(
+        (x) => Math.hypot(x.x - home.x, x.y - home.y) < 16,
+      ).length;
+      const nearS = (kind) =>
+        ctx.world.structuresOfKind(kind).filter(
+          (st) => Math.hypot(st.x - home.x, st.y - home.y) < 14,
+        ).length;
+      const thin =
+        nearP >= 6 && nearS('shelter') < Math.ceil(nearP / 3);
+      const fewFields = nearP >= 8 && nearS('field') < 2;
+      if (thin || fewFields) {
+        for (const p of candidates) {
+          if (
+            p.kind === 'build' &&
+            ['shelter', 'field', 'hearth', 'store'].includes(p.payload?.structure)
+          ) {
+            p.u = Math.max(p.u, 12);
+          }
         }
       }
     }
