@@ -1162,14 +1162,15 @@ export const ACTIONS = {
           if (bankDist < 3.5) continue;
 
           let need = def.need(s);
-          if (far || spans === 0) need = Math.max(need, 1.8);
+          if (far || spans === 0) need = Math.max(need, 2.2);
           else need = Math.max(need, 0.7);
-          if (day > 25 && spans === 0) need = Math.max(need, 2.0);
+          if (day > 20 && spans === 0) need = Math.max(need, 2.8);
+          if (day > 40 && spans === 0) need = Math.max(need, 3.5);
           if (need <= 0.08) continue;
 
           const purpose =
             spans === 0
-              ? 1.1 + a.genome.curiosity * 0.7 + a.genome.industry * 0.4
+              ? 1.3 + a.genome.curiosity * 0.8 + a.genome.industry * 0.5
               : Math.max(0.55, knownStructureUse(a, 'bridge'));
 
           let matKey = 'wood';
@@ -1180,7 +1181,7 @@ export const ACTIONS = {
             }
           }
           // Cheap enough that a full store + a few gathers finishes a span
-          const cost = Math.max(2, Math.min(8, Math.ceil(span.length * 0.75)));
+          const cost = Math.max(2, Math.min(6, Math.ceil(span.length * 0.6)));
           if (availableMaterial(a, ctx, matKey) < cost) {
             const spot = ctx.world.findResource(matKey, a, 22);
             if (spot && a.carried() <= a.carryLimit) {
