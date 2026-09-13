@@ -2529,16 +2529,25 @@ export class Simulation {
       (a) => Math.hypot(a.x - s.x, a.y - s.y) < 18,
     );
     const people = Math.max(1, near.length);
+    const isFood = (k) => {
+      const c = this.ont.get(k);
+      if (!c) return false;
+      const sust =
+        (typeof c.serves === 'function' ? c.serves('sustenance') : 0) ||
+        c.functions?.sustenance ||
+        0;
+      return sust > 0.15;
+    };
     let food = 0;
     for (const a of near) {
       for (const [k, v] of a.inventory) {
-        if (this.ont.get(k)?.functions?.sustenance) food += v;
+        if (isFood(k)) food += v;
       }
     }
     for (const st of this.world.structuresOfKind('store')) {
       if (Math.hypot(st.x - s.x, st.y - s.y) > 16) continue;
       for (const [k, v] of st.stock || []) {
-        if (this.ont.get(k)?.functions?.sustenance) food += v;
+        if (isFood(k)) food += v;
       }
     }
     return food / (people * 1.1);
