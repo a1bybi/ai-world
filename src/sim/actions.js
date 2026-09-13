@@ -342,7 +342,8 @@ function structureUnlocked(kind, ctx, settlement, nearCount) {
     case 'store':
       return true;
     case 'bridge':
-      return day >= 3 || basics;
+      // Not a day-one script — need a settled camp first
+      return day >= 22 && basics;
     case 'field': {
       const fields = n('field');
       // First fields appear after a short settle — not day 0 magic
@@ -1171,15 +1172,14 @@ export const ACTIONS = {
           if (bankDist < 3.5) continue;
 
           let need = def.need(s);
-          if (far || spans === 0) need = Math.max(need, 2.2);
-          else need = Math.max(need, 0.7);
-          if (day > 20 && spans === 0) need = Math.max(need, 2.8);
-          if (day > 40 && spans === 0) need = Math.max(need, 3.5);
+          if (day < 22) continue; // hard gate even if unlocked elsewhere
+          if (spans === 0) need = Math.max(need, day > 40 ? 2.6 : day > 28 ? 1.8 : 1.1);
+          else need = Math.max(need, 0.5);
           if (need <= 0.08) continue;
 
           const purpose =
             spans === 0
-              ? 1.3 + a.genome.curiosity * 0.8 + a.genome.industry * 0.5
+              ? 0.9 + a.genome.curiosity * 0.6 + a.genome.industry * 0.4
               : Math.max(0.55, knownStructureUse(a, 'bridge'));
 
           let matKey = 'wood';
