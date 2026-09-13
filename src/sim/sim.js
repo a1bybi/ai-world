@@ -1534,8 +1534,14 @@ export class Simulation {
     const water = Math.max(waterNear, Math.floor(waterFar / 2));
     const bridgeSpans =
       this.world.bridgeSpanCount?.(settlement.x, settlement.y, 18) ?? count('bridge');
+    // Any real water edge wants a crossing once a camp has a few people
     const bridgesWanted =
-      water < 4 ? 0 : Math.min(BALANCE.maxBridgesPerCamp, Math.max(1, Math.ceil(people / 25)));
+      water < 3
+        ? 0
+        : Math.min(
+            BALANCE.maxBridgesPerCamp,
+            Math.max(people >= 6 ? 1 : 0, Math.ceil(people / 20)),
+          );
 
     const corpsesNear = (this.world.corpses || []).filter(
       (c) => Math.hypot(c.x - settlement.x, c.y - settlement.y) < 20,
@@ -1548,8 +1554,9 @@ export class Simulation {
     const wantHall = people >= 12 ? 1 : 0;
     const wantPlaza = people >= 10 ? 1 : 0;
     const wantWell = people >= 8 ? Math.min(2, 1 + Math.floor(people / 24)) : 0;
-    const wantField = Math.max(1, Math.min(5, Math.ceil(people / 12)));
-    const wantShelter = Math.max(1, Math.ceil(people / 2.2));
+    // Dense camps without roofs/fields must feel the deficit (Tulir 15:1)
+    const wantField = Math.max(people >= 4 ? 1 : 0, Math.min(6, Math.ceil(people / 8)));
+    const wantShelter = Math.max(people >= 3 ? 1 : 0, Math.ceil(people / 2.5));
 
     return {
       people,
