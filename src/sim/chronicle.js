@@ -581,7 +581,11 @@ export class Chronicle {
         `Hunger is the ruling fact - the average belly sits at ${Math.round(hunger * 100)}% empty and the stores are thin.`,
       );
     } else if (hunger < 0.3) {
-      lines.push('Food is not a worry at present; the fields and beds are keeping pace.');
+      const fd = sim.foodDaysAt?.(sim.origin) ?? 0;
+      if (fd >= 8) lines.push('Food is not a worry at present; stores and fields are keeping pace.');
+      else if (fd >= 3) lines.push('Food is adequate for a few days, but the buffer is not deep.');
+      else if (fd >= 1) lines.push('Food is short â about ' + fd.toFixed(1) + ' days in stores and packs near the main camp.');
+      else lines.push('Hunger presses: stores and packs near the main camp are nearly empty.');
     }
 
     const mood = last.mood ?? 0;
