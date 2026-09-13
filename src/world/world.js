@@ -236,6 +236,35 @@ export class World {
     return result;
   }
 
+  /**
+   * True if two dry tiles are connected by land without crossing water.
+   * Used to reject "bridges" that only run along the same bank.
+   */
+  landConnected(ax, ay, bx, by, maxSteps = 60) {
+    if (ax === bx && ay === by) return true;
+    const key = (x, y) => `${x},${y}`;
+    const seen = new Set([key(ax, ay)]);
+    const q = [[ax, ay, 0]];
+    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    while (q.length) {
+      const [x, y, d] = q.shift();
+      if (d >= maxSteps) continue;
+      for (const [dx, dy] of dirs) {
+        const nx = x + dx, ny = y + dy;
+        if (!this.inBounds(nx, ny)) continue;
+        const k = key(nx, ny);
+        if (seen.has(k)) continue;
+        const t = this.at(nx, ny);
+        // Dry land only â water/marsh/deep are barriers
+        if (t <= TERRAIN.MARSH) continue;
+        if (nx === bx && ny === by) return true;
+        seen.add(k);
+        q.push([nx, ny, d + 1]);
+      }
+    }
+    return false;
+  }
+
   _findBridgeSpanUncached(nearX, nearY, radius = 32, maxLen = 14) {
     const starts = [];
     const r0 = Math.max(0, (nearX | 0) - radius);
@@ -271,14 +300,13 @@ export class World {
     const key = (x, y) => `${x},${y}`;
     const candidates = [];
 
-    for (const start of starts.slice(0, 80)) {
+    for (const start of starts.slice(0, 60)) {
       const seen = new Map();
       const depthMap = new Map();
       const q = [[start.x, start.y]];
       seen.set(key(start.x, start.y), null);
       depthMap.set(key(start.x, start.y), 0);
 
-      // Collect all valid opposite-bank exits, pick best later
       const exits = [];
 
       while (q.length) {
@@ -292,19 +320,17 @@ export class World {
           const nt = this.at(nx, ny);
 
           if (nt > TERRAIN.MARSH) {
+            // Opposite bank = dry land NOT reachable on foot from start bank
+            if (nx === start.land.x && ny === start.land.y) continue;
+            if (this.landConnected(start.land.x, start.land.y, nx, ny, 70)) continue;
             const bankDist = Math.hypot(nx - start.land.x, ny - start.land.y);
-            // Must be a different bank (not the same shore two tiles away)
-            if (
-              (nx !== start.land.x || ny !== start.land.y) &&
-              bankDist >= 3
-            ) {
-              exits.push({
-                water: { x, y },
-                land: { x: nx, y: ny },
-                bankDist,
-                depth: depth + 1,
-              });
-            }
+            if (bankDist < 2.5) continue;
+            exits.push({
+              water: { x, y },
+              land: { x: nx, y: ny },
+              bankDist,
+              depth: depth + 1,
+            });
             continue;
           }
           if (nt !== TERRAIN.WATER && nt !== TERRAIN.MARSH) continue;
@@ -319,10 +345,13 @@ export class World {
 
       if (!exits.length) continue;
 
-      // Prefer exits that land farthest from the start bank (true crossing)
-      exits.sort((a, b) => b.bankDist - a.bankDist || a.depth - b.depth);
+      // Prefer short water path to a truly separated bank (crossing, not shoreline)
+      exits.sort(
+        (a, b) =>
+          a.depth - b.depth ||
+          b.bankDist - a.bankDist,
+      );
       const bestExit = exits[0];
-      if (bestExit.bankDist < 3) continue;
 
       const tiles = [];
       let cur = [bestExit.water.x, bestExit.water.y];
@@ -332,13 +361,15 @@ export class World {
         cur = p;
       }
       tiles.reverse();
-      if (tiles.length < 2 || tiles.length > maxLen) continue;
+      if (tiles.length < 1 || tiles.length > maxLen) continue;
 
-      // Score: long bank-to-bank distance, moderate length, near the requester
+      // Parallel-to-river snakes: long water path for little bank separation
+      if (tiles.length > bestExit.bankDist * 1.8 + 2) continue;
+
       const score =
-        bestExit.bankDist * 3 +
-        tiles.length * 0.5 -
-        Math.hypot(start.x - nearX, start.y - nearY) * 0.05;
+        bestExit.bankDist * 4 -
+        tiles.length * 1.2 -
+        Math.hypot(start.x - nearX, start.y - nearY) * 0.04;
 
       candidates.push({
         tiles,
@@ -353,8 +384,7 @@ export class World {
     if (!candidates.length) return null;
     candidates.sort((a, b) => b.score - a.score);
     const best = candidates[0];
-    // Reject pure shoreline nubs
-    if (best.bankDist < 3.5 && best.length < 3) return null;
+    if (best.bankDist < 2.5) return null;
     return {
       tiles: best.tiles,
       startLand: best.startLand,
