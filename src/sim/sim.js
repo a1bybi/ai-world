@@ -11,6 +11,7 @@ import { Chronicle } from './chronicle.js';
 import { Agent, YEAR_TICKS, SKILLS } from './agent.js';
 import { randomGenome, inherit, genomeDistance, inventDna, inheritDna, dnaShare, dnaLabel, lineCensus, kinByDna } from './genome.js';
 import { think, tickAgent, updateBody } from './mind.js';
+import { worldBranchStats } from './branches.js';
 import { appraise, dominantEmotion, moodWord } from './emotion.js';
 import { clamp, dist, mean, topN, hueFor } from '../core/util.js';
 import { STRUCTURE_KINDS } from './actions.js';
@@ -72,7 +73,9 @@ export class Simulation {
     this.techEffects = []; // advances with human-readable impact
     this.wantedMaterials = new Map();
     this.lexicon = new Map();
-    this.archive = new Set();          // recipe keys that outlive individuals
+    this.archive = new Set();
+    /** DMC branch investment on (computational model, not physics proof). */
+    this.dmcMode = opts.dmcMode !== false;          // recipe keys that outlive individuals
     this.campKnowledge = new Map();    // key -> Set of living holder ids
 
     this.generation = 1;
@@ -2458,8 +2461,12 @@ export class Simulation {
           ? this.settlements.find((x) => x.id === s.settlementId)
           : this.nearestSettlement(s.x, s.y);
         if (owner !== st) continue;
+        if (s.kind === 'bridge') continue; // counted as spans below
         kinds[s.kind] = (kinds[s.kind] || 0) + 1;
       }
+      // Bridges: report spans, not every plank tile
+      const spans = this.countBridgeSpansNear?.(st.x, st.y, 20) ?? 0;
+      if (spans > 0) kinds.bridge = spans;
       let storeFill = 0;
       let storeCap = 0;
       for (const s of this.world.structuresOfKind('store')) {
@@ -2522,6 +2529,40 @@ export class Simulation {
   }
 
   /** Days of food near a settlement at ~1.1 measures / person / day. */
+
+  /** Count distinct bridge spans near a point (not every plank tile). */
+  countBridgeSpansNear(x, y, radius = 18) {
+    if (this.world.bridgeSpanCount) {
+      return this.world.bridgeSpanCount(x, y, radius) || 0;
+    }
+    // Fallback: group contiguous bridge tiles roughly by component seed
+    const tiles = (this.world.structuresOfKind('bridge') || []).filter(
+      (s) => Math.hypot(s.x - x, s.y - y) < radius,
+    );
+    if (!tiles.length) return 0;
+    const seen = new Set();
+    let spans = 0;
+    const key = (t) => `${t.x},${t.y}`;
+    for (const t of tiles) {
+      if (seen.has(key(t))) continue;
+      spans++;
+      const q = [t];
+      seen.add(key(t));
+      while (q.length) {
+        const c = q.pop();
+        for (const o of tiles) {
+          const k = key(o);
+          if (seen.has(k)) continue;
+          if (Math.abs(o.x - c.x) + Math.abs(o.y - c.y) <= 1) {
+            seen.add(k);
+            q.push(o);
+          }
+        }
+      }
+    }
+    return spans;
+  }
+
   foodDaysAt(settlement = null) {
     const s = settlement || this.origin;
     if (!s) return 0;
@@ -2701,6 +2742,7 @@ export class Simulation {
       lost: this.lostKnowledge.slice(-12).map((L) => ({
         word: L.word, key: L.key, lastKeeper: L.lastKeeper, tick: L.tick,
       })),
+      dmc: this.dmcMode !== false ? worldBranchStats(this.living) : null,
     };
   }
 
