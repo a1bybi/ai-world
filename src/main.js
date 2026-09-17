@@ -46,19 +46,50 @@ function newWorld(seed) {
     state.sim = new Simulation(seed, { population: 14 });
   } catch (err) {
     console.error('[aurorae] newWorld failed', err);
-    alert('World failed to start: ' + (err && err.message ? err.message : err));
+    const msg = err && err.message ? err.message : String(err);
+    const el = $('#worldName');
+    if (el) el.textContent = 'boot failed — see console';
+    alert('World failed to start: ' + msg);
     return;
   }
+
+  // Name the world immediately so a later UI error cannot leave "unwatched"
+  const place = state.sim.settlementName || 'camp';
+  const tongue = state.sim.lang?.name || 'folk';
+  const el = $('#worldName');
+  if (el) el.textContent = `${place}  -  ${tongue}`;
+  document.title = `${place} - Aurorae`;
+
   state.selected = null;
   renderer.selected = null;
   renderer.cacheKey = '';
-  panels.clearFeed();
-  renderer.resize(state.sim.world);
-  $('#worldName').textContent = `${state.sim.settlementName}  -  ${state.sim.lang.name}`;
-  document.title = `${state.sim.settlementName} - Aurorae`;
-  panels.pushEvents(state.sim.drainLog(), state.sim);
-  paint();
-  refreshPanels(true);
+  try {
+    panels.clearFeed();
+  } catch (e) {
+    console.warn('[aurorae] clearFeed', e);
+  }
+  try {
+    if (renderer.canvas?.parentElement) {
+      renderer.resize(state.sim.world);
+    }
+  } catch (e) {
+    console.warn('[aurorae] resize', e);
+  }
+  try {
+    panels.pushEvents(state.sim.drainLog(), state.sim);
+  } catch (e) {
+    console.warn('[aurorae] pushEvents', e);
+  }
+  try {
+    paint();
+  } catch (e) {
+    console.error('[aurorae] paint', e);
+  }
+  try {
+    refreshPanels(true);
+  } catch (e) {
+    console.warn('[aurorae] panels', e);
+  }
   setSpeed(1);
 }
 
