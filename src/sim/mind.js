@@ -3,6 +3,7 @@
 import { clamp, softmaxPick, topN } from '../core/util.js';
 import { ACTIONS } from './actions.js';
 import { decayAffect, emotionalBias, appraise, dominantEmotion } from './emotion.js';
+import { BranchStore } from './branches.js';
 
 const ACTION_LIST = Object.entries(ACTIONS);
 
@@ -842,7 +843,45 @@ export function think(a, ctx) {
             0.75,
           );
 
+  // DMC: register open possibilities, bias by prior investment, then pick
+  const dmcOn = ctx.sim.dmcMode !== false;
+  if (dmcOn) {
+    if (!a.branches) a.branches = new BranchStore();
+    a.branches.observe(candidates, world.tick);
+    a.branches.biasUtilities(candidates);
+  }
+
   const chosen = softmaxPick(ctx.rng, candidates, (c) => c.u, temperature);
+
+  if (dmcOn && a.branches && chosen) {
+    const inv = a.branches.invest(chosen, world.tick, {
+      arousal: a.affect?.arousal,
+      valence: a.affect?.valence,
+      attention: clamp(
+        (a.body?.hunger || 0) * 0.3 +
+          (chosen.u || 0) * 0.05 +
+          (a.genome?.curiosity || 0.5) * 0.2,
+        0,
+        1,
+      ),
+    });
+    // Rare observer note when a path hardens
+    if (
+      inv &&
+      inv.chosen >= 4 &&
+      inv.weight > 1.4 &&
+      ctx.sim.record &&
+      ctx.rng.bool(0.04)
+    ) {
+      ctx.sim.record(
+        a,
+        'branch',
+        `${a.name}'s path hardened toward ${inv.kind}`,
+        { valence: 0.15, intensity: 0.25, quiet: true, concept: inv.key },
+      );
+    }
+  }
+
   a.reasoning = topN(candidates, 4, (c) => c.u).map((c) => ({
     kind: c.kind,
     u: +c.u.toFixed(2),
