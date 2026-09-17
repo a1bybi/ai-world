@@ -964,7 +964,7 @@ export const ACTIONS = {
       if (a.body.hunger > 0.58 || a.body.thirst > 0.55 || a.body.energy < 0.18) return [];
       // When the granary is thin, apply known survival work — not more recipes
       const foodDays = ctx.sim.foodDaysAt?.() ?? 99;
-      if (foodDays < 3.5) return [];
+      if (foodDays < 5) return [];
       const owned = [...a.inventory.keys()].filter((k) => ctx.ont.get(k));
       if (owned.length < 1) return [];
       const drought =
