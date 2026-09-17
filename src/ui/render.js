@@ -1,5 +1,5 @@
 // The window onto the world. Terrain is painted once per world into an offscreen
-// buffer; everything that changes — resources, weather, paths, people — is drawn
+// buffer; everything that changes - resources, weather, paths, people - is drawn
 // on top each frame. Overlays let the observer see what is normally invisible:
 // mood, hunger, knowledge, danger, footfall.
 //
@@ -21,7 +21,7 @@ const BASE = {
   [TERRAIN.SAND]:   [134, 118, 88],
 };
 
-/** Fallback when material is unknown — by structure kind. */
+/** Fallback when material is unknown - by structure kind. */
 const KIND_COLOR = {
   shelter: '#cbb79a',
   hearth: '#e08a3c',
@@ -38,7 +38,7 @@ const KIND_COLOR = {
   path: '#c4a878',
 };
 
-/** Material key (or ontology word fragment) → fill color. */
+/** Material key (or ontology word fragment) â fill color. */
 const MATERIAL_COLOR = {
   wood: '#a67c52',
   timber: '#a67c52',
@@ -90,9 +90,11 @@ export class Renderer {
 
   resize(world) {
     const { canvas } = this;
-    const rect = canvas.parentElement.getBoundingClientRect();
-    const cw = Math.max(320, Math.floor(rect.width));
-    const chh = Math.max(220, Math.floor(rect.height));
+    if (!canvas) return;
+    const parent = canvas.parentElement;
+    const rect = parent ? parent.getBoundingClientRect() : { width: 360, height: 280 };
+    const cw = Math.max(320, Math.floor(rect.width || 360));
+    const chh = Math.max(220, Math.floor(rect.height || 280));
     canvas.width = Math.floor(cw * this.dpr);
     canvas.height = Math.floor(chh * this.dpr);
     canvas.style.width = cw + 'px';
@@ -108,12 +110,12 @@ export class Renderer {
     this.oy = (this.viewH - this.tile * world.h) / 2;
   }
 
-  /** screen → tile */
+  /** screen â tile */
   toTile(px, py, world) {
     return { x: Math.floor((px - this.ox) / this.tile), y: Math.floor((py - this.oy) / this.tile) };
   }
 
-  /** tile → screen centre */
+  /** tile â screen centre */
   toScreen(x, y) {
     return { x: this.ox + (x + 0.5) * this.tile, y: this.oy + (y + 0.5) * this.tile };
   }
@@ -151,11 +153,11 @@ export class Renderer {
     ctx.fillStyle = '#080706';
     ctx.fillRect(0, 0, this.viewW, this.viewH);
 
-    // ── land ────────────────────────────────────────────────────────────
+    // ââ land ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(this.terrainCache, this.ox, this.oy, T * world.w, T * world.h);
 
-    // ── time of day and weather wash ───────────────────────────────────
+    // ââ time of day and weather wash âââââââââââââââââââââââââââââââââââ
     const night = world.isNight ? 0.42 : 0;
     const dusk = Math.abs(world.hour - 19) < 2 || Math.abs(world.hour - 6) < 2 ? 0.16 : 0;
     if (night || dusk) {
@@ -171,10 +173,10 @@ export class Renderer {
       ctx.fillRect(this.ox, this.oy, T * world.w, T * world.h);
     }
 
-    // ── overlays over the land ─────────────────────────────────────────
+    // ââ overlays over the land âââââââââââââââââââââââââââââââââââââââââ
     this.drawFieldOverlay(sim);
 
-    // ── worn paths ─────────────────────────────────────────────────────
+    // ââ worn paths âââââââââââââââââââââââââââââââââââââââââââââââââââââ
     if (this.overlay !== 'trails') {
       ctx.fillStyle = 'rgba(196,168,120,0.30)';
       for (let i = 0; i < world.trails.length; i++) {
@@ -187,7 +189,7 @@ export class Renderer {
       ctx.globalAlpha = 1;
     }
 
-    // ── structures (footprints by kind + material color) ───────────────
+    // ââ structures (footprints by kind + material color) âââââââââââââââ
     for (const s of world.structures) {
       this.drawStructure(s, T);
     }
@@ -207,7 +209,7 @@ export class Renderer {
       );
     }
 
-    // ── named places ───────────────────────────────────────────────────
+    // ââ named places âââââââââââââââââââââââââââââââââââââââââââââââââââ
     ctx.font = `${Math.max(9, T * 1.0)}px 'JetBrains Mono', monospace`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -228,7 +230,7 @@ export class Renderer {
       }
     }
 
-    // ── unburied dead ──────────────────────────────────────────────────
+    // ââ unburied dead ââââââââââââââââââââââââââââââââââââââââââââââââââ
     for (const c of world.corpses) {
       const p = this.toScreen(c.x, c.y);
       ctx.fillStyle = 'rgba(160,120,110,0.8)';
@@ -237,7 +239,7 @@ export class Renderer {
       ctx.fill();
     }
 
-    // ── people ─────────────────────────────────────────────────────────
+    // ââ people âââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     const living = sim.living;
     for (const a of living) {
       const p = this.toScreen(a.x, a.y);
@@ -271,7 +273,7 @@ export class Renderer {
       }
     }
 
-    // ── selection and hover ────────────────────────────────────────────
+    // ââ selection and hover ââââââââââââââââââââââââââââââââââââââââââââ
     const sel = this.selected && sim.byId(this.selected);
     if (sel && sel.alive) {
       const p = this.toScreen(sel.x, sel.y);
