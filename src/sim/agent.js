@@ -118,7 +118,7 @@ export class Agent {
   isChild(tick) { return this.ageAt(tick) < 5; }
   isElder(tick) { return this.ageAt(tick) > 28 * (this.genome.longevity || 1); }
 
-  // ââ inventory ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ[...]
+  // ---
   count(key) { return this.inventory.get(key) || 0; }
   add(key, n = 1) { this.inventory.set(key, this.count(key) + n); }
   take(key, n = 1) {
@@ -157,7 +157,7 @@ export class Agent {
     return best;
   }
 
-  // ââ relationships ââââââââââââââââââââââââââââââââââââââââââââââââââââââââï¿½ï¿½[...]
+  // ---
   rel(other) {
     const id = typeof other === 'string' ? other : other.id;
     let r = this.relationships.get(id);
@@ -180,7 +180,7 @@ export class Agent {
       .slice(0, n);
   }
 
-  // ââ value beliefs (subjective economics) ââââââââââââââââââââââââââââââââââ
+  // ---
   valueOf(key, ontology) {
     if (this.values.has(key)) return this.values.get(key);
     const c = ontology.get(key);
@@ -193,7 +193,7 @@ export class Agent {
     this.values.set(key, clamp(cur * (1 - weight) + observed * weight, 0.05, 12));
   }
 
-  /** Marginal desire for one more unit â scarcity and need shape it. */
+  /** Marginal desire for one more unit - scarcity and need shape it. */
   desireFor(key, ontology, sim) {
     const c = ontology.get(key);
     if (!c) return 0;
