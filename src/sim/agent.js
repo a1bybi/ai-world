@@ -1,6 +1,7 @@
 import { clamp } from '../core/util.js';
 import { blankAffect } from './emotion.js';
 import { MemoryStore } from './memory.js';
+import { BranchStore } from './branches.js';
 import { dominantTraits, inventDna, dnaLabel } from './genome.js';
 
 export const YEAR_TICKS = 24 * 16;   // sixteen-day years: generations turn over on observer timescale
@@ -59,6 +60,7 @@ export class Agent {
 
     this.affect = blankAffect();
     this.memory = new MemoryStore(240 + Math.round((this.genome.learning || 0.5) * 220));
+    this.branches = new BranchStore();
     this.relationships = new Map();
     this.values = new Map();       // conceptKey -> subjective worth
     this.reputation = typeof opts.reputation !== 'undefined' ? opts.reputation : 0.5;
