@@ -586,6 +586,9 @@ export class Chronicle {
       else if (fd >= 3) lines.push('Food is adequate for a few days, but the buffer is not deep.');
       else if (fd >= 1) lines.push('Food is short â about ' + fd.toFixed(1) + ' days in stores and packs near the main camp.');
       else lines.push('Hunger presses: stores and packs near the main camp are nearly empty.');
+      if (sim.dmcMode !== false && typeof sim.knowledgeSnapshot === 'function') { /* noop */ }
+      const dmc = sim.living && sim.living[0]?.branches ? (() => { let o=0,p=0,i=0,l=0; for (const a of sim.living) { const s=a.branches?.stats?.(); if(!s) continue; o+=s.open; p+=s.pruned; i+=s.invested; l+=s.locked; } return {o,p,i,l}; })() : null;
+      if (dmc && dmc.i > 50) lines.push(`Paths of attention: ${dmc.i} investments, ${dmc.p} alternatives dissolved, ${dmc.l} habits locked.`);
     }
 
     const mood = last.mood ?? 0;
