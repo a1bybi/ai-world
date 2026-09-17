@@ -578,7 +578,9 @@ export function think(a, ctx) {
 
   // Food logistics: apply survival knowledge when the buffer is thin
   {
-    const foodDays = ctx.sim.foodDaysAt?.() ?? 99;
+    // Prefer local camp buffer; fall back to origin
+    const home = ctx.sim.nearestSettlement?.(a.x, a.y) || ctx.sim.origin;
+    const foodDays = ctx.sim.foodDaysAt?.(home) ?? ctx.sim.foodDaysAt?.() ?? 99;
     const ripeField = (ctx.world.structuresOfKind('field') || []).some(
       (f) => (f.ripeness || 0) >= 0.85,
     );
@@ -592,30 +594,56 @@ export function think(a, ctx) {
       if (sust > 0.15) foodCarried += v;
     }
 
-    if (foodDays < 3.5) {
-      // Suppress craft noise — they already know enough tools; fill the granary
+    // Local store emptiness (second camps like Hua)
+    let localStoreFood = 0;
+    let localStoreCount = 0;
+    if (home) {
+      for (const st of ctx.world.structuresOfKind('store') || []) {
+        if (Math.hypot(st.x - home.x, st.y - home.y) > 14) continue;
+        localStoreCount++;
+        for (const [k, v] of st.stock || []) {
+          const c = ctx.ont.get(k);
+          const sust =
+            (typeof c?.serves === 'function' ? c.serves('sustenance') : 0) ||
+            c?.functions?.sustenance ||
+            0;
+          if (sust > 0.15) localStoreFood += v;
+        }
+      }
+    }
+    const localEmpty = localStoreCount > 0 && localStoreFood < 3;
+
+    if (foodDays < 5 || localEmpty) {
+      // Logistics first: fill granary, harvest, share — not more recipes
       for (const p of candidates) {
-        if (p.kind === 'experiment') p.u *= 0.08;
-        if (p.kind === 'craft') p.u *= 0.15;
-        if (p.kind === 'makeArt') p.u *= 0.1;
-        if (p.kind === 'explore') p.u *= 0.35;
-        if (p.kind === 'teach' && a.body.hunger > 0.35) p.u *= 0.25;
-        if (p.kind === 'build' && p.payload?.structure === 'bridge') p.u *= 0.2;
+        if (p.kind === 'experiment') p.u *= 0.06;
+        if (p.kind === 'craft') p.u *= 0.12;
+        if (p.kind === 'makeArt') p.u *= 0.08;
+        if (p.kind === 'explore') p.u *= 0.3;
+        if (p.kind === 'teach' && a.body.hunger > 0.3) p.u *= 0.2;
+        if (p.kind === 'build' && p.payload?.structure === 'bridge') p.u *= 0.15;
       }
       if (ripeField) {
         const farmCand = candidates.find((c) => c.kind === 'farm');
-        if (farmCand) farmCand.u = Math.max(farmCand.u, 14);
+        if (farmCand) farmCand.u = Math.max(farmCand.u, 15);
       }
       for (const p of candidates) {
-        if (p.kind === 'gather') p.u = Math.max(p.u, 11);
-        if (p.kind === 'farm') p.u = Math.max(p.u, 10);
+        if (p.kind === 'gather') p.u = Math.max(p.u, 12);
+        if (p.kind === 'farm') p.u = Math.max(p.u, 11);
         if (p.kind === 'takeFromStore') p.u = Math.max(p.u, 10);
+        if (p.kind === 'give') p.u = Math.max(p.u, 9);
       }
-      if (foodCarried >= 2) {
+      if (foodCarried >= 1) {
         const storeCand = candidates.find((c) => c.kind === 'store');
-        if (storeCand) storeCand.u = Math.max(storeCand.u, 15);
+        if (storeCand) storeCand.u = Math.max(storeCand.u, localEmpty ? 16 : 14);
       }
-    } else if (foodDays >= 5) {
+      // Feed someone hungrier nearby when you still hold food
+      if (foodCarried >= 1 && a.body.hunger < 0.55) {
+        for (const p of candidates) {
+          if (p.kind === 'give') p.u = Math.max(p.u, 12);
+        }
+      }
+    } else if (foodDays >= 7) {
       for (const p of candidates) {
         if (p.kind === 'farm') p.u *= 0.35;
         if (p.kind === 'explore') p.u = Math.max(p.u, 6);
@@ -626,9 +654,9 @@ export function think(a, ctx) {
     }
 
     // Always park surplus food when not starving for a bite
-    if (foodCarried > 5 && a.body.hunger < 0.55) {
+    if (foodCarried > 4 && a.body.hunger < 0.55) {
       const storeCand = candidates.find((c) => c.kind === 'store');
-      if (storeCand) storeCand.u = Math.max(storeCand.u, 11);
+      if (storeCand) storeCand.u = Math.max(storeCand.u, localEmpty ? 14 : 11);
     }
   }
 
@@ -740,7 +768,7 @@ export function think(a, ctx) {
     if (storeCand2 && (packFood >= 4 || foodDays < 4)) {
       storeCand2.u = Math.max(storeCand2.u, foodDays < 3 ? 12 : 10);
     }
-    if (foodDays < 3.5) {
+    if (foodDays < 5) {
       for (const p of candidates) {
         if (p.kind === 'farm') p.u = Math.max(p.u, 8);
         if (p.kind === 'gather') p.u = Math.max(p.u, 7);
