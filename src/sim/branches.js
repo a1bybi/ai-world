@@ -8,6 +8,12 @@
 //
 // Toggle with sim.dmcMode (default true). When false, agents behave
 // as before — pure softmax without lasting branch memory.
+//
+// Experimental modes (sim.dmcMode):
+//   true / 'full'  — observe + bias + invest + prune
+//   false / 'off'  — no branch memory
+//   'invest'       — invest + bias, no extra rival decay
+//   'prune'        — observe + decay, weak invest
 
 import { clamp } from '../core/util.js';
 
@@ -24,6 +30,7 @@ export class BranchStore {
    * @param {number} [opts.decay=0.12] Per-tick multiplicative decay for non-chosen
    * @param {number} [opts.invest=0.35] Weight added when a branch is chosen
    * @param {number} [opts.pruneBelow=0.04] Drop branches under this weight
+   * @param {'full'|'invest'|'prune'|'off'} [opts.mode='full']
    */
   constructor(opts = {}) {
     this.open = new Map(); // key -> { id, kind, key, weight, born, last, payload? }
@@ -34,20 +41,29 @@ export class BranchStore {
     this.decay = opts.decay ?? 0.12;
     this.investAmt = opts.invest ?? 0.35;
     this.pruneBelow = opts.pruneBelow ?? 0.04;
+    this.mode = opts.mode || 'full';
+    /** kind -> count of times chosen (for entropy) */
+    this.kindHist = new Map();
   }
 
   static keyOf(cand) {
     if (!cand) return 'idle';
     const st = cand.payload?.structure;
-    const pay = cand.payload != null && typeof cand.payload !== 'object'
-      ? String(cand.payload)
-      : st || '';
-    const tgt = cand.targetId != null
-      ? `:${cand.targetId}`
-      : cand.target
-        ? `:@${cand.target.x},${cand.target.y}`
-        : '';
+    const pay =
+      cand.payload != null && typeof cand.payload !== 'object'
+        ? String(cand.payload)
+        : st || '';
+    const tgt =
+      cand.targetId != null
+        ? `:${cand.targetId}`
+        : cand.target
+          ? `:@${cand.target.x},${cand.target.y}`
+          : '';
     return `${cand.kind}${pay ? ':' + pay : ''}${tgt}`;
+  }
+
+  setMode(mode) {
+    this.mode = mode || 'full';
   }
 
   /**
@@ -55,6 +71,7 @@ export class BranchStore {
    * Existing branches for the same key keep cumulative investment.
    */
   observe(candidates, tick) {
+    if (this.mode === 'off') return;
     if (!candidates?.length) return;
     const seen = new Set();
     for (const c of candidates) {
@@ -63,7 +80,6 @@ export class BranchStore {
       const prev = this.open.get(key);
       const base = Math.max(0.05, Number(c.u) || 0.05);
       if (prev) {
-        // Soft blend utility into weight so rising needs re-open attention
         prev.weight = clamp(prev.weight * 0.85 + base * 0.08, 0.02, 4);
         prev.last = tick;
         prev.u = c.u;
@@ -80,9 +96,11 @@ export class BranchStore {
       }
     }
     // Decay anything not in this frame's candidate list
-    for (const [key, b] of this.open) {
-      if (!seen.has(key)) {
-        b.weight *= 1 - this.decay * 1.4;
+    if (this.mode === 'full' || this.mode === 'prune') {
+      for (const [key, b] of this.open) {
+        if (!seen.has(key)) {
+          b.weight *= 1 - this.decay * 1.4;
+        }
       }
     }
     this._trim(tick);
@@ -95,6 +113,7 @@ export class BranchStore {
    * @param {object} [intensity] affect / attention proxy
    */
   invest(chosen, tick, intensity = {}) {
+    if (this.mode === 'off') return null;
     if (!chosen) return null;
     const key = BranchStore.keyOf(chosen);
     let b = this.open.get(key);
@@ -115,15 +134,24 @@ export class BranchStore {
       clamp(intensity.arousal ?? 0.2, 0, 1) * 0.5 +
       clamp(Math.abs(intensity.valence ?? 0), 0, 1) * 0.3 +
       clamp(intensity.attention ?? 0, 0, 1) * 0.4;
-    b.weight = clamp(b.weight + this.investAmt * focus, 0.05, 5);
+
+    if (this.mode === 'full' || this.mode === 'invest') {
+      b.weight = clamp(b.weight + this.investAmt * focus, 0.05, 5);
+    } else if (this.mode === 'prune') {
+      // Weak invest so keys still exist for pruning dynamics
+      b.weight = clamp(b.weight + this.investAmt * 0.15 * focus, 0.05, 5);
+    }
     b.last = tick;
     b.chosen = (b.chosen || 0) + 1;
     this.invested++;
+    this.kindHist.set(chosen.kind, (this.kindHist.get(chosen.kind) || 0) + 1);
 
     // Decay rivals — unobserved alternatives dissolve
-    for (const [k, o] of this.open) {
-      if (k === key) continue;
-      o.weight *= 1 - this.decay * focus;
+    if (this.mode === 'full' || this.mode === 'prune') {
+      for (const [k, o] of this.open) {
+        if (k === key) continue;
+        o.weight *= 1 - this.decay * focus;
+      }
     }
 
     // Lock when repeatedly reinforced
@@ -143,17 +171,18 @@ export class BranchStore {
 
   /** Bias utilities by open-branch investment (participatory code). */
   biasUtilities(candidates) {
+    if (this.mode === 'off' || this.mode === 'prune') return;
     if (!candidates?.length || !this.open.size) return;
     for (const c of candidates) {
       const b = this.open.get(BranchStore.keyOf(c));
       if (!b) continue;
-      // Modest multiplier so nuclear needs still win
       const m = 1 + clamp(b.weight * 0.18, 0, 0.55);
       c.u = (Number(c.u) || 0) * m;
     }
   }
 
   _trim(tick) {
+    if (this.mode === 'off') return;
     for (const [key, b] of [...this.open]) {
       if (b.weight < this.pruneBelow && tick - b.last > 3) {
         this.open.delete(key);
@@ -170,6 +199,19 @@ export class BranchStore {
     }
   }
 
+  /** Shannon entropy of chosen action kinds (bits). Higher = more diverse paths. */
+  kindEntropy() {
+    let total = 0;
+    for (const n of this.kindHist.values()) total += n;
+    if (total <= 0) return 0;
+    let h = 0;
+    for (const n of this.kindHist.values()) {
+      const p = n / total;
+      if (p > 0) h -= p * Math.log2(p);
+    }
+    return h;
+  }
+
   /** Snapshot for observer / report. */
   stats() {
     const top = [...this.open.values()]
@@ -181,7 +223,9 @@ export class BranchStore {
       pruned: this.pruned,
       invested: this.invested,
       locked: this.locked.length,
+      entropy: +this.kindEntropy().toFixed(3),
       top,
+      mode: this.mode,
     };
   }
 
@@ -195,13 +239,16 @@ export class BranchStore {
 }
 
 /**
- * Aggregate world-level DMC stats for the chronicle.
+ * Aggregate world-level DMC stats for the chronicle / metrics.
  */
 export function worldBranchStats(living) {
   let open = 0;
   let pruned = 0;
   let invested = 0;
   let locked = 0;
+  let entropySum = 0;
+  let n = 0;
+  const kindTot = new Map();
   for (const a of living || []) {
     const s = a.branches?.stats?.();
     if (!s) continue;
@@ -209,6 +256,42 @@ export function worldBranchStats(living) {
     pruned += s.pruned;
     invested += s.invested;
     locked += s.locked;
+    entropySum += s.entropy || 0;
+    n++;
+    if (a.branches?.kindHist) {
+      for (const [k, v] of a.branches.kindHist) {
+        kindTot.set(k, (kindTot.get(k) || 0) + v);
+      }
+    }
   }
-  return { open, pruned, invested, locked };
+  // Global action-kind entropy across the population
+  let total = 0;
+  for (const v of kindTot.values()) total += v;
+  let globalEntropy = 0;
+  if (total > 0) {
+    for (const v of kindTot.values()) {
+      const p = v / total;
+      if (p > 0) globalEntropy -= p * Math.log2(p);
+    }
+  }
+  return {
+    open,
+    pruned,
+    invested,
+    locked,
+    meanEntropy: n ? +(entropySum / n).toFixed(3) : 0,
+    globalEntropy: +globalEntropy.toFixed(3),
+    agents: n,
+  };
+}
+
+/**
+ * Normalize sim.dmcMode into a branch store mode string.
+ * @param {boolean|string} dmcMode
+ */
+export function resolveBranchMode(dmcMode) {
+  if (dmcMode === false || dmcMode === 'off') return 'off';
+  if (dmcMode === 'invest') return 'invest';
+  if (dmcMode === 'prune') return 'prune';
+  return 'full';
 }
