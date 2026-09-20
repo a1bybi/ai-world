@@ -3,7 +3,7 @@
 import { clamp, softmaxPick, topN } from '../core/util.js';
 import { ACTIONS } from './actions.js';
 import { decayAffect, emotionalBias, appraise, dominantEmotion } from './emotion.js';
-import { BranchStore } from './branches.js';
+import { BranchStore, resolveBranchMode } from './branches.js';
 
 const ACTION_LIST = Object.entries(ACTIONS);
 
@@ -872,9 +872,11 @@ export function think(a, ctx) {
           );
 
   // DMC: register open possibilities, bias by prior investment, then pick
-  const dmcOn = ctx.sim.dmcMode !== false;
+  const branchMode = resolveBranchMode(ctx.sim.dmcMode);
+  const dmcOn = branchMode !== 'off';
   if (dmcOn) {
-    if (!a.branches) a.branches = new BranchStore();
+    if (!a.branches) a.branches = new BranchStore({ mode: branchMode });
+    else a.branches.setMode(branchMode);
     a.branches.observe(candidates, world.tick);
     a.branches.biasUtilities(candidates);
   }
