@@ -351,38 +351,55 @@ function showStructureInspect(sim, s) {
 
 
 async function runDmcBenchmarkUi() {
+  // Close any modal that might be eating clicks
+  try {
+    const sh = $('#sheet'); if (sh) sh.dataset.open = 'false';
+    const dlg = $('#dialog'); if (dlg) dlg.dataset.open = 'false';
+  } catch (_) {}
+
   const seed = ($('#seedInput')?.value || 'aurorae').trim() || 'aurorae';
-  // Short on purpose: phone must finish in ~15–40s, not minutes
-  const days = window.innerWidth < 720 ? 30 : 50;
-  const population = window.innerWidth < 720 ? 8 : 10;
-  const modes = [false, true]; // off vs full only — ablations optional later
+  const days = 20;          // fast: ~20s on phone
+  const population = 8;
+  const modes = [false, true];
   const btn = $('#dmcBtn');
   const rate = $('#rateOut');
   const setStatus = (t) => {
     if (btn) btn.textContent = t;
     if (rate) rate.textContent = t;
   };
-  if (btn) btn.disabled = true;
-  setStatus('DMC 1/' + modes.length + '…');
+  if (btn) {
+    btn.disabled = true;
+    btn.style.pointerEvents = 'auto';
+  }
+  setStatus('DMC start…');
+
+  // Yield to browser so the label paints before heavy work
+  await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 30)));
+
   try {
+    if (typeof Simulation.runBenchmark !== 'function') {
+      throw new Error('Simulation.runBenchmark missing — redeploy sim.js');
+    }
     const results = [];
     for (let i = 0; i < modes.length; i++) {
       const mode = modes[i];
-      setStatus(`DMC ${i + 1}/${modes.length} (${mode === false ? 'off' : 'full'})…`);
+      const label = mode === false ? 'off' : 'full';
+      setStatus(`DMC ${i + 1}/${modes.length} ${label}`);
+      await new Promise((r) => setTimeout(r, 20));
       const r = await Simulation.runBenchmark({
         seed,
         days,
         dmcMode: mode,
         population,
-        yieldEvery: 24,
+        yieldEvery: 12,
         checkpoints: [days],
       });
       results.push(r);
     }
     const comparison = Simulation.compareDmcResults(results);
     const lines = [
-      `DMC experiment — seed "${seed}", ${days} days`,
-      '(model test only — not a physics proof)',
+      `DMC test — seed "${seed}", ${days} days`,
+      '(in-model only, not a physics proof)',
       '',
       'mode   live  dead  food  camps  lock  entr',
     ];
@@ -399,26 +416,37 @@ async function runDmcBenchmarkUi() {
         ].join(' '),
       );
     }
-    lines.push('');
-    const off = comparison.find((c) => c.mode === 'off');
-    const full = comparison.find((c) => c.mode === 'full');
-    if (off && full) {
-      const dLock = (full.locked || 0) - (off.locked || 0);
-      const dEnt = (full.entropy || 0) - (off.entropy || 0);
-      lines.push(`delta lock ${dLock >= 0 ? '+' : ''}${dLock}, entropy ${dEnt >= 0 ? '+' : ''}${dEnt.toFixed(2)}`);
-      if (Math.abs(dLock) < 1 && Math.abs(dEnt) < 0.05) {
-        lines.push('Signal weak this seed — try another seed or longer days.');
-      } else {
-        lines.push('Branch layer moved metrics vs pure softmax (in-model only).');
-      }
-    }
     const text = lines.join('\n');
-    console.log('[aurorae DMC]', { seed, days, comparison, results });
-    // Always alert so the user sees a result even if the report sheet is closed
-    alert(text);
+    console.log('[aurorae DMC]', comparison);
+    setStatus('DMC done');
+    // Prefer on-page result so iOS doesn't swallow alert
+    let host = $('#dmcResult');
+    if (!host) {
+      host = document.createElement('pre');
+      host.id = 'dmcResult';
+      host.style.cssText =
+        'position:fixed;left:8px;right:8px;bottom:72px;max-height:40vh;overflow:auto;z-index:50;' +
+        'background:#1a1612;color:#e8e0d4;border:1px solid #5a4a38;border-radius:8px;' +
+        'padding:12px;font-size:12px;white-space:pre-wrap;pointer-events:auto';
+      document.body.appendChild(host);
+    }
+    host.textContent = text + '\n\n(tap here to dismiss)';
+    host.onclick = () => host.remove();
   } catch (e) {
     console.error('[aurorae DMC]', e);
-    alert('DMC test failed: ' + (e && e.message ? e.message : e));
+    setStatus('DMC fail');
+    const msg = e && e.message ? e.message : String(e);
+    let host = $('#dmcResult');
+    if (!host) {
+      host = document.createElement('pre');
+      host.id = 'dmcResult';
+      host.style.cssText =
+        'position:fixed;left:8px;right:8px;bottom:72px;z-index:50;background:#3a1810;color:#f0d0c0;' +
+        'padding:12px;border-radius:8px;font-size:12px;pointer-events:auto';
+      document.body.appendChild(host);
+    }
+    host.textContent = 'DMC test failed:\n' + msg;
+    host.onclick = () => host.remove();
   } finally {
     if (btn) {
       btn.disabled = false;
@@ -427,6 +455,8 @@ async function runDmcBenchmarkUi() {
     if (rate) rate.textContent = '—';
   }
 }
+
+
 function buildControls() {
   const speeds = $('#speeds');
   speeds.innerHTML = SPEEDS.map((s, i) => {
@@ -457,7 +487,7 @@ function buildControls() {
   });
   $('#legend').innerHTML = renderer.legendHtml();
 
-  document.querySelector('.tabs').addEventListener('click', (e) => {
+  document.querySelector('.tabs')?.addEventListener('click', (e) => {
     const t = e.target.closest('.tab');
     if (t) showTab(t.dataset.tab);
   });
@@ -469,16 +499,28 @@ function buildControls() {
   let dmcBtn = $('#dmcBtn');
   if (!dmcBtn) {
     dmcBtn = document.createElement('button');
+    dmcBtn.type = 'button';
     dmcBtn.id = 'dmcBtn';
     dmcBtn.className = 'btn';
     dmcBtn.textContent = 'DMC test';
-    dmcBtn.title = 'Headless paired runs: measure invest/prune vs pure softmax (model test, not physics proof)';
+    dmcBtn.title = 'Headless paired runs: off vs full (model test, not physics proof)';
+    dmcBtn.style.zIndex = '30';
+    dmcBtn.style.position = 'relative';
     const reportBtn = $('#reportBtn');
+    const bar = document.querySelector('.controls') || reportBtn?.parentElement;
     if (reportBtn && reportBtn.parentElement) {
       reportBtn.parentElement.insertBefore(dmcBtn, reportBtn.nextSibling);
+    } else if (bar) {
+      bar.appendChild(dmcBtn);
+    } else {
+      document.body.appendChild(dmcBtn);
     }
   }
-  dmcBtn.addEventListener('click', () => runDmcBenchmarkUi());
+  dmcBtn.onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    runDmcBenchmarkUi();
+  };
 
   $('#newBtn').addEventListener('click', () =>
     newWorld($('#seedInput').value.trim() || String(Date.now())),
@@ -599,5 +641,6 @@ function buildControls() {
 }
 
 buildControls();
+try { $('#sheet').dataset.open = 'false'; $('#dialog').dataset.open = 'false'; } catch (_) {}
 newWorld('aurorae');
 requestAnimationFrame(frame);
