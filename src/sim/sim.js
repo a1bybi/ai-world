@@ -11,7 +11,7 @@ import { Chronicle } from './chronicle.js';
 import { Agent, YEAR_TICKS, SKILLS } from './agent.js';
 import { randomGenome, inherit, genomeDistance, inventDna, inheritDna, dnaShare, dnaLabel, lineCensus, kinByDna } from './genome.js';
 import { think, tickAgent, updateBody } from './mind.js';
-import { worldBranchStats } from './branches.js';
+import { worldBranchStats, resolveBranchMode } from './branches.js';
 import { appraise, dominantEmotion, moodWord } from './emotion.js';
 import { clamp, dist, mean, topN, hueFor } from '../core/util.js';
 import { STRUCTURE_KINDS } from './actions.js';
@@ -206,7 +206,7 @@ export class Simulation {
       case 'violence': return `Fight: ${names}`;
       case 'invention': return `Invention: ${ev.concept || names}`;
       case 'teach': return `Teaching: ${names}${ev.concept ? ` (${ev.concept})` : ''}`;
-      case 'gather': return `Gather: ${names}${ev.concept ? ` Ã¢ÂÂ ${ev.concept}` : ''}`;
+      case 'gather': return `Gather: ${names}${ev.concept ? ` â ${ev.concept}` : ''}`;
       case 'build':
       case 'first': return `Build/first: ${(ev.text || '').slice(0, 90)}`;
       case 'speech': return `Said: ${ev.voice || names}: ${(ev.text || '').slice(0, 80)}`;
@@ -883,7 +883,7 @@ export class Simulation {
     });
   }
 
-  // Ã¢ÂÂÃ¢ÂÂ Households Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+  // ââ Households ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
   /**
    * Household = couple + their dependent children.
@@ -1905,7 +1905,7 @@ export class Simulation {
     const word = this.lang.word(`struct:${kind}`);
     this.registerLex(word, kind, 'structure');
 
-    // Ã¢ÂÂÃ¢ÂÂ Multi-tile bridge span Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+    // ââ Multi-tile bridge span âââââââââââââââââââââââââââââââââ
     if (kind === 'bridge') {
       const span =
         spot.span ||
@@ -1973,7 +1973,7 @@ export class Simulation {
       return first;
     }
 
-    // Ã¢ÂÂÃ¢ÂÂ Ordinary structures Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+    // ââ Ordinary structures ââââââââââââââââââââââââââââââââââââ
     const s = {
       kind,
       x: spot.x,
@@ -2837,6 +2837,140 @@ export class Simulation {
     const out = this.logBuffer;
     this.logBuffer = [];
     return out;
+  }
+
+
+  /**
+   * Snapshot for DMC experiments (and general observer science).
+   * Does not prove physical DMC — only measures the computational layer.
+   */
+  collectMetrics() {
+    const living = this.living;
+    const dmc = worldBranchStats(living);
+    const kinds = {};
+    for (const a of living) {
+      const k = a.action?.kind || a.goal || 'idle';
+      const key = String(k).split(' ')[0];
+      kinds[key] = (kinds[key] || 0) + 1;
+    }
+    let food = 0;
+    try { food = this.totalFood(); } catch (_) {}
+    const fd = this.foodDaysAt?.(this.origin) ?? 0;
+    const camps = (this.settlements || []).length;
+    const structs = this.world?.structures?.length || 0;
+    const deaths = this.counters?.deaths || 0;
+    const births = this.counters?.births || 0;
+    const trades = this.counters?.trades || 0;
+    const inventions = this.counters?.inventions || 0;
+    return {
+      seed: this.seed,
+      dmcMode: this.dmcMode,
+      tick: this.world?.tick || 0,
+      day: this.world?.dayNumber || Math.floor((this.world?.tick || 0) / 24) + 1,
+      living: living.length,
+      births,
+      deaths,
+      food: Math.round(food * 10) / 10,
+      foodDays: Math.round(fd * 10) / 10,
+      camps,
+      structures: structs,
+      trades,
+      inventions,
+      archive: this.archive?.size || 0,
+      capability: Math.round(this.capabilityScore?.() || this.counters?.capability || 0),
+      actionKinds: kinds,
+      dmc,
+    };
+  }
+
+  /**
+   * Run a headless civilization for `days` world-days under a given dmcMode.
+   * Used by the DMC benchmark harness — not interactive play.
+   * @param {object} opts
+   * @param {string} [opts.seed]
+   * @param {number} [opts.days=100]
+   * @param {boolean|string} [opts.dmcMode=true]
+   * @param {number} [opts.population=14]
+   * @param {number[]} [opts.checkpoints] days at which to snapshot
+   */
+  static async runBenchmark(opts = {}) {
+    const seed = opts.seed || 'aurorae';
+    const days = opts.days ?? 100;
+    const dmcMode = opts.dmcMode !== undefined ? opts.dmcMode : true;
+    const population = opts.population ?? 14;
+    const checkpoints = opts.checkpoints || [25, 50, 75, days];
+    const sim = new Simulation(seed, { population, dmcMode });
+    const ticks = days * 24;
+    const series = [];
+    let nextCp = 0;
+    const cps = checkpoints.map((d) => d * 24).sort((a, b) => a - b);
+    for (let t = 0; t < ticks; t++) {
+      sim.step();
+      if (nextCp < cps.length && sim.world.tick >= cps[nextCp]) {
+        series.push(sim.collectMetrics());
+        nextCp++;
+      }
+      // Yield to UI every ~200 ticks so the tab stays responsive
+      if (opts.yieldEvery && t > 0 && t % opts.yieldEvery === 0) {
+        await new Promise((r) => setTimeout(r, 0));
+      }
+    }
+    if (!series.length || series[series.length - 1].tick < sim.world.tick) {
+      series.push(sim.collectMetrics());
+    }
+    return { seed, dmcMode, days, series, final: series[series.length - 1] };
+  }
+
+  /**
+   * Paired / ablated DMC experiment on one seed.
+   * modes default: off, full, invest, prune
+   */
+  static async runDmcExperiment(opts = {}) {
+    const seed = opts.seed || 'aurorae';
+    const days = opts.days ?? 100;
+    const modes = opts.modes || [false, true, 'invest', 'prune'];
+    const population = opts.population ?? 14;
+    const results = [];
+    for (const mode of modes) {
+      const r = await Simulation.runBenchmark({
+        seed,
+        days,
+        dmcMode: mode,
+        population,
+        yieldEvery: opts.yieldEvery ?? 120,
+        checkpoints: opts.checkpoints,
+      });
+      results.push(r);
+    }
+    return {
+      seed,
+      days,
+      results,
+      comparison: Simulation.compareDmcResults(results),
+    };
+  }
+
+  /** Diff final metrics across modes for a quick table. */
+  static compareDmcResults(results) {
+    return results.map((r) => {
+      const f = r.final || {};
+      const d = f.dmc || {};
+      return {
+        mode: r.dmcMode === true ? 'full' : r.dmcMode === false ? 'off' : String(r.dmcMode),
+        day: f.day,
+        living: f.living,
+        deaths: f.deaths,
+        foodDays: f.foodDays,
+        camps: f.camps,
+        structures: f.structures,
+        trades: f.trades,
+        inventions: f.inventions,
+        invested: d.invested ?? 0,
+        pruned: d.pruned ?? 0,
+        locked: d.locked ?? 0,
+        entropy: d.globalEntropy ?? d.meanEntropy ?? 0,
+      };
+    });
   }
 
   report() {
