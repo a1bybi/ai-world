@@ -90,7 +90,7 @@ function newWorld(seed) {
   } catch (e) {
     console.warn('[aurorae] panels', e);
   }
-  setSpeed(1);
+  setSpeed(0); // start paused so the observer can look before time runs
 }
 
 function select(id) {
@@ -351,15 +351,15 @@ function showStructureInspect(sim, s) {
 
 
 async function runDmcBenchmarkUi() {
-  // Close any modal that might be eating clicks
   try {
     const sh = $('#sheet'); if (sh) sh.dataset.open = 'false';
     const dlg = $('#dialog'); if (dlg) dlg.dataset.open = 'false';
   } catch (_) {}
 
   const seed = ($('#seedInput')?.value || 'aurorae').trim() || 'aurorae';
-  const days = 20;          // fast: ~20s on phone
-  const population = 8;
+  // Fast path: ~5–15s total on phone (measured ~6s/day for 6 agents)
+  const days = 5;
+  const population = 6;
   const modes = [false, true];
   const btn = $('#dmcBtn');
   const rate = $('#rateOut');
@@ -367,39 +367,45 @@ async function runDmcBenchmarkUi() {
     if (btn) btn.textContent = t;
     if (rate) rate.textContent = t;
   };
-  if (btn) {
-    btn.disabled = true;
-    btn.style.pointerEvents = 'auto';
-  }
-  setStatus('DMC start…');
+  if (btn) btn.disabled = true;
+  setStatus('DMC…');
+  await new Promise((r) => setTimeout(r, 40));
 
-  // Yield to browser so the label paints before heavy work
-  await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 30)));
+  const runOne = async (mode, index) => {
+    const label = mode === false ? 'off' : 'full';
+    if (typeof Simulation.runBenchmark !== 'function') {
+      throw new Error('Redeploy sim.js — runBenchmark missing');
+    }
+    // Manual loop so we can update the button every day
+    const sim = new Simulation(seed, { population, dmcMode: mode });
+    const ticks = days * 24;
+    for (let t = 0; t < ticks; t++) {
+      sim.step();
+      if (t % 24 === 0) {
+        setStatus(`DMC ${index + 1}/2 ${label} d${1 + (t / 24) | 0}`);
+        await new Promise((r) => setTimeout(r, 0));
+      } else if (t % 8 === 0) {
+        await new Promise((r) => setTimeout(r, 0));
+      }
+    }
+    return {
+      seed,
+      dmcMode: mode,
+      days,
+      series: [sim.collectMetrics()],
+      final: sim.collectMetrics(),
+    };
+  };
 
   try {
-    if (typeof Simulation.runBenchmark !== 'function') {
-      throw new Error('Simulation.runBenchmark missing — redeploy sim.js');
-    }
     const results = [];
     for (let i = 0; i < modes.length; i++) {
-      const mode = modes[i];
-      const label = mode === false ? 'off' : 'full';
-      setStatus(`DMC ${i + 1}/${modes.length} ${label}`);
-      await new Promise((r) => setTimeout(r, 20));
-      const r = await Simulation.runBenchmark({
-        seed,
-        days,
-        dmcMode: mode,
-        population,
-        yieldEvery: 12,
-        checkpoints: [days],
-      });
-      results.push(r);
+      results.push(await runOne(modes[i], i));
     }
     const comparison = Simulation.compareDmcResults(results);
     const lines = [
-      `DMC test — seed "${seed}", ${days} days`,
-      '(in-model only, not a physics proof)',
+      `DMC test — "${seed}", ${days} days × ${population} people`,
+      '(in-model only — not a physics proof)',
       '',
       'mode   live  dead  food  camps  lock  entr',
     ];
@@ -416,36 +422,42 @@ async function runDmcBenchmarkUi() {
         ].join(' '),
       );
     }
-    const text = lines.join('\n');
+    const off = comparison.find((c) => c.mode === 'off');
+    const full = comparison.find((c) => c.mode === 'full');
+    if (off && full) {
+      lines.push('');
+      lines.push(
+        `Δ lock ${(full.locked - off.locked) >= 0 ? '+' : ''}${full.locked - off.locked}, ` +
+          `entropy ${((full.entropy || 0) - (off.entropy || 0)) >= 0 ? '+' : ''}${((full.entropy || 0) - (off.entropy || 0)).toFixed(2)}`,
+      );
+    }
     console.log('[aurorae DMC]', comparison);
-    setStatus('DMC done');
-    // Prefer on-page result so iOS doesn't swallow alert
     let host = $('#dmcResult');
     if (!host) {
       host = document.createElement('pre');
       host.id = 'dmcResult';
       host.style.cssText =
-        'position:fixed;left:8px;right:8px;bottom:72px;max-height:40vh;overflow:auto;z-index:50;' +
+        'position:fixed;left:8px;right:8px;bottom:72px;max-height:42vh;overflow:auto;z-index:60;' +
         'background:#1a1612;color:#e8e0d4;border:1px solid #5a4a38;border-radius:8px;' +
         'padding:12px;font-size:12px;white-space:pre-wrap;pointer-events:auto';
       document.body.appendChild(host);
     }
-    host.textContent = text + '\n\n(tap here to dismiss)';
+    host.textContent = lines.join('\n') + '\n\n(tap to dismiss)';
     host.onclick = () => host.remove();
+    setStatus('DMC done');
   } catch (e) {
     console.error('[aurorae DMC]', e);
     setStatus('DMC fail');
-    const msg = e && e.message ? e.message : String(e);
     let host = $('#dmcResult');
     if (!host) {
       host = document.createElement('pre');
       host.id = 'dmcResult';
       host.style.cssText =
-        'position:fixed;left:8px;right:8px;bottom:72px;z-index:50;background:#3a1810;color:#f0d0c0;' +
+        'position:fixed;left:8px;right:8px;bottom:72px;z-index:60;background:#3a1810;color:#f0d0c0;' +
         'padding:12px;border-radius:8px;font-size:12px;pointer-events:auto';
       document.body.appendChild(host);
     }
-    host.textContent = 'DMC test failed:\n' + msg;
+    host.textContent = 'DMC failed:\n' + (e && e.message ? e.message : e);
     host.onclick = () => host.remove();
   } finally {
     if (btn) {
