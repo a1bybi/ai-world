@@ -352,55 +352,72 @@ function showStructureInspect(sim, s) {
 
 async function runDmcBenchmarkUi() {
   const seed = ($('#seedInput')?.value || 'aurorae').trim() || 'aurorae';
-  const days = 80; // ~ short enough for phone
+  // Short on purpose: phone must finish in ~15–40s, not minutes
+  const days = window.innerWidth < 720 ? 30 : 50;
+  const population = window.innerWidth < 720 ? 8 : 10;
+  const modes = [false, true]; // off vs full only — ablations optional later
   const btn = $('#dmcBtn');
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = 'Running…';
-  }
   const rate = $('#rateOut');
-  if (rate) rate.textContent = 'DMC test…';
+  const setStatus = (t) => {
+    if (btn) btn.textContent = t;
+    if (rate) rate.textContent = t;
+  };
+  if (btn) btn.disabled = true;
+  setStatus('DMC 1/' + modes.length + '…');
   try {
-    // Prefer full + off only on phone for speed; invest/prune if desktop
-    const modes =
-      window.innerWidth < 720 ? [false, true] : [false, true, 'invest', 'prune'];
-    const exp = await Simulation.runDmcExperiment({
-      seed,
-      days,
-      modes,
-      population: 12,
-      yieldEvery: 80,
-      checkpoints: [40, days],
-    });
+    const results = [];
+    for (let i = 0; i < modes.length; i++) {
+      const mode = modes[i];
+      setStatus(`DMC ${i + 1}/${modes.length} (${mode === false ? 'off' : 'full'})…`);
+      const r = await Simulation.runBenchmark({
+        seed,
+        days,
+        dmcMode: mode,
+        population,
+        yieldEvery: 24,
+        checkpoints: [days],
+      });
+      results.push(r);
+    }
+    const comparison = Simulation.compareDmcResults(results);
     const lines = [
-      `DMC experiment — seed ${exp.seed}, ${exp.days} days`,
-      '(computational model only — not a physics proof)',
+      `DMC experiment — seed "${seed}", ${days} days`,
+      '(model test only — not a physics proof)',
       '',
-      'mode     live  dead  food  camps  lock  entr',
+      'mode   live  dead  food  camps  lock  entr',
     ];
-    for (const row of exp.comparison) {
+    for (const row of comparison) {
       lines.push(
-        `${String(row.mode).padEnd(8)} ${String(row.living).padStart(4)}  ${String(row.deaths).padStart(4)}  ${String(row.foodDays).padStart(4)}  ${String(row.camps).padStart(5)}  ${String(row.locked).padStart(4)}  ${Number(row.entropy).toFixed(2)}`,
+        [
+          String(row.mode).padEnd(6),
+          String(row.living).padStart(4),
+          String(row.deaths).padStart(5),
+          String(row.foodDays).padStart(5),
+          String(row.camps).padStart(6),
+          String(row.locked).padStart(5),
+          Number(row.entropy).toFixed(2).padStart(6),
+        ].join(' '),
       );
     }
     lines.push('');
-    lines.push('If full/invest differ from off on locks, entropy, or survival,');
-    lines.push('the branch layer is doing measurable work in this model.');
-    const text = lines.join('\n');
-    console.log('[aurorae DMC]', exp);
-    // Show in report sheet if available
-    const body = $('#reportBody') || $('#sheetInner') || null;
-    if (body && typeof openReport === 'function') {
-      openReport();
-      const pre = document.createElement('pre');
-      pre.style.cssText = 'white-space:pre-wrap;font-size:0.8rem;padding:1rem';
-      pre.textContent = text;
-      body.prepend(pre);
-    } else {
-      alert(text);
+    const off = comparison.find((c) => c.mode === 'off');
+    const full = comparison.find((c) => c.mode === 'full');
+    if (off && full) {
+      const dLock = (full.locked || 0) - (off.locked || 0);
+      const dEnt = (full.entropy || 0) - (off.entropy || 0);
+      lines.push(`delta lock ${dLock >= 0 ? '+' : ''}${dLock}, entropy ${dEnt >= 0 ? '+' : ''}${dEnt.toFixed(2)}`);
+      if (Math.abs(dLock) < 1 && Math.abs(dEnt) < 0.05) {
+        lines.push('Signal weak this seed — try another seed or longer days.');
+      } else {
+        lines.push('Branch layer moved metrics vs pure softmax (in-model only).');
+      }
     }
+    const text = lines.join('\n');
+    console.log('[aurorae DMC]', { seed, days, comparison, results });
+    // Always alert so the user sees a result even if the report sheet is closed
+    alert(text);
   } catch (e) {
-    console.error(e);
+    console.error('[aurorae DMC]', e);
     alert('DMC test failed: ' + (e && e.message ? e.message : e));
   } finally {
     if (btn) {
@@ -410,7 +427,6 @@ async function runDmcBenchmarkUi() {
     if (rate) rate.textContent = '—';
   }
 }
-
 function buildControls() {
   const speeds = $('#speeds');
   speeds.innerHTML = SPEEDS.map((s, i) => {
