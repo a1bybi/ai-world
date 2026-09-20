@@ -349,6 +349,68 @@ function showStructureInspect(sim, s) {
   showTab('mind');
 }
 
+
+async function runDmcBenchmarkUi() {
+  const seed = ($('#seedInput')?.value || 'aurorae').trim() || 'aurorae';
+  const days = 80; // ~ short enough for phone
+  const btn = $('#dmcBtn');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Running…';
+  }
+  const rate = $('#rateOut');
+  if (rate) rate.textContent = 'DMC test…';
+  try {
+    // Prefer full + off only on phone for speed; invest/prune if desktop
+    const modes =
+      window.innerWidth < 720 ? [false, true] : [false, true, 'invest', 'prune'];
+    const exp = await Simulation.runDmcExperiment({
+      seed,
+      days,
+      modes,
+      population: 12,
+      yieldEvery: 80,
+      checkpoints: [40, days],
+    });
+    const lines = [
+      `DMC experiment — seed ${exp.seed}, ${exp.days} days`,
+      '(computational model only — not a physics proof)',
+      '',
+      'mode     live  dead  food  camps  lock  entr',
+    ];
+    for (const row of exp.comparison) {
+      lines.push(
+        `${String(row.mode).padEnd(8)} ${String(row.living).padStart(4)}  ${String(row.deaths).padStart(4)}  ${String(row.foodDays).padStart(4)}  ${String(row.camps).padStart(5)}  ${String(row.locked).padStart(4)}  ${Number(row.entropy).toFixed(2)}`,
+      );
+    }
+    lines.push('');
+    lines.push('If full/invest differ from off on locks, entropy, or survival,');
+    lines.push('the branch layer is doing measurable work in this model.');
+    const text = lines.join('\n');
+    console.log('[aurorae DMC]', exp);
+    // Show in report sheet if available
+    const body = $('#reportBody') || $('#sheetInner') || null;
+    if (body && typeof openReport === 'function') {
+      openReport();
+      const pre = document.createElement('pre');
+      pre.style.cssText = 'white-space:pre-wrap;font-size:0.8rem;padding:1rem';
+      pre.textContent = text;
+      body.prepend(pre);
+    } else {
+      alert(text);
+    }
+  } catch (e) {
+    console.error(e);
+    alert('DMC test failed: ' + (e && e.message ? e.message : e));
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'DMC test';
+    }
+    if (rate) rate.textContent = '—';
+  }
+}
+
 function buildControls() {
   const speeds = $('#speeds');
   speeds.innerHTML = SPEEDS.map((s, i) => {
@@ -386,6 +448,22 @@ function buildControls() {
 
   $('#playBtn').addEventListener('click', togglePlay);
   $('#reportBtn').addEventListener('click', () => openReport());
+
+  // DMC experiment: paired headless runs (off vs full [+ ablations on wide screens])
+  let dmcBtn = $('#dmcBtn');
+  if (!dmcBtn) {
+    dmcBtn = document.createElement('button');
+    dmcBtn.id = 'dmcBtn';
+    dmcBtn.className = 'btn';
+    dmcBtn.textContent = 'DMC test';
+    dmcBtn.title = 'Headless paired runs: measure invest/prune vs pure softmax (model test, not physics proof)';
+    const reportBtn = $('#reportBtn');
+    if (reportBtn && reportBtn.parentElement) {
+      reportBtn.parentElement.insertBefore(dmcBtn, reportBtn.nextSibling);
+    }
+  }
+  dmcBtn.addEventListener('click', () => runDmcBenchmarkUi());
+
   $('#newBtn').addEventListener('click', () =>
     newWorld($('#seedInput').value.trim() || String(Date.now())),
   );
