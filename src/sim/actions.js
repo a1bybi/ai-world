@@ -1867,7 +1867,9 @@ export const ACTIONS = {
           });
           a.stats.taught = (a.stats.taught || 0) + 1;
           o.stats.learned = (o.stats.learned || 0) + 1;
-          ctx.sim.counters.lessons++;
+          ctx.sim.counters.lessons = (ctx.sim.counters.lessons || 0) + 1;
+          // DMC: pass hardened paths to the pupil
+          if (a.branches && o.branches) a.branches.transmit(o.branches, 0.4);
           const kind = act.payload.replace('structure:', '');
           // Quiet by default - structure tours clutter the chronicle
           const firstish = (o.stats.learned || 0) <= 2;
@@ -1887,6 +1889,7 @@ export const ACTIONS = {
       }
 
       ctx.sim.teach(a, o, act.payload);
+      if (a.branches && o.branches) a.branches.transmit(o.branches, 0.35);
       return 'done';
     },
   },
