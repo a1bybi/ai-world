@@ -11,7 +11,7 @@ import { Chronicle } from './chronicle.js';
 import { Agent, YEAR_TICKS, SKILLS } from './agent.js';
 import { randomGenome, inherit, genomeDistance, inventDna, inheritDna, dnaShare, dnaLabel, lineCensus, kinByDna } from './genome.js';
 import { think, tickAgent, updateBody } from './mind.js';
-import { worldBranchStats, resolveBranchMode } from './branches.js';
+import { worldBranchStats, resolveBranchMode, BranchStore } from './branches.js';
 import { appraise, dominantEmotion, moodWord } from './emotion.js';
 import { clamp, dist, mean, topN, hueFor } from '../core/util.js';
 import { STRUCTURE_KINDS } from './actions.js';
@@ -1397,6 +1397,12 @@ export class Simulation {
     child.add('berry', 4);
     child.add('water', 3);
 
+    // DMC: child inherits a slice of each parent's hardened paths
+    if (!child.branches) child.branches = new BranchStore();
+    try {
+      mother?.branches?.transmit?.(child.branches, 0.45);
+      father?.branches?.transmit?.(child.branches, 0.35);
+    } catch (_) {}
     this.addAgent(child);
     this.counters.births++;
     // Cohort generation from parents (for demography reports)
@@ -2880,6 +2886,7 @@ export class Simulation {
       capability: Math.round(this.capabilityScore?.() || this.counters?.capability || 0),
       actionKinds: kinds,
       dmc,
+      culture: dmc?.culture || null,
     };
   }
 
