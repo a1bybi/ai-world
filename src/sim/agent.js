@@ -60,7 +60,7 @@ export class Agent {
 
     this.affect = blankAffect();
     this.memory = new MemoryStore(240 + Math.round((this.genome.learning || 0.5) * 220));
-    this.branches = new BranchStore();
+    this.branches = new BranchStore({ mode: 'full' });
     this.relationships = new Map();
     this.values = new Map();       // conceptKey -> subjective worth
     this.reputation = typeof opts.reputation !== 'undefined' ? opts.reputation : 0.5;
