@@ -898,17 +898,27 @@ export function think(a, ctx) {
     // Rare observer note when a path hardens
     if (
       inv &&
-      inv.chosen >= 4 &&
-      inv.weight > 1.4 &&
+      inv.chosen >= 3 &&
+      inv.weight > 1.15 &&
       ctx.sim.record &&
-      ctx.rng.bool(0.04)
+      ctx.rng.bool(0.08)
     ) {
       ctx.sim.record(
         a,
         'branch',
         `${a.name}'s path hardened toward ${inv.kind}`,
-        { valence: 0.15, intensity: 0.25, quiet: true, concept: inv.key },
+        { valence: 0.2, intensity: 0.35, quiet: true, concept: inv.key },
       );
+    }
+    // Identity soft-label for observer (role from lived path)
+    const dom = a.branches?.dominantKind?.();
+    if (dom && a.role === 'wanderer' && (a.branches.identity?.get(dom) || 0) > 0.6) {
+      const ROLE_FROM = {
+        farm: 'farmer', gather: 'forager', craft: 'maker', experiment: 'maker',
+        teach: 'teacher', trade: 'trader', build: 'builder', hunt: 'hunter',
+        explore: 'wanderer', care: 'healer', makeArt: 'maker',
+      };
+      if (ROLE_FROM[dom]) a.role = ROLE_FROM[dom];
     }
   }
 
